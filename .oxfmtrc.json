@@ -1,0 +1,45 @@
+{
+	"$schema": "./node_modules/oxfmt/configuration_schema.json",
+
+	"useTabs": true,
+	"printWidth": 80,
+	"ignorePatterns": [
+		// build output
+		"**/dist",
+		"**/build",
+
+		// next.js
+		"**/.next",
+		"**/.open-next",
+
+		// wrangler generated
+		"**/.wrangler",
+		"**/worker-configuration.d.ts",
+
+		// payload cms generated
+		"**/payload-types.ts",
+		"**/importMap.js"
+	],
+	"sortPackageJson": {
+		"sortScripts": true
+	},
+
+	"sortImports": {
+		"groups": [
+			"builtin",
+			"external",
+			"internal",
+			["parent", "sibling", "index"]
+		],
+		"newlinesBetween": false
+	},
+
+	"overrides": [
+		{
+			"files": ["*.jsonc"],
+			"options": {
+				"trailingComma": "none"
+			}
+		}
+	]
+}

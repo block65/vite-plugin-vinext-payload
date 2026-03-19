@@ -1,0 +1,38 @@
+{
+	"name": "vite-plugin-payload",
+	"version": "0.0.1",
+	"description": "Vite plugin for running Payload CMS with vinext",
+	"license": "MIT",
+	"bin": {
+		"vite-plugin-payload": "./bin/main.js"
+	},
+	"files": [
+		"src",
+		"bin"
+	],
+	"type": "module",
+	"exports": {
+		".": "./src/main.ts"
+	},
+	"scripts": {
+		"fmt": "oxfmt --write src bin",
+		"fmt:check": "oxfmt --check src bin",
+		"lint": "oxlint src bin"
+	},
+	"dependencies": {
+		"@ast-grep/napi": "^0.42.0",
+		"vite-plugin-cjs-interop": "^2.4.4"
+	},
+	"devDependencies": {
+		"oxfmt": "^0.41.0",
+		"oxlint": "^1.56.0",
+		"typescript": "^6.0.1-rc",
+		"vite": "^7.0.0"
+	},
+	"peerDependencies": {
+		"vite": "^6.0.0 || ^7.0.0"
+	},
+	"engines": {
+		"node": ">=24"
+	}
+}

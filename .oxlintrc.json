@@ -1,0 +1,34 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"plugins": ["react", "typescript"],
+	"categories": {
+		"correctness": "error",
+		"suspicious": "warn",
+		// "pedantic": "warn",
+		"perf": "warn"
+		// "style": "warn"
+	},
+	"rules": {
+		"typescript/no-non-null-assertion": "error",
+
+		"react/rules-of-hooks": "error",
+
+		// we use react 19
+		"react/react-in-jsx-scope": "off",
+
+		// testing this for pure functions
+		"func-style": ["error", "declaration", { "allowArrowFunctions": true }],
+		"prefer-arrow-callback": "error",
+
+		// JavaScript allows the omission of curly braces when a block contains only one statement. However, it is considered by many to be best practice to never omit curly braces around blocks, even when they are optional, because it can lead to bugs and reduces code clarity. So the following:
+		"curly": ["error", "all"],
+
+		// allow .css imports without extension
+		"import/extensions": [
+			"error",
+			{
+				"css": "always"
+			}
+		]
+	}
+}

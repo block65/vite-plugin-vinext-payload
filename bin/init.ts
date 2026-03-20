@@ -14,12 +14,19 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, Lang } from "@ast-grep/napi";
-import { dedent } from "../src/dedent.js";
+import type { PackageJson } from "type-fest";
+import { dedent } from "../src/dedent.ts";
 
-/**
- * @typedef {{ cwd: string, dryRun: boolean }} InitOptions
- * @typedef {{ file: string, action: 'created' | 'modified' | 'skipped', reason?: string }} Result
- */
+interface InitOptions {
+	cwd: string;
+	dryRun: boolean;
+}
+
+interface Result {
+	file: string;
+	action: "created" | "modified" | "skipped";
+	reason?: string;
+}
 
 const PAYLOAD_DIR = "src/app/(payload)";
 const ADMIN_DIR = `${PAYLOAD_DIR}/admin/[[...segments]]`;
@@ -78,13 +85,17 @@ const PAGE_TSX = dedent`
   import { importMap } from '../importMap'
 
   type Args = {
-    params
-    searchParams
+    params: Promise<{
+      segments: string[]
+    }>
+    searchParams: Promise<{
+      [key: string]: string | string[]
+    }>
   }
 
   // vinext passes segments=[] for /admin; Next.js passes undefined.
   // Normalize so Payload's dashboard route resolves correctly.
-  const normalizeParams = async (params: Args['params']) => {
+  const normalizeParams = async (params: Args['params']): Promise<Args['params']> => {
     const resolved = await params
     if (Array.isArray(resolved.segments) && resolved.segments.length === 0) {
       return Promise.resolve({ ...resolved, segments: undefined as unknown as string[] })
@@ -92,7 +103,7 @@ const PAGE_TSX = dedent`
     return params
   }
 
-  export const generateMetadata = ({ params, searchParams }: Args) =>
+  export const generateMetadata = ({ params, searchParams }: Args): Promise<Metadata> =>
     generatePageMetadata({ config, params: normalizeParams(params), searchParams })
 
   const Page = ({ params, searchParams }: Args) =>
@@ -101,8 +112,7 @@ const PAGE_TSX = dedent`
   export default Page
 `;
 
-/** @param {string} cwd @returns {Promise<import('type-fest').PackageJson>} */
-async function readManifest(cwd) {
+async function readManifest(cwd: string): Promise<PackageJson> {
 	const content = await tryRead(join(cwd, "package.json"));
 	if (!content) {
 		throw new InitError(
@@ -110,14 +120,13 @@ async function readManifest(cwd) {
 		);
 	}
 	try {
-		return JSON.parse(content);
+		return JSON.parse(content) as PackageJson;
 	} catch {
 		throw new InitError("package.json contains invalid JSON.");
 	}
 }
 
-/** @param {string} path @returns {Promise<string | null>} */
-async function tryRead(path) {
+async function tryRead(path: string): Promise<string | null> {
 	try {
 		return await readFile(path, "utf8");
 	} catch {
@@ -125,15 +134,20 @@ async function tryRead(path) {
 	}
 }
 
-/** @param {string} path @param {string} content @param {boolean} dryRun */
-async function maybeWrite(path, content, dryRun) {
+async function maybeWrite(path: string, content: string, dryRun: boolean) {
 	if (!dryRun) {
 		await writeFile(path, content);
 	}
 }
 
-/** @param {string} cwd @param {string} relativePath @param {string} sentinel @param {string} template @param {boolean} dryRun @returns {Promise<Result>} */
-async function applyTemplate(cwd, relativePath, sentinel, template, dryRun) {
+/** Apply a template to a file if a sentinel string is absent. */
+async function applyTemplate(
+	cwd: string,
+	relativePath: string,
+	sentinel: string,
+	template: string,
+	dryRun: boolean,
+): Promise<Result> {
 	const file = join(cwd, relativePath);
 	const content = await tryRead(file);
 
@@ -153,35 +167,20 @@ async function applyTemplate(cwd, relativePath, sentinel, template, dryRun) {
 	return { file: relativePath, action: "modified" };
 }
 
-/**
- * @param {InitOptions} options
- * @returns {Promise<Result>}
- * */
-async function addPayloadPluginToViteConfig({ cwd, dryRun }) {
-	const variants = [
-		"vite.config.ts",
-		"vite.config.mts",
-		"vite.config.js",
-		"vite.config.mjs",
-	];
-	const found = await Promise.all(
-		variants.map(async (v) => ({
-			name: v,
-			content: await tryRead(join(cwd, v)),
-		})),
-	).then((results) => results.find((r) => r.content));
+async function addPayloadPluginToViteConfig({
+	cwd,
+	dryRun,
+}: InitOptions): Promise<Result> {
+	const file = join(cwd, "vite.config.ts");
+	const content = await tryRead(file);
 
-	if (!found) {
-		return { file: "vite.config.*", action: "skipped", reason: "not found" };
+	if (!content) {
+		return { file: "vite.config.ts", action: "skipped", reason: "not found" };
 	}
-
-	const fileName = found.name;
-	const content = /** @type {string} */ (found.content);
-	const file = join(cwd, fileName);
 
 	if (content.includes("payloadPlugin")) {
 		return {
-			file: fileName,
+			file: "vite.config.ts",
 			action: "skipped",
 			reason: "payloadPlugin already present",
 		};
@@ -198,7 +197,7 @@ async function addPayloadPluginToViteConfig({ cwd, dryRun }) {
 
 	if (!vinextCall) {
 		return {
-			file: fileName,
+			file: "vite.config.ts",
 			action: "skipped",
 			reason: "could not find vinext() in plugins array",
 		};
@@ -209,7 +208,7 @@ async function addPayloadPluginToViteConfig({ cwd, dryRun }) {
 
 	if (!lastImport) {
 		return {
-			file: fileName,
+			file: "vite.config.ts",
 			action: "skipped",
 			reason: "no import statements found",
 		};
@@ -218,7 +217,7 @@ async function addPayloadPluginToViteConfig({ cwd, dryRun }) {
 	const pluginsArray = vinextCall.parent();
 	if (!pluginsArray || pluginsArray.kind() !== "array") {
 		return {
-			file: fileName,
+			file: "vite.config.ts",
 			action: "skipped",
 			reason: "vinext() not inside an array",
 		};
@@ -261,15 +260,17 @@ async function addPayloadPluginToViteConfig({ cwd, dryRun }) {
 		content.slice(insertAt);
 
 	await maybeWrite(file, updated, dryRun);
-	return { file: fileName, action: "modified" };
+	return { file: "vite.config.ts", action: "modified" };
 }
 
 /**
  * Handles both serverFunction extraction and layout rewrite in one pass.
  * Avoids the race condition of reading/writing layout.tsx concurrently.
  */
-/** @param {InitOptions} options @returns {Promise<Result[]>} */
-async function fixServerFunction({ cwd, dryRun }) {
+async function fixServerFunction({
+	cwd,
+	dryRun,
+}: InitOptions): Promise<Result[]> {
 	const serverFnFile = join(cwd, PAYLOAD_DIR, "serverFunction.ts");
 	const layoutFile = join(cwd, PAYLOAD_DIR, "layout.tsx");
 
@@ -345,8 +346,7 @@ async function fixServerFunction({ cwd, dryRun }) {
 	];
 }
 
-/** @param {InitOptions} options @returns {Promise<Result>} */
-async function addTsconfigPath({ cwd, dryRun }) {
+async function addTsconfigPath({ cwd, dryRun }: InitOptions): Promise<Result> {
 	const file = join(cwd, "tsconfig.json");
 	const content = await tryRead(file);
 
@@ -395,8 +395,7 @@ async function addTsconfigPath({ cwd, dryRun }) {
 
 export class InitError extends Error {}
 
-/** @param {InitOptions} options */
-export async function init(options) {
+export async function init(options: InitOptions) {
 	const { cwd, dryRun } = options;
 
 	const pkg = await readManifest(cwd);

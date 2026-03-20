@@ -6,7 +6,7 @@
 import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { init } from "../bin/init.js";
+import { init } from "../bin/init.ts";
 import { createProjectHelpers, scaffoldMockProject, FIXTURES } from "./helpers.ts";
 
 const TEST_DIR = join(import.meta.dirname, ".mock-project");

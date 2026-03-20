@@ -1,4 +1,5 @@
 node_modules/
+dist/
 test/.test-project*/
 test/.mock-project/
 !.claude/**/*.md

@@ -13,12 +13,8 @@ import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
-
-const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const PLUGIN_ROOT = join(__dirname, "..");
-const TEST_DIR = join(__dirname, ".test-project");
-const TIMEOUT = 600_000; // 10 minutes for full e2e (npm install is slow)
+const PLUGIN_ROOT = join(import.meta.dirname, "..");
+const TEST_DIR = join(import.meta.dirname, ".test-project");
 
 // Known-good version matrix
 const VERSIONS = {
@@ -27,180 +23,225 @@ const VERSIONS = {
 	vite: "7",
 	pluginReact: "5",
 	pluginRsc: "0.5",
-};
+} as const;
 
-function run(cmd: string, args: string[], cwd: string, env?: Record<string, string>) {
+// ── Helpers ────────────────────────────────────────────────────────
+
+function exec(cmd: string, args: string[], cwd: string) {
 	return execFileSync(cmd, args, {
 		cwd,
 		stdio: "pipe",
 		encoding: "utf8",
 		timeout: 300_000,
-		env: { ...process.env, ...env },
+		env: process.env,
 	});
 }
 
-function runNpm(args: string[], cwd: string) {
-	return run("npm", args, cwd);
+const npm = (args: string[]) => exec("npm", args, TEST_DIR);
+const npx = (args: string[]) => exec("npx", args, TEST_DIR);
+
+function readProject(path: string) {
+	return readFileSync(join(TEST_DIR, path), "utf8");
 }
 
-describe("e2e: payload + vinext migration", { timeout: TIMEOUT }, () => {
-	let devServer: ChildProcess | null = null;
-	let devPort: number | null = null;
+function writeProject(path: string, content: string) {
+	writeFileSync(join(TEST_DIR, path), content);
+}
 
-	before(async () => {
-		// Clean up previous test
-		if (existsSync(TEST_DIR)) {
-			rmSync(TEST_DIR, { recursive: true, force: true });
+function readProjectJson(path: string) {
+	return JSON.parse(readProject(path));
+}
+
+function writeProjectJson(path: string, data: unknown) {
+	writeProject(path, JSON.stringify(data, null, 2) + "\n");
+}
+
+function randomHex(bytes: number) {
+	return Array.from({ length: bytes }, () => Math.floor(Math.random() * 16).toString(16)).join("");
+}
+
+/** Yield lines from a spawned process until a pattern matches or timeout. */
+async function* processLines(proc: ChildProcess, signal?: AbortSignal) {
+	let buffer = "";
+	const lines: string[] = [];
+	const pending: ((line: string) => void)[] = [];
+
+	function push(chunk: string) {
+		buffer += chunk;
+		const parts = buffer.split("\n");
+		buffer = parts.pop() ?? "";
+		for (const line of parts) {
+			const waiter = pending.shift();
+			if (waiter) {
+				waiter(line);
+			} else {
+				lines.push(line);
+			}
 		}
+	}
 
-		// 1. Clone the Payload with-postgres template (has real version numbers)
-		run("npx", ["--yes", "degit", "payloadcms/payload/templates/with-postgres", TEST_DIR], PLUGIN_ROOT);
-		assert.ok(existsSync(join(TEST_DIR, "package.json")), "Template cloned");
+	proc.stdout?.on("data", (d: Buffer) => push(d.toString()));
+	proc.stderr?.on("data", (d: Buffer) => push(d.toString()));
 
-		// 2. Swap postgres for sqlite (no external DB needed)
-		const pkg = JSON.parse(readFileSync(join(TEST_DIR, "package.json"), "utf8"));
-		delete pkg.dependencies["@payloadcms/db-postgres"];
-		pkg.dependencies["@payloadcms/db-sqlite"] = VERSIONS.payload;
-		writeFileSync(join(TEST_DIR, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
+	while (!signal?.aborted) {
+		const next = lines.shift();
+		if (next !== undefined) {
+			yield next;
+			continue;
+		}
+		const line = await new Promise<string>((resolve, reject) => {
+			pending.push(resolve);
+			signal?.addEventListener("abort", () => reject(signal.reason), {
+				once: true,
+			});
+		});
+		yield line;
+	}
+}
 
-		const configPath = join(TEST_DIR, "src/payload.config.ts");
-		let config = readFileSync(configPath, "utf8");
-		config = config.replace(
+/** Start a dev server, wait for it to print a port, return the port. */
+async function startDevServer(cwd: string): Promise<{ port: number; proc: ChildProcess }> {
+	const pkg = readProjectJson("package.json");
+	const script = pkg.scripts["dev:vinext"] ? "dev:vinext" : "dev";
+
+	const proc = spawn("npm", ["run", script], {
+		cwd,
+		stdio: "pipe",
+		env: { ...process.env, NODE_ENV: "development" },
+	});
+
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(new Error("dev server did not start")), 30_000);
+
+	try {
+		for await (const line of processLines(proc, controller.signal)) {
+			const match = line.match(/localhost:(\d+)/);
+			if (match) {
+				return { port: parseInt(match[1], 10), proc };
+			}
+		}
+	} finally {
+		clearTimeout(timeout);
+	}
+
+	throw new Error("dev server exited without printing a port");
+}
+
+async function assertStatus(port: number, path: string, expected: number[]) {
+	const res = await fetch(`http://localhost:${port}${path}`, { redirect: "manual" });
+	assert.ok(
+		expected.includes(res.status),
+		`GET ${path} expected ${expected.join("|")}, got ${res.status}`,
+	);
+}
+
+// ── Scaffold ───────────────────────────────────────────────────────
+
+function scaffoldProject() {
+	if (existsSync(TEST_DIR)) {
+		rmSync(TEST_DIR, { recursive: true, force: true });
+	}
+
+	// Clone template
+	exec("npx", ["--yes", "degit", "payloadcms/payload/templates/with-postgres", TEST_DIR], PLUGIN_ROOT);
+
+	// Swap postgres → sqlite (no external DB needed)
+	const pkg = readProjectJson("package.json");
+	delete pkg.dependencies["@payloadcms/db-postgres"];
+	pkg.dependencies["@payloadcms/db-sqlite"] = VERSIONS.payload;
+	writeProjectJson("package.json", pkg);
+
+	const config = readProject("src/payload.config.ts")
+		.replace(
 			"import { postgresAdapter } from '@payloadcms/db-postgres'",
 			"import { sqliteAdapter } from '@payloadcms/db-sqlite'",
-		);
-		config = config.replace(
+		)
+		.replace(
 			/db: postgresAdapter\(\{[\s\S]*?\}\),/,
 			"db: sqliteAdapter({ client: { url: 'file:./data/payload.db' } }),",
 		);
-		writeFileSync(configPath, config);
-		mkdirSync(join(TEST_DIR, "data"), { recursive: true });
+	writeProject("src/payload.config.ts", config);
+	mkdirSync(join(TEST_DIR, "data"), { recursive: true });
 
-		// 3. Create .env
-		writeFileSync(
-			join(TEST_DIR, ".env"),
-			`PAYLOAD_SECRET=${Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join("")}\n`,
-		);
+	// Create .env
+	writeProject(".env", `PAYLOAD_SECRET=${randomHex(32)}\n`);
 
-		// 4. Install deps
-		runNpm(["install", "--ignore-scripts"], TEST_DIR);
-		runNpm(["rebuild", "esbuild"], TEST_DIR);
+	// Install deps
+	npm(["install", "--ignore-scripts"]);
+	npm(["rebuild", "esbuild"]);
 
-		// 5. Install vinext + vite (pinned versions)
-		runNpm(
-			[
-				"install",
-				"-D",
-				`vinext@${VERSIONS.vinext}`,
-				`vite@${VERSIONS.vite}`,
-				`@vitejs/plugin-rsc@${VERSIONS.pluginRsc}`,
-				`@vitejs/plugin-react@${VERSIONS.pluginReact}`,
-				"--legacy-peer-deps",
-			],
-			TEST_DIR,
-		);
+	// Install vinext + vite (pinned)
+	npm([
+		"install",
+		"-D",
+		`vinext@${VERSIONS.vinext}`,
+		`vite@${VERSIONS.vite}`,
+		`@vitejs/plugin-rsc@${VERSIONS.pluginRsc}`,
+		`@vitejs/plugin-react@${VERSIONS.pluginReact}`,
+		"--legacy-peer-deps",
+	]);
 
-		// 6. Run vinext init
-		run("npx", ["vinext", "init"], TEST_DIR);
-		assert.ok(existsSync(join(TEST_DIR, "vite.config.ts")), "vinext init created vite.config.ts");
+	// Run vinext init
+	npx(["vinext", "init"]);
 
-		// 7. Install our plugin (from local)
-		runNpm(["install", "-D", PLUGIN_ROOT, "--legacy-peer-deps"], TEST_DIR);
+	// Install our plugin from local source
+	npm(["install", "-D", PLUGIN_ROOT, "--legacy-peer-deps"]);
+}
 
-		// 8. Run our init
-		const initOutput = run("npx", ["vite-plugin-vinext-payload", "init"], TEST_DIR);
-		console.log("init output:", initOutput);
+// ── Tests ──────────────────────────────────────────────────────────
 
-		// 9. Generate import map
-		run("npx", ["payload", "generate:importmap"], TEST_DIR);
+describe("e2e: payload + vinext migration", { timeout: 600_000 }, () => {
+	let server: { port: number; proc: ChildProcess } | null = null;
+
+	before(() => {
+		scaffoldProject();
+
+		// Run our init
+		const output = npx(["vite-plugin-vinext-payload", "init"]);
+		console.log(output);
+
+		// Generate import map
+		npx(["payload", "generate:importmap"]);
 	});
 
 	after(async () => {
-		if (devServer) {
-			devServer.kill("SIGTERM");
-			await sleep(1000);
-			devServer.kill("SIGKILL");
-			devServer = null;
-		}
+		server?.proc.kill("SIGTERM");
+		await sleep(1000);
+		server?.proc.kill("SIGKILL");
+		server = null;
+
 		if (existsSync(TEST_DIR)) {
 			rmSync(TEST_DIR, { recursive: true, force: true });
 		}
 	});
 
-	it("init creates serverFunction.ts", () => {
-		assert.ok(
-			existsSync(join(TEST_DIR, "src/app/(payload)/serverFunction.ts")),
-			"serverFunction.ts should exist",
-		);
+	it("creates serverFunction.ts", () => {
+		assert.ok(existsSync(join(TEST_DIR, "src/app/(payload)/serverFunction.ts")));
 	});
 
-	it("init adds payloadPlugin to vite.config.ts", () => {
-		const config = readFileSync(join(TEST_DIR, "vite.config.ts"), "utf8");
-		assert.ok(config.includes("payloadPlugin"), "vite.config.ts should contain payloadPlugin");
-		assert.ok(
-			config.includes("vite-plugin-vinext-payload"),
-			"vite.config.ts should import from vite-plugin-vinext-payload",
-		);
+	it("adds payloadPlugin to vite.config.ts", () => {
+		const config = readProject("vite.config.ts");
+		assert.ok(config.includes("payloadPlugin"));
+		assert.ok(config.includes("vite-plugin-vinext-payload"));
 	});
 
-	it("init adds normalizeParams to page.tsx", () => {
-		const page = readFileSync(
-			join(TEST_DIR, "src/app/(payload)/admin/[[...segments]]/page.tsx"),
-			"utf8",
-		);
-		assert.ok(page.includes("normalizeParams"), "page.tsx should contain normalizeParams");
+	it("adds normalizeParams to page.tsx", () => {
+		const page = readProject("src/app/(payload)/admin/[[...segments]]/page.tsx");
+		assert.ok(page.includes("normalizeParams"));
 	});
 
-	it("init is idempotent", () => {
-		const output = run("npx", ["vite-plugin-vinext-payload", "init"], TEST_DIR);
-		assert.ok(output.includes("0 file(s) changed"), "Second run should change 0 files");
+	it("is idempotent", () => {
+		const output = npx(["vite-plugin-vinext-payload", "init"]);
+		assert.ok(output.includes("0 file(s) changed"));
 	});
 
-	it("dev server starts and responds", async () => {
-		// Find the dev script vinext created
-		const pkg = JSON.parse(readFileSync(join(TEST_DIR, "package.json"), "utf8"));
-		const devScript = pkg.scripts["dev:vinext"] ? "dev:vinext" : "dev";
+	it("dev server responds on / and /admin", async () => {
+		server = await startDevServer(TEST_DIR);
 
-		devServer = spawn("npm", ["run", devScript], {
-			cwd: TEST_DIR,
-			stdio: "pipe",
-			env: { ...process.env, NODE_ENV: "development" },
-		});
-
-		// Capture output to find the port
-		let output = "";
-		devServer.stdout?.on("data", (d: Buffer) => {
-			output += d.toString();
-		});
-		devServer.stderr?.on("data", (d: Buffer) => {
-			output += d.toString();
-		});
-
-		// Wait for server to be ready (look for the URL in output)
-		const startTime = Date.now();
-		while (Date.now() - startTime < 30_000) {
-			const match = output.match(/localhost:(\d+)/);
-			if (match) {
-				devPort = parseInt(match[1], 10);
-				break;
-			}
-			await sleep(500);
-		}
-
-		assert.ok(devPort, `Dev server should print a port. Output: ${output.slice(0, 500)}`);
-
-		// Wait for first request to compile
+		// First request triggers compilation — give it time
 		await sleep(5000);
 
-		// Test homepage
-		const homeRes = await fetch(`http://localhost:${devPort}/`);
-		assert.equal(homeRes.status, 200, "GET / should return 200");
-
-		// Test admin redirect
-		const adminRes = await fetch(`http://localhost:${devPort}/admin`, { redirect: "manual" });
-		assert.ok(
-			[200, 307, 302].includes(adminRes.status),
-			`GET /admin should return 200 or redirect, got ${adminRes.status}`,
-		);
+		await assertStatus(server.port, "/", [200]);
+		await assertStatus(server.port, "/admin", [200, 302, 307]);
 	});
 });

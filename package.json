@@ -27,7 +27,7 @@
 		"fmt:check": "oxfmt --check src bin",
 		"lint": "oxlint src bin",
 		"preversion": "npm run lint && npm run fmt:check",
-		"test": "node --test test/e2e.test.ts",
+		"test": "node --test test/init.test.ts",
 		"test:e2e": "node --test test/e2e.test.ts"
 	},
 	"dependencies": {

@@ -37,9 +37,7 @@ npm run dev
 
 Swap `@payloadcms/db-postgres` for `@payloadcms/db-sqlite` in your dependencies and update `payload.config.ts` accordingly.
 
-## Cloudflare D1
-
-### Starting fresh
+### Cloudflare D1
 
 ```sh
 npx degit payloadcms/payload/templates/with-cloudflare-d1 my-project
@@ -50,11 +48,13 @@ npm install -D vite-plugin-vinext-payload
 npx vite-plugin-vinext-payload init
 ```
 
-Then apply the steps below to `payload.config.ts` and run `npm run dev`.
+Then apply the [Cloudflare D1 payload.config.ts changes](#cloudflare-d1-payloadconfigts) and run `npm run dev`.
 
-### Migrating `payload.config.ts`
+---
 
-If migrating from the `with-cloudflare-d1` template (or any OpenNext-based Payload + Cloudflare setup):
+## Cloudflare D1 `payload.config.ts`
+
+If migrating from the `with-cloudflare-d1` template (or any OpenNext-based Payload + Cloudflare setup), update `payload.config.ts`:
 
 **Step 1: Remove OpenNext imports**
 

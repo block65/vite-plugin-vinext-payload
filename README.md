@@ -1,21 +1,22 @@
 # vite-plugin-vinext-payload
 
-> **Experimental.** As with `vinext` itself, this project is experimental and was built mostly with AI assistance. Use at your own risk.
+Vite plugin for running [Payload CMS](https://payloadcms.com/) with [vinext](https://github.com/cloudflare/vinext) (Cloudflare's Vite-based re-implementation of Next.js).
 
-Vite plugin for running [Payload CMS](https://payloadcms.com/) with [vinext](https://github.com/cloudflare/vinext).
-
-Payload CMS assumes a Next.js/webpack environment. This plugin handles the CJS interop, module resolution, optimizeDeps configuration, and server action fixes needed to run Payload on Vite.
+> **Experimental.** Both vinext and this plugin are experimental. Tested with Payload 3.77.0, vinext 0.0.31, and Vite 7. Vite 8 is not yet supported.
 
 ## Migrating from Next.js
 
 If you have an existing Payload CMS project on Next.js:
 
 ```sh
-vinext init                                    # Convert Next.js → vinext
+npm install -D vinext vite             # Install vinext
+npx vinext init                        # Convert Next.js → vinext
 npm install -D vite-plugin-vinext-payload
-npx vite-plugin-vinext-payload init            # Apply Payload-specific fixes
+npx vite-plugin-vinext-payload init    # Apply Payload-specific fixes
 npm run dev
 ```
+
+> **Note:** `vinext init` runs `npm install` internally. If you hit peer dependency conflicts (common with `@vitejs/plugin-react`), run `npm install -D vinext vite --legacy-peer-deps` before `npx vinext init`.
 
 The `init` command is idempotent — safe to run multiple times. It:
 
@@ -24,6 +25,8 @@ The `init` command is idempotent — safe to run multiple times. It:
 - Adds `normalizeParams` to the admin page (fixes `/admin` 404)
 
 Use `--dry-run` to preview changes without writing files.
+
+For Cloudflare D1 projects, see **[SETUP.md](SETUP.md)** for additional configuration.
 
 ## Quick Start
 
@@ -79,7 +82,6 @@ import {
 	payloadCjsTransform,
 	payloadCliStubs,
 	payloadServerActionFix,
-	payloadCjsInteropDeps,
 } from "vite-plugin-vinext-payload";
 
 export default defineConfig({
@@ -94,6 +96,13 @@ export default defineConfig({
 });
 ```
 
+## Requirements
+
+- Node.js >= 24
+- Vite 6 or 7 (Vite 8 is not yet supported)
+- vinext 0.0.31+
+- Payload CMS 3.x
+
 ## Why This Exists
 
 Payload CMS is built on Next.js and relies heavily on CJS packages and Node.js module resolution. When running on Vite via vinext, several things break:
@@ -105,8 +114,6 @@ Payload CMS is built on Next.js and relies heavily on CJS packages and Node.js m
 - Per-environment `optimizeDeps` configuration is needed because vinext creates separate client, SSR, and RSC environments
 
 This plugin handles all of that so your `vite.config.ts` stays clean.
-
-For detailed manual setup steps and Cloudflare D1 configuration, see **[SETUP.md](SETUP.md)**.
 
 ## License
 

@@ -391,8 +391,17 @@ export async function init(options: InitOptions) {
 		);
 	}
 
-	const pkg = JSON.parse(pkgContent);
-	const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+	let pkg: Record<string, unknown>;
+	try {
+		pkg = JSON.parse(pkgContent);
+	} catch {
+		throw new InitError("package.json contains invalid JSON.");
+	}
+
+	const allDeps = {
+		...(pkg.dependencies as Record<string, string> | undefined),
+		...(pkg.devDependencies as Record<string, string> | undefined),
+	};
 
 	if (!allDeps.payload) {
 		throw new InitError(

@@ -26,7 +26,7 @@ The plugin's `init` command is idempotent — safe to run multiple times. It:
 
 Use `--dry-run` to preview changes without writing files.
 
-For Cloudflare D1 projects, see **[SETUP.md](SETUP.md)** for additional configuration.
+For Cloudflare D1 projects, see **[Cloudflare D1 guide](docs/cloudflare-d1.md)** for additional configuration.
 
 ## Quick Start
 

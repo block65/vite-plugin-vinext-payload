@@ -2,7 +2,7 @@
 
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { dedent } from "../src/dedent.ts";
+import { dedent } from "../src/dedent.js";
 
 const { values, positionals } = parseArgs({
 	allowPositionals: true,
@@ -33,7 +33,7 @@ switch (true) {
 		break;
 
 	case command === "init": {
-		const { init, InitError } = await import("./init.ts");
+		const { init, InitError } = await import("./init.js");
 		try {
 			await init({ cwd: resolve(values.cwd), dryRun: values["dry-run"] });
 		} catch (e) {

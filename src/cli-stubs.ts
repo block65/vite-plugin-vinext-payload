@@ -1,5 +1,5 @@
 import type { Plugin } from "vite";
-import { dedent } from "./dedent.ts";
+import { dedent } from "./dedent.js";
 
 const STUB_PREFIX = "\0payload-stub:";
 

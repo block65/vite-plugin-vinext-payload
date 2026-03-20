@@ -1,8 +1,8 @@
 /**
- * `vite-plugin-payload init`
+ * `vite-plugin-vinext-payload init`
  *
  * Applies Payload-specific fixes to a vinext project.
- * Run this after `vinext init` and `pnpm add vite-plugin-payload`.
+ * Run this after `vinext init` and `npm install -D vite-plugin-vinext-payload`.
  *
  * Transforms:
  * 1. Adds payloadPlugin() to vite.config.ts
@@ -52,7 +52,7 @@ const SERVER_FUNCTION_TS = dedent`
 
 const LAYOUT_TSX = dedent`
   /* THIS FILE WAS GENERATED AUTOMATICALLY BY PAYLOAD. */
-  /* Modified by vite-plugin-payload: extracted serverFunction to separate
+  /* Modified by vite-plugin-vinext-payload: extracted serverFunction to separate
      'use server' module for Vite RSC compatibility. */
   import config from '@payload-config'
   import '@payloadcms/next/css'
@@ -78,7 +78,7 @@ const LAYOUT_TSX = dedent`
 
 const PAGE_TSX = dedent`
   /* THIS FILE WAS GENERATED AUTOMATICALLY BY PAYLOAD. */
-  /* Modified by vite-plugin-payload: normalize empty segments for vinext. */
+  /* Modified by vite-plugin-vinext-payload: normalize empty segments for vinext. */
   import type { Metadata } from 'next'
 
   import config from '@payload-config'
@@ -178,7 +178,7 @@ function addPayloadPluginToViteConfig({ cwd, dryRun }: InitOptions): Result {
 	const lastImportEnd = lastImport.range().end.index;
 	// Match quote style from existing imports
 	const quote = lastImport.text().includes("'") ? "'" : '"';
-	const importLine = `\nimport { payloadPlugin } from ${quote}vite-plugin-payload${quote};`;
+	const importLine = `\nimport { payloadPlugin } from ${quote}vite-plugin-vinext-payload${quote};`;
 
 	// Detect indentation: use vinext()'s indentation, or infer from the array
 	const vinextRange = vinextCall.range();
@@ -394,7 +394,7 @@ export async function init(options: InitOptions) {
 		console.log("Dry run — no files will be modified.\n");
 	}
 
-	console.log("Initializing vite-plugin-payload...\n");
+	console.log("Initializing vite-plugin-vinext-payload...\n");
 
 	const results: Result[] = [
 		addPayloadPluginToViteConfig(options),
@@ -419,8 +419,8 @@ export async function init(options: InitOptions) {
 
 	if (changed.length > 0 && !dryRun) {
 		console.log("\nNext steps:");
-		console.log("  1. pnpm install");
-		console.log("  2. pnpm payload generate:importmap");
-		console.log("  3. pnpm dev");
+		console.log("  1. npm install");
+		console.log("  2. npx payload generate:importmap");
+		console.log("  3. npm run dev");
 	}
 }

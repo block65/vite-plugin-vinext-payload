@@ -1,10 +1,18 @@
 {
-	"name": "vite-plugin-payload",
+	"name": "vite-plugin-vinext-payload",
 	"version": "0.0.1",
 	"description": "Vite plugin for running Payload CMS with vinext",
 	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/block65/vite-plugin-vinext-payload.git"
+	},
+	"bugs": {
+		"url": "https://github.com/block65/vite-plugin-vinext-payload/issues"
+	},
+	"homepage": "https://github.com/block65/vite-plugin-vinext-payload#readme",
 	"bin": {
-		"vite-plugin-payload": "./bin/main.js"
+		"vite-plugin-vinext-payload": "./bin/main.js"
 	},
 	"files": [
 		"src",
@@ -34,5 +42,9 @@
 	},
 	"engines": {
 		"node": ">=24"
+	},
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
 	}
 }

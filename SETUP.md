@@ -8,16 +8,16 @@ Guide for migrating an existing Payload CMS project from Next.js to vinext, or s
 
 ```sh
 vinext init                          # Convert Next.js → vinext
-pnpm add vite-plugin-payload
-npx vite-plugin-payload init         # Apply Payload-specific fixes
-pnpm dev
+npm install -D vite-plugin-vinext-payload
+npx vite-plugin-vinext-payload init  # Apply Payload-specific fixes
+npm run dev
 ```
 
 The `init` command handles everything: adds the plugin to your Vite config, extracts the server function, fixes the admin page, and wires up the config paths. It's idempotent — run it again after updating Payload or regenerating files.
 
 Use `--dry-run` to preview changes.
 
-### What `vite-plugin-payload init` does
+### What `vite-plugin-vinext-payload init` does
 
 Applies Payload-specific fixes for vinext compatibility:
 
@@ -57,13 +57,16 @@ The `/* @vite-ignore */` comment prevents Vite from trying to resolve `cloudflar
 
 ## Starting Fresh
 
-Use the [payload-d1-vinext](../payload-d1-vinext/) demo as a template:
+Start from the official [Payload CMS Cloudflare D1 template](https://github.com/payloadcms/payload/tree/main/templates/with-cloudflare-d1):
 
 ```sh
-cp -r payload-d1-vinext my-project
+npx degit payloadcms/payload/templates/with-cloudflare-d1 my-project
 cd my-project
-pnpm install
-pnpm dev
+npm install
+vinext init
+npm install -D vite-plugin-vinext-payload
+npx vite-plugin-vinext-payload init
+npm run dev
 ```
 
 Visit `http://localhost:5173/admin` to create your first user.

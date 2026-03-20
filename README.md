@@ -1,4 +1,6 @@
-# vite-plugin-payload
+# vite-plugin-vinext-payload
+
+> **Experimental.** As with `vinext` itself, this project is experimental and was built mostly with AI assistance. Use at your own risk.
 
 Vite plugin for running [Payload CMS](https://payloadcms.com/) with [vinext](https://github.com/cloudflare/vinext).
 
@@ -9,10 +11,10 @@ Payload CMS assumes a Next.js/webpack environment. This plugin handles the CJS i
 If you have an existing Payload CMS project on Next.js:
 
 ```sh
-vinext init                          # Convert Next.js → vinext
-pnpm add vite-plugin-payload
-npx vite-plugin-payload init         # Apply Payload-specific fixes
-pnpm dev
+vinext init                                    # Convert Next.js → vinext
+npm install -D vite-plugin-vinext-payload
+npx vite-plugin-vinext-payload init            # Apply Payload-specific fixes
+npm run dev
 ```
 
 The `init` command is idempotent — safe to run multiple times. It:
@@ -31,7 +33,7 @@ If you've already run `init`, or are setting up manually:
 // vite.config.ts
 import { defineConfig } from "vite";
 import vinext from "vinext";
-import { payloadPlugin } from "vite-plugin-payload";
+import { payloadPlugin } from "vite-plugin-vinext-payload";
 
 export default defineConfig({
 	plugins: [vinext(), payloadPlugin()],
@@ -81,7 +83,7 @@ import {
 	payloadCliStubs,
 	payloadServerActionFix,
 	payloadCjsInteropDeps,
-} from "vite-plugin-payload";
+} from "vite-plugin-vinext-payload";
 
 export default defineConfig({
 	plugins: [

@@ -17,7 +17,7 @@ const command = positionals[0];
 if (values.help || !command) {
 	console.log(
 		`
-Usage: vite-plugin-payload <command> [options]
+Usage: vite-plugin-vinext-payload <command> [options]
 
 Commands:
   init          Apply Payload-specific fixes for vinext compatibility

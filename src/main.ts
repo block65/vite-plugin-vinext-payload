@@ -1,5 +1,5 @@
 /**
- * vite-plugin-payload
+ * vite-plugin-vinext-payload
  *
  * Vite plugin for running Payload CMS with vinext.
  *
@@ -9,7 +9,7 @@
  * @example
  * ```ts
  * // Batteries-included
- * import { payloadPlugin } from "vite-plugin-payload";
+ * import { payloadPlugin } from "vite-plugin-vinext-payload";
  *
  * export default defineConfig({
  *   plugins: [vinext(), payloadPlugin()],
@@ -19,7 +19,7 @@
  * @example
  * ```ts
  * // À la carte
- * import { payloadConfigAlias, payloadCliStubs } from "vite-plugin-payload";
+ * import { payloadConfigAlias, payloadCliStubs } from "vite-plugin-vinext-payload";
  *
  * export default defineConfig({
  *   plugins: [vinext(), payloadConfigAlias(), payloadCliStubs()],

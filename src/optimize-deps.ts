@@ -28,7 +28,9 @@ const OPTIMIZE_DEPS_EXCLUDE = [
  *
  * WORKAROUND for vinext#581 (clientReferenceDedupPlugin maps files to
  * package root) and vinext#409 (module duplication between RSC refs and
- * pre-bundled paths). Remove once vinext resolves these issues.
+ * pre-bundled paths). The real fix is tracked upstream in
+ * vitejs/vite-plugin-react#775 (@vitejs/plugin-rsc 3rd party compat).
+ * Remove once that lands.
  */
 const CLIENT_OPTIMIZE_DEPS_EXCLUDE = [
 	"@payloadcms/storage-r2",

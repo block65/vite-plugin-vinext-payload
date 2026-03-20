@@ -17,8 +17,6 @@ const SSR_EXTERNAL = [
 	"pino",
 	"wrangler",
 	"miniflare",
-	// Workers runtime built-in — not resolvable by Vite's dependency scanner.
-	"cloudflare:workers",
 	// Native addon — CJS with circular TDZ issues under Vite's module runner.
 	"sharp",
 	// CJS packages that need Node.js native interop — externalizing is
@@ -42,7 +40,12 @@ export function payloadConfigAlias(
 		config() {
 			return {
 				ssr: {
-					external: ssrExternals,
+					external: [...ssrExternals, "cloudflare:workers"],
+				},
+				build: {
+					rollupOptions: {
+						external: ["cloudflare:workers"],
+					},
 				},
 			} satisfies UserConfig;
 		},

@@ -27,29 +27,18 @@ Use `--dry-run` to preview changes.
 
 ### SQLite
 
-Payload doesn't ship a SQLite template, so start from the Postgres template and swap the adapter:
+Use any Payload template. For example with SQLite:
 
 ```sh
-npx degit payloadcms/payload/templates/with-postgres my-project
+npx create-payload-app my-project
 cd my-project
-npm install
-npm install @payloadcms/db-sqlite && npm uninstall @payloadcms/db-postgres
 vinext init
 npm install -D vite-plugin-vinext-payload
 npx vite-plugin-vinext-payload init
+npm run dev
 ```
 
-Then update `payload.config.ts` — replace `postgresAdapter` with `sqliteAdapter`:
-
-```diff
-- import { postgresAdapter } from "@payloadcms/db-postgres";
-+ import { sqliteAdapter } from "@payloadcms/db-sqlite";
-
-- db: postgresAdapter({ pool: { connectionString: process.env.DATABASE_URL } }),
-+ db: sqliteAdapter({ client: { url: "file:./data/payload.db" } }),
-```
-
-Run `npm run dev` and visit `http://localhost:5173/admin`.
+Visit `http://localhost:5173/admin`.
 
 ### Cloudflare D1
 

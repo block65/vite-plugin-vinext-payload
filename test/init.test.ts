@@ -1,39 +1,16 @@
 /**
  * Unit tests for `vite-plugin-vinext-payload init`.
- *
  * Uses a minimal mock project directory — no npm install, no network.
- * These run in milliseconds.
  */
 
 import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, writeFile, mkdir, rm, access } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { init } from "../bin/init.ts";
+import { createProjectHelpers, scaffoldMockProject, FIXTURES } from "./helpers.ts";
 
 const TEST_DIR = join(import.meta.dirname, ".mock-project");
-
-function exists(path: string) {
-	return access(path)
-		.then(() => true)
-		.catch(() => false);
-}
-
-async function write(relative: string, content: string) {
-	const full = join(TEST_DIR, relative);
-	await mkdir(dirname(full), { recursive: true });
-	await writeFile(full, content);
-}
-
-const read = (relative: string) => readFile(join(TEST_DIR, relative), "utf8");
-
-async function cleanup() {
-	if (await exists(TEST_DIR)) {
-		await rm(TEST_DIR, { recursive: true, force: true });
-	}
-}
-
-// ── Capture init output ────────────────────────────────────────────
+const { read, write, exists, cleanup } = createProjectHelpers(TEST_DIR);
 
 async function runInit(dryRun = false) {
 	const logs: string[] = [];
@@ -47,128 +24,9 @@ async function runInit(dryRun = false) {
 	return logs.join("\n");
 }
 
-// ── Fixtures ───────────────────────────────────────────────────────
-
-const PACKAGE_JSON = JSON.stringify(
-	{
-		name: "test-project",
-		dependencies: { payload: "^3.77.0" },
-		devDependencies: { vinext: "^0.0.31" },
-	},
-	null,
-	2,
-);
-
-const VITE_CONFIG_SINGLE_LINE = `import vinext from "vinext";
-import { defineConfig } from "vite";
-
-export default defineConfig({
-  plugins: [vinext()],
-});
-`;
-
-const VITE_CONFIG_MULTI_LINE = `import { defineConfig } from "vite";
-import vinext from "vinext";
-
-export default defineConfig({
-  plugins: [
-    vinext(),
-  ],
-});
-`;
-
-const VITE_CONFIG_TABS = `import { defineConfig } from 'vite';
-import vinext from 'vinext';
-
-export default defineConfig({
-\tplugins: [
-\t\tvinext(),
-\t],
-});
-`;
-
-const ORIGINAL_LAYOUT = `/* THIS FILE WAS GENERATED AUTOMATICALLY BY PAYLOAD. */
-/* DO NOT MODIFY IT BECAUSE IT COULD BE REWRITTEN AT ANY TIME. */
-import config from '@payload-config'
-import '@payloadcms/next/css'
-import type { ServerFunctionClient } from 'payload'
-import { handleServerFunctions, RootLayout } from '@payloadcms/next/layouts'
-import React from 'react'
-
-import { importMap } from './admin/importMap.js'
-import './custom.scss'
-
-type Args = {
-  children: React.ReactNode
+function scaffold(viteConfig?: string) {
+	return scaffoldMockProject(TEST_DIR, viteConfig);
 }
-
-const serverFunction: ServerFunctionClient = async function (args) {
-  'use server'
-  return handleServerFunctions({
-    ...args,
-    config,
-    importMap,
-  })
-}
-
-const Layout = ({ children }: Args) => (
-  <RootLayout config={config} importMap={importMap} serverFunction={serverFunction}>
-    {children}
-  </RootLayout>
-)
-
-export default Layout
-`;
-
-const ORIGINAL_PAGE = `/* THIS FILE WAS GENERATED AUTOMATICALLY BY PAYLOAD. */
-/* DO NOT MODIFY IT BECAUSE IT COULD BE REWRITTEN AT ANY TIME. */
-import type { Metadata } from 'next'
-
-import config from '@payload-config'
-import { RootPage, generatePageMetadata } from '@payloadcms/next/views'
-import { importMap } from '../importMap'
-
-type Args = {
-  params: Promise<{
-    segments: string[]
-  }>
-  searchParams: Promise<{
-    [key: string]: string | string[]
-  }>
-}
-
-export const generateMetadata = ({ params, searchParams }: Args): Promise<Metadata> =>
-  generatePageMetadata({ config, params, searchParams })
-
-const Page = ({ params, searchParams }: Args) =>
-  RootPage({ config, params, searchParams, importMap })
-
-export default Page
-`;
-
-const TSCONFIG = JSON.stringify(
-	{
-		compilerOptions: {
-			paths: { "@payload-config": ["./src/payload.config.ts"] },
-		},
-	},
-	null,
-	2,
-);
-
-// ── Scaffold ───────────────────────────────────────────────────────
-
-async function scaffold(viteConfig = VITE_CONFIG_SINGLE_LINE) {
-	await cleanup();
-	await mkdir(TEST_DIR, { recursive: true });
-	await write("package.json", PACKAGE_JSON);
-	await write("vite.config.ts", viteConfig);
-	await write("tsconfig.json", TSCONFIG);
-	await write("src/app/(payload)/layout.tsx", ORIGINAL_LAYOUT);
-	await write("src/app/(payload)/admin/[[...segments]]/page.tsx", ORIGINAL_PAGE);
-}
-
-// ── Tests ──────────────────────────────────────────────────────────
 
 describe("init: file transforms", () => {
 	after(cleanup);
@@ -188,7 +46,6 @@ describe("init: file transforms", () => {
 
 		const layout = await read("src/app/(payload)/layout.tsx");
 		assert.ok(layout.includes("from './serverFunction.js'"));
-		// The directive appears on its own line, not inside a comment
 		assert.ok(
 			!layout.match(/^\s*'use server'\s*;?\s*$/m),
 			"layout should not have inline 'use server' directive",
@@ -215,7 +72,7 @@ describe("init: vite.config.ts styles", () => {
 	after(cleanup);
 
 	it("handles single-line plugins array", async () => {
-		await scaffold(VITE_CONFIG_SINGLE_LINE);
+		await scaffold(FIXTURES.viteConfigSingleLine);
 		await runInit();
 
 		const config = await read("vite.config.ts");
@@ -223,7 +80,7 @@ describe("init: vite.config.ts styles", () => {
 	});
 
 	it("handles multi-line plugins array", async () => {
-		await scaffold(VITE_CONFIG_MULTI_LINE);
+		await scaffold(FIXTURES.viteConfigMultiLine);
 		await runInit();
 
 		const config = await read("vite.config.ts");
@@ -234,7 +91,7 @@ describe("init: vite.config.ts styles", () => {
 	});
 
 	it("handles tabs and single quotes", async () => {
-		await scaffold(VITE_CONFIG_TABS);
+		await scaffold(FIXTURES.viteConfigTabs);
 		await runInit();
 
 		const config = await read("vite.config.ts");
@@ -291,9 +148,9 @@ describe("init: edge cases", () => {
 		await runInit(true);
 
 		const config = await read("vite.config.ts");
-		assert.equal(config, VITE_CONFIG_SINGLE_LINE);
-		assert.ok(!(await exists(join(TEST_DIR, "src/app/(payload)/serverFunction.ts"))));
+		assert.equal(config, FIXTURES.viteConfigSingleLine);
+		assert.ok(!(await exists("src/app/(payload)/serverFunction.ts")));
 		const page = await read("src/app/(payload)/admin/[[...segments]]/page.tsx");
-		assert.equal(page, ORIGINAL_PAGE);
+		assert.equal(page, FIXTURES.originalPage);
 	});
 });

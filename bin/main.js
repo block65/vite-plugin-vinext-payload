@@ -32,8 +32,16 @@ Options:
 }
 
 if (command === "init") {
-	const { init } = await import("./init.ts");
-	await init({ cwd: resolve(values.cwd), dryRun: values["dry-run"] });
+	const { init, InitError } = await import("./init.ts");
+	try {
+		await init({ cwd: resolve(values.cwd), dryRun: values["dry-run"] });
+	} catch (e) {
+		if (e instanceof InitError) {
+			console.error(e.message);
+			process.exit(1);
+		}
+		throw e;
+	}
 } else {
 	console.error(`Unknown command: ${command}`);
 	process.exit(1);

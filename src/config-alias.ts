@@ -49,8 +49,11 @@ export function payloadConfigAlias(
 		// configEnvironment runs per-environment AFTER all environments are
 		// created (including those added by vite-plugin-cloudflare for RSC).
 		// The earlier `config` hook can't see those environments yet.
+		// Only apply resolve.external to vinext's server environments (ssr, rsc).
+		// Skip client and any other environments (e.g. Cloudflare Worker targets
+		// created by @cloudflare/vite-plugin which reject resolve.external).
 		configEnvironment(name, config) {
-			if (name === "client") {
+			if (name !== "ssr" && name !== "rsc") {
 				return;
 			}
 			return {

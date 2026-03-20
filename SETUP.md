@@ -37,7 +37,7 @@ npm run dev
 
 Swap `@payloadcms/db-postgres` for `@payloadcms/db-sqlite` in your dependencies and update `payload.config.ts` accordingly.
 
-### Cloudflare D1
+### Cloudflare D1 template
 
 ```sh
 npx degit payloadcms/payload/templates/with-cloudflare-d1 my-project

@@ -15,33 +15,39 @@ const { values, positionals } = parseArgs({
 
 const [command] = positionals;
 
-if (values.help || !command) {
-	console.log(
-		dedent`
-			Usage: vite-plugin-vinext-payload <command> [options]
+switch (true) {
+	case values.help || !command:
+		console.log(
+			dedent`
+				Usage: vite-plugin-vinext-payload <command> [options]
 
-			Commands:
-				init          Apply Payload-specific fixes for vinext compatibility
+				Commands:
+					init          Apply Payload-specific fixes for vinext compatibility
 
-			Options:
-				--dry-run     Show what would change without writing files
-				--cwd <path>  Project directory (default: .)
-				-h, --help    Show this help
-			`,
-	);
-	process.exitCode = 0;
-} else if (command === "init") {
-	const { init, InitError } = await import("./init.ts");
-	try {
-		await init({ cwd: resolve(values.cwd), dryRun: values["dry-run"] });
-	} catch (e) {
-		if (e instanceof InitError) {
-			console.error(e.message);
-			process.exitCode = 1;
+				Options:
+					--dry-run     Show what would change without writing files
+					--cwd <path>  Project directory (default: .)
+					-h, --help    Show this help
+				`,
+		);
+		break;
+
+	case command === "init": {
+		const { init, InitError } = await import("./init.ts");
+		try {
+			await init({ cwd: resolve(values.cwd), dryRun: values["dry-run"] });
+		} catch (e) {
+			if (e instanceof InitError) {
+				console.error(e.message);
+				process.exitCode = 1;
+				break;
+			}
+			throw e;
 		}
-		throw e;
+		break;
 	}
-} else {
-	console.error(`Unknown command: ${command}`);
-	process.exitCode = 1;
+
+	default:
+		console.error(`Unknown command: ${command}`);
+		process.exitCode = 1;
 }

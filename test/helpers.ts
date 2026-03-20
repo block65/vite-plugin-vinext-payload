@@ -175,7 +175,7 @@ export default Page
 /** Scaffold a minimal mock Payload project for unit tests. */
 export async function scaffoldMockProject(
 	testDir: string,
-	viteConfig = FIXTURES.viteConfigSingleLine,
+	viteConfig: string = FIXTURES.viteConfigSingleLine,
 ) {
 	const { write, cleanup } = createProjectHelpers(testDir);
 	await cleanup();
@@ -184,4 +184,152 @@ export async function scaffoldMockProject(
 	await write("tsconfig.json", FIXTURES.tsconfig);
 	await write("src/app/(payload)/layout.tsx", FIXTURES.originalLayout);
 	await write("src/app/(payload)/admin/[[...segments]]/page.tsx", FIXTURES.originalPage);
+}
+
+/** Install vinext + vite + plugin into a test project. */
+export async function installVinextStack(
+	helpers: ReturnType<typeof createProjectHelpers>,
+	pluginRoot: string,
+) {
+	await helpers.npm(["install", "--ignore-scripts"]);
+	await helpers.npm(["rebuild", "esbuild"]);
+	await helpers.npm([
+		"install", "-D",
+		`vinext@${VERSIONS.vinext}`,
+		`vite@${VERSIONS.vite}`,
+		`@vitejs/plugin-rsc@${VERSIONS.pluginRsc}`,
+		`@vitejs/plugin-react@${VERSIONS.pluginReact}`,
+		"--legacy-peer-deps",
+	]);
+	await helpers.npx(["vinext", "init"]);
+	await helpers.npm(["install", "-D", pluginRoot, "--legacy-peer-deps"]);
+}
+
+/**
+ * Rewrite payload.config.ts to replace OpenNext cloudflare context
+ * with getCloudflareEnv. Uses ast-grep for structural matching.
+ */
+export async function rewritePayloadConfigForVinext(
+	helpers: ReturnType<typeof createProjectHelpers>,
+) {
+	const { parse, Lang } = await import("@ast-grep/napi");
+	const configPath = "src/payload.config.ts";
+	const code = await helpers.read(configPath);
+	const root = parse(Lang.TypeScript, code).root();
+
+	// Collect edits as {start, end, replacement}, apply bottom-up
+	const edits: { start: number; end: number; replacement: string }[] = [];
+
+	function removeNode(node: ReturnType<typeof root.find>, includeTrailingNewline = true) {
+		if (!node) {
+			return;
+		}
+		const r = node.range();
+		const end = includeTrailingNewline
+			? (code.indexOf("\n", r.end.index) + 1 || r.end.index)
+			: r.end.index;
+		edits.push({ start: r.start.index, end, replacement: "" });
+	}
+
+	// 1. Remove @opennextjs/cloudflare import
+	removeNode(root.find({
+		rule: { kind: "import_statement", has: { pattern: "'@opennextjs/cloudflare'", stopBy: "end" } },
+	}));
+
+	// 2. Remove wrangler import (only if it's the GetPlatformProxyOptions one)
+	const wranglerImport = root.find({
+		rule: { kind: "import_statement", has: { pattern: "'wrangler'", stopBy: "end" } },
+	});
+	if (wranglerImport?.text().includes("GetPlatformProxyOptions")) {
+		removeNode(wranglerImport);
+	}
+
+	// 3. Remove fs import
+	removeNode(root.find("import fs from $SRC"));
+
+	// 4. Remove realpath and isCLI declarations
+	removeNode(root.find("const realpath = $INIT"));
+	removeNode(root.find("const isCLI = $INIT"));
+
+	// 5. Replace cloudflare context assignment
+	const cfAssign = root.find("const cloudflare = $INIT");
+	if (cfAssign) {
+		const r = cfAssign.range();
+		const end = code.indexOf("\n", r.end.index) + 1 || r.end.index;
+		edits.push({ start: r.start.index, end, replacement: "const cfEnv = await getCloudflareEnv()\n" });
+	}
+
+	// 6. Replace cloudflare.env.X → cfEnv.X
+	for (const ref of root.findAll("cloudflare.env.$PROP")) {
+		const prop = ref.getMatch("PROP")?.text();
+		if (prop) {
+			const r = ref.range();
+			edits.push({ start: r.start.index, end: r.end.index, replacement: `cfEnv.${prop}` });
+		}
+	}
+
+	// 7. Replace isCLI || !isProduction → !isProduction
+	for (const check of root.findAll("isCLI || !isProduction")) {
+		const r = check.range();
+		edits.push({ start: r.start.index, end: r.end.index, replacement: "!isProduction" });
+	}
+
+	// 8. Remove getCloudflareContextFromWrangler function (+ preceding comments)
+	const wranglerFn = root.find({
+		rule: { kind: "function_declaration", has: { pattern: "getCloudflareContextFromWrangler", stopBy: "end" } },
+	});
+	if (wranglerFn) {
+		let start = wranglerFn.range().start.index;
+		// Walk back over preceding comment lines
+		while (start > 0) {
+			const lineStart = code.lastIndexOf("\n", start - 2) + 1;
+			const line = code.slice(lineStart, start).trim();
+			if (line.startsWith("//")) {
+				start = lineStart;
+			} else {
+				break;
+			}
+		}
+		edits.push({ start, end: code.length, replacement: "" });
+	}
+
+	// Apply edits bottom-up
+	edits.sort((a, b) => b.start - a.start);
+	let result = code;
+	for (const edit of edits) {
+		result = result.slice(0, edit.start) + edit.replacement + result.slice(edit.end);
+	}
+
+	// Add getCloudflareEnv function before export default (if not already present)
+	if (!result.includes("getCloudflareEnv")) {
+		const fn = `\nasync function getCloudflareEnv() {
+  try {
+    const { env } = await import(/* @vite-ignore */ 'cloudflare:workers')
+    return env
+  } catch {
+    const { getPlatformProxy } = await import('wrangler')
+    const proxy = await getPlatformProxy({
+      environment: process.env.CLOUDFLARE_ENV,
+    })
+    return proxy.env
+  }
+}\n\nconst cfEnv = await getCloudflareEnv()\n`;
+		result = result.replace(/(\nexport default)/, fn + "$1");
+	}
+
+	// Clean up consecutive blank lines
+	result = result.replace(/\n{3,}/g, "\n\n");
+
+	await helpers.write(configPath, result);
+}
+
+/** Remove "remote": true from wrangler.jsonc for local dev. */
+export async function fixWranglerForLocalDev(
+	helpers: ReturnType<typeof createProjectHelpers>,
+) {
+	const wrangler = await helpers.read("wrangler.jsonc");
+	await helpers.write(
+		"wrangler.jsonc",
+		wrangler.replace(/"remote"\s*:\s*true,?\n?\s*/g, ""),
+	);
 }

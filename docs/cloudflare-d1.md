@@ -1,10 +1,8 @@
-# Cloudflare D1 Setup
+# Cloudflare Workers + D1 Migration Guide
 
-Additional steps for running Payload CMS on vinext with Cloudflare Workers and D1. Follow the [README](README.md) first, then apply these changes.
+Migrating the official Payload CMS [`with-cloudflare-d1`](https://github.com/payloadcms/payload/tree/main/templates/with-cloudflare-d1) template from OpenNext to vinext.
 
-## Updating `payload.config.ts`
-
-If migrating from the `with-cloudflare-d1` template (or any OpenNext-based Payload + Cloudflare setup):
+Follow the [README](../README.md) first, then apply these changes to `payload.config.ts`.
 
 ### Step 1: Remove OpenNext imports
 

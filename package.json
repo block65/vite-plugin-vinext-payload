@@ -33,6 +33,7 @@
 	},
 	"dependencies": {
 		"@ast-grep/napi": "^0.42.0",
+		"type-fest": "^5.5.0",
 		"vite-plugin-cjs-interop": "^2.4.4"
 	},
 	"devDependencies": {

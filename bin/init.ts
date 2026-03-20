@@ -14,6 +14,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, Lang } from "@ast-grep/napi";
+import type { PackageJson } from "type-fest";
 import { dedent } from "../src/dedent.ts";
 
 interface InitOptions {
@@ -391,17 +392,14 @@ export async function init(options: InitOptions) {
 		);
 	}
 
-	let pkg: Record<string, unknown>;
+	let pkg: PackageJson;
 	try {
-		pkg = JSON.parse(pkgContent);
+		pkg = JSON.parse(pkgContent) as PackageJson;
 	} catch {
 		throw new InitError("package.json contains invalid JSON.");
 	}
 
-	const allDeps = {
-		...(pkg.dependencies as Record<string, string> | undefined),
-		...(pkg.devDependencies as Record<string, string> | undefined),
-	};
+	const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
 
 	if (!allDeps.payload) {
 		throw new InitError(

@@ -1,4 +1,4 @@
-import { execFile as execFileCb, type ChildProcess } from "node:child_process";
+import { execFile as execFileCb, spawn, type ChildProcess } from "node:child_process";
 import { readFile, writeFile, mkdir, rm, access } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -44,21 +44,69 @@ export function createProjectHelpers(testDir: string) {
 	return helpers;
 }
 
-/** Wait for a spawned process stdout to match a pattern. */
-export async function waitForOutput(proc: ChildProcess, pattern: RegExp, timeoutMs = 30_000) {
+/** Start a dev server, wait for it to print a port, return port + kill function. */
+export async function startDevServer(
+	testDir: string,
+	helpers: ReturnType<typeof createProjectHelpers>,
+) {
+	const pkg = JSON.parse(await helpers.read("package.json"));
+	const script = pkg.scripts["dev:vinext"] ? "dev:vinext" : "dev";
+
+	const proc = spawn("npm", ["run", script], {
+		cwd: testDir,
+		stdio: "pipe",
+		env: { ...process.env, NODE_ENV: "development" },
+	});
+
+	const match = await waitForOutput(proc, /localhost:(\d+)/);
+	const port = Number.parseInt(match[1], 10);
+
+	return {
+		port,
+		[Symbol.asyncDispose]: async () => {
+			proc.kill("SIGTERM");
+			await new Promise<void>((resolve) => {
+				const timeout = setTimeout(() => {
+					proc.kill("SIGKILL");
+					resolve();
+				}, 2000);
+				proc.on("exit", () => {
+					clearTimeout(timeout);
+					resolve();
+				});
+			});
+		},
+	};
+}
+
+/** Wait for a spawned process stdout to match a pattern without destroying the stream. */
+export function waitForOutput(proc: ChildProcess, pattern: RegExp, timeoutMs = 30_000) {
 	assert.ok(proc.stdout, "process must have stdout");
 	proc.stdout.setEncoding("utf8");
 
-	const chunk = await proc.stdout.find(
-		(data: string) => pattern.test(data),
-		{ signal: AbortSignal.timeout(timeoutMs) },
-	);
+	return new Promise<RegExpMatchArray>((resolve, reject) => {
+		let output = "";
+		const timeout = setTimeout(() => {
+			cleanup();
+			reject(new Error(`Timed out waiting for ${pattern}. Output:\n${output.slice(-500)}`));
+		}, timeoutMs);
 
-	const match = String(chunk ?? "").match(pattern);
-	if (!match) {
-		throw new Error(`Timed out waiting for ${pattern}`);
-	}
-	return match;
+		const onData = (chunk: string) => {
+			output += chunk;
+			const match = output.match(pattern);
+			if (match) {
+				cleanup();
+				resolve(match);
+			}
+		};
+
+		const cleanup = () => {
+			clearTimeout(timeout);
+			proc.stdout?.off("data", onData);
+		};
+
+		proc.stdout?.on("data", onData);
+	});
 }
 
 // ── Fixtures ───────────────────────────────────────────────────────

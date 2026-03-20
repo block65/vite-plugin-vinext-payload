@@ -6,14 +6,13 @@
 
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
 	createProjectHelpers,
 	installVinextStack,
-	waitForOutput,
+	startDevServer,
 	VERSIONS,
 } from "./helpers.ts";
 
@@ -34,7 +33,6 @@ async function scaffoldSqliteProject() {
 	await mkdir(TEST_DIR, { recursive: true });
 	await helpers.npx(["--yes", "degit", "payloadcms/payload/templates/with-postgres", TEST_DIR]);
 
-	// Swap postgres → sqlite
 	const pkg = JSON.parse(await helpers.read("package.json"));
 	delete pkg.dependencies["@payloadcms/db-postgres"];
 	pkg.dependencies["@payloadcms/db-sqlite"] = VERSIONS.payload;
@@ -58,8 +56,6 @@ async function scaffoldSqliteProject() {
 }
 
 describe("e2e: sqlite migration", { timeout: 600_000 }, () => {
-	let server: ChildProcess | null = null;
-
 	before(async () => {
 		await scaffoldSqliteProject();
 
@@ -69,13 +65,7 @@ describe("e2e: sqlite migration", { timeout: 600_000 }, () => {
 		await helpers.npx(["payload", "generate:importmap"]);
 	});
 
-	after(async () => {
-		server?.kill("SIGTERM");
-		await sleep(1000);
-		server?.kill("SIGKILL");
-		server = null;
-		await helpers.cleanup();
-	});
+	after(() => helpers.cleanup());
 
 	it("creates serverFunction.ts", async () => {
 		assert.ok(await helpers.exists("src/app/(payload)/serverFunction.ts"));
@@ -98,21 +88,12 @@ describe("e2e: sqlite migration", { timeout: 600_000 }, () => {
 	});
 
 	it("dev server responds on / and /admin", async () => {
-		const pkg = JSON.parse(await helpers.read("package.json"));
-		const script = pkg.scripts["dev:vinext"] ? "dev:vinext" : "dev";
+		await using server = await startDevServer(TEST_DIR, helpers);
 
-		server = spawn("npm", ["run", script], {
-			cwd: TEST_DIR,
-			stdio: "pipe",
-			env: { ...process.env, NODE_ENV: "development" },
-		});
-
-		const match = await waitForOutput(server, /localhost:(\d+)/);
-		const port = Number.parseInt(match[1], 10);
-
+		// First request triggers compilation
 		await sleep(5000);
 
-		await assertStatus(port, "/", [200]);
-		await assertStatus(port, "/admin", [200, 302, 307]);
+		await assertStatus(server.port, "/", [200]);
+		await assertStatus(server.port, "/admin", [200, 302, 307]);
 	});
 });

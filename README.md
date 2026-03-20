@@ -44,9 +44,6 @@ export default defineConfig({
 
 ```ts
 payloadPlugin({
-	// Path to your payload.config.ts (default: "./src/payload.config.ts")
-	configPath: "./src/payload.config.ts",
-
 	// Additional packages to externalize from SSR bundling
 	ssrExternal: ["some-cjs-package"],
 
@@ -88,7 +85,7 @@ import {
 export default defineConfig({
 	plugins: [
 		vinext(),
-		payloadConfigAlias({ configPath: "./payload.config.ts" }),
+		payloadConfigAlias(),
 		payloadOptimizeDeps(),
 		payloadCjsTransform(),
 		payloadCliStubs(),

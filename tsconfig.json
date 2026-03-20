@@ -1,16 +1,16 @@
 {
-	"compilerOptions": {
-		"target": "ES2022",
-		"module": "ESNext",
-		"moduleResolution": "bundler",
-		"strict": true,
-		"esModuleInterop": true,
-		"skipLibCheck": true,
-		"declaration": true,
-		"outDir": "dist",
-		"rootDir": "src",
-		"allowImportingTsExtensions": true,
-		"noEmit": true
-	},
-	"include": ["src"]
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationDir": "./node_modules/.tsc",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+  },
+  "include": ["src", "bin", "test"],
+  "exclude": ["node_modules"],
 }

@@ -25,7 +25,8 @@
 	"scripts": {
 		"fmt": "oxfmt --write src bin",
 		"fmt:check": "oxfmt --check src bin",
-		"lint": "oxlint src bin"
+		"lint": "oxlint src bin",
+		"preversion": "npm run lint && npm run fmt:check"
 	},
 	"dependencies": {
 		"@ast-grep/napi": "^0.42.0",

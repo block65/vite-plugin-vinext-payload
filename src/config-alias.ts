@@ -17,6 +17,8 @@ const SSR_EXTERNAL = [
 	"pino",
 	"wrangler",
 	"miniflare",
+	// Native addon — CJS with circular TDZ issues under Vite's module runner.
+	"sharp",
 	// CJS packages that need Node.js native interop — externalizing is
 	// more reliable than transform-based interop (which doesn't reach RSC).
 	"pluralize",

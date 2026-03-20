@@ -4,13 +4,10 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import assert from "node:assert/strict";
 
-/** Known-good version matrix for testing. */
+/** Known-good version pins for testing. */
 export const VERSIONS = {
 	payload: "3.77.0",
 	vinext: "0.0.31",
-	vite: "7",
-	pluginReact: "5",
-	pluginRsc: "0.5",
 } as const;
 
 const execFile = promisify(execFileCb);
@@ -234,23 +231,15 @@ export async function scaffoldMockProject(
 	await write("src/app/(payload)/admin/[[...segments]]/page.tsx", FIXTURES.originalPage);
 }
 
-/** Install vinext + vite + plugin into a test project. */
+/** Install deps, run vinext init, install the plugin. */
 export async function installVinextStack(
 	helpers: ReturnType<typeof createProjectHelpers>,
 	pluginRoot: string,
 ) {
-	await helpers.npm(["install", "--ignore-scripts"]);
-	await helpers.npm(["rebuild", "esbuild"]);
-	await helpers.npm([
-		"install", "-D",
-		`vinext@${VERSIONS.vinext}`,
-		`vite@${VERSIONS.vite}`,
-		`@vitejs/plugin-rsc@${VERSIONS.pluginRsc}`,
-		`@vitejs/plugin-react@${VERSIONS.pluginReact}`,
-		"--legacy-peer-deps",
-	]);
+	await helpers.npm(["install"]);
+	await helpers.npm(["install", "-D", "vinext", "vite"]);
 	await helpers.npx(["vinext", "init"]);
-	await helpers.npm(["install", "-D", pluginRoot, "--legacy-peer-deps"]);
+	await helpers.npm(["install", "-D", pluginRoot]);
 }
 
 /**

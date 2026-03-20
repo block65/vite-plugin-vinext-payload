@@ -5,7 +5,7 @@
  * runs init, starts the dev server, asserts routes.
  */
 
-import { describe, it, before, after } from "node:test";
+import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -57,8 +57,6 @@ describe("e2e: cloudflare d1 migration", { timeout: 600_000 }, () => {
 
 		await helpers.npx(["payload", "generate:importmap"]);
 	});
-
-	after(() => helpers.cleanup());
 
 	it("creates serverFunction.ts", async () => {
 		assert.ok(await helpers.exists("src/app/(payload)/serverFunction.ts"));

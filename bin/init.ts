@@ -112,7 +112,11 @@ const PAGE_TSX = dedent`
   export default Page
 `;
 
-function parsePackageJson(content: string): PackageJson {
+async function readManifest(cwd: string): Promise<PackageJson> {
+	const content = await tryRead(join(cwd, "package.json"));
+	if (!content) {
+		throw new InitError("No package.json found. Run this from your project root.");
+	}
 	try {
 		return JSON.parse(content) as PackageJson;
 	} catch {
@@ -392,15 +396,7 @@ export class InitError extends Error {}
 export async function init(options: InitOptions) {
 	const { cwd, dryRun } = options;
 
-	const pkgContent = await tryRead(join(cwd, "package.json"));
-
-	if (!pkgContent) {
-		throw new InitError(
-			"No package.json found. Run this from your project root.",
-		);
-	}
-
-	const pkg = parsePackageJson(pkgContent);
+	const pkg = await readManifest(cwd);
 	const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
 
 	if (!allDeps.payload) {

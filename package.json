@@ -11,6 +11,22 @@
 		"url": "https://github.com/block65/vite-plugin-vinext-payload/issues"
 	},
 	"homepage": "https://github.com/block65/vite-plugin-vinext-payload#readme",
+	"keywords": [
+		"vite",
+		"vite-plugin",
+		"vinext",
+		"payload",
+		"payloadcms",
+		"payload-cms",
+		"cloudflare",
+		"cloudflare-workers",
+		"d1",
+		"nextjs",
+		"migration",
+		"rsc",
+		"react-server-components",
+		"cjs-interop"
+	],
 	"bin": {
 		"vite-plugin-vinext-payload": "./bin/main.js"
 	},

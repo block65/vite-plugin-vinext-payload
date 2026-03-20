@@ -112,6 +112,14 @@ const PAGE_TSX = dedent`
   export default Page
 `;
 
+function parsePackageJson(content: string): PackageJson {
+	try {
+		return JSON.parse(content) as PackageJson;
+	} catch {
+		throw new InitError("package.json contains invalid JSON.");
+	}
+}
+
 async function tryRead(path: string): Promise<string | null> {
 	try {
 		return await readFile(path, "utf8");
@@ -392,13 +400,7 @@ export async function init(options: InitOptions) {
 		);
 	}
 
-	let pkg: PackageJson;
-	try {
-		pkg = JSON.parse(pkgContent) as PackageJson;
-	} catch {
-		throw new InitError("package.json contains invalid JSON.");
-	}
-
+	const pkg = parsePackageJson(pkgContent);
 	const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
 
 	if (!allDeps.payload) {

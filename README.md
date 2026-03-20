@@ -18,7 +18,7 @@ npm run dev
 
 > **Note:** `vinext init` runs `npm install` internally. If you hit peer dependency conflicts (common with `@vitejs/plugin-react`), run `npm install -D vinext vite --legacy-peer-deps` before `npx vinext init`.
 
-The `init` command is idempotent — safe to run multiple times. It:
+The plugin's `init` command is idempotent — safe to run multiple times. It:
 
 - Adds `payloadPlugin()` to your `vite.config.ts`
 - Extracts the inline server function from `layout.tsx` into a separate `'use server'` module (required for Vite's RSC transform)

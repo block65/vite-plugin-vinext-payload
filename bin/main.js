@@ -2,6 +2,7 @@
 
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { dedent } from "../src/dedent.ts";
 
 const { values, positionals } = parseArgs({
 	allowPositionals: true,
@@ -12,37 +13,35 @@ const { values, positionals } = parseArgs({
 	},
 });
 
-const command = positionals[0];
+const [command] = positionals;
 
 if (values.help || !command) {
 	console.log(
-		`
-Usage: vite-plugin-vinext-payload <command> [options]
+		dedent`
+			Usage: vite-plugin-vinext-payload <command> [options]
 
-Commands:
-  init          Apply Payload-specific fixes for vinext compatibility
+			Commands:
+				init          Apply Payload-specific fixes for vinext compatibility
 
-Options:
-  --dry-run     Show what would change without writing files
-  --cwd <path>  Project directory (default: .)
-  -h, --help    Show this help
-`.trimStart(),
+			Options:
+				--dry-run     Show what would change without writing files
+				--cwd <path>  Project directory (default: .)
+				-h, --help    Show this help
+			`,
 	);
-	process.exit(0);
-}
-
-if (command === "init") {
+	process.exitCode = 0;
+} else if (command === "init") {
 	const { init, InitError } = await import("./init.ts");
 	try {
 		await init({ cwd: resolve(values.cwd), dryRun: values["dry-run"] });
 	} catch (e) {
 		if (e instanceof InitError) {
 			console.error(e.message);
-			process.exit(1);
+			process.exitCode = 1;
 		}
 		throw e;
 	}
 } else {
 	console.error(`Unknown command: ${command}`);
-	process.exit(1);
+	process.exitCode = 1;
 }

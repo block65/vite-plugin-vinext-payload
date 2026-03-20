@@ -115,7 +115,9 @@ const PAGE_TSX = dedent`
 async function readManifest(cwd: string): Promise<PackageJson> {
 	const content = await tryRead(join(cwd, "package.json"));
 	if (!content) {
-		throw new InitError("No package.json found. Run this from your project root.");
+		throw new InitError(
+			"No package.json found. Run this from your project root.",
+		);
 	}
 	try {
 		return JSON.parse(content) as PackageJson;

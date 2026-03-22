@@ -27,6 +27,13 @@ export function payloadCjsTransform(): Plugin {
 					return;
 				}
 
+				// Never touch React/ReactDOM — Rolldown handles their CJS→ESM
+				// natively. Our wrapper would shadow `module` and break their
+				// conditional require() pattern.
+				if (/node_modules\/(react|react-dom|scheduler)(\/|$)/.test(id)) {
+					return;
+				}
+
 				let result = code;
 
 				// --- this → globalThis replacements (all environments) ---

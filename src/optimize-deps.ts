@@ -2,6 +2,11 @@ import type { Plugin, UserConfig } from "vite";
 
 /**
  * Packages excluded from optimizeDeps in ALL environments.
+ *
+ * In RSC, `file-type` is additionally intercepted by the esbuild resolve
+ * plugin in {@link payloadRscStubs} — the plugin runs before the external
+ * check, so `file-type` is inlined from a stub rather than left as an
+ * unresolvable bare import in the pre-bundled output.
  */
 const OPTIMIZE_DEPS_EXCLUDE = [
 	// `{ "node": "./index.js", "default": "./core.js" }` — RSC resolves to

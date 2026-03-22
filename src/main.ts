@@ -37,6 +37,8 @@ import {
 	type PayloadConfigAliasOptions,
 } from "./config-alias.ts";
 import { payloadOptimizeDeps } from "./optimize-deps.ts";
+import { payloadRscExportFix } from "./rsc-export-fix.ts";
+import { payloadRscStubs } from "./rsc-stubs.ts";
 import { payloadServerActionFix } from "./server-action-fix.ts";
 
 // Re-export individual plugins
@@ -48,6 +50,8 @@ export { payloadOptimizeDeps } from "./optimize-deps.ts";
 export { payloadCjsTransform } from "./cjs-transform.ts";
 export { payloadCliStubs } from "./cli-stubs.ts";
 export { payloadCjsInteropDeps } from "./cjs-interop-deps.ts";
+export { payloadRscExportFix } from "./rsc-export-fix.ts";
+export { payloadRscStubs } from "./rsc-stubs.ts";
 export { payloadServerActionFix } from "./server-action-fix.ts";
 
 export interface PayloadPluginOptions extends PayloadConfigAliasOptions {
@@ -76,6 +80,8 @@ export function payloadPlugin(options: PayloadPluginOptions = {}): Plugin[] {
 		payloadOptimizeDeps(excludeFromOptimize),
 		payloadCjsTransform(),
 		payloadCliStubs(),
+		payloadRscExportFix(),
+		payloadRscStubs(),
 		payloadServerActionFix(),
 		cjsInterop({
 			dependencies: [...payloadCjsInteropDeps, ...extraCjsInterop],

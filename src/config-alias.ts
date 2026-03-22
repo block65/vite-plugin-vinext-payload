@@ -8,20 +8,17 @@ export interface PayloadConfigAliasOptions {
 	ssrExternal?: string[];
 }
 
+// Packages that should only be externalized, not bundled.
+// IMPORTANT: ssr.external applies to ALL server environments including
+// RSC. In workerd, externalized packages can't be resolved — only
+// packages that are truly build-time-only or native addons belong here.
+// Runtime CJS packages must be bundled (handled by optimizeDeps).
 const SSR_EXTERNAL = [
-	"graphql",
-	"graphql-http",
-	"drizzle-kit",
-	"drizzle-kit/api",
 	"esbuild",
-	"pino",
 	"wrangler",
 	"miniflare",
 	// Native addon — CJS with circular TDZ issues under Vite's module runner.
 	"sharp",
-	// CJS packages that need Node.js native interop — externalizing is
-	// more reliable than transform-based interop (which doesn't reach RSC).
-	"pluralize",
 ];
 
 /**
@@ -49,14 +46,13 @@ export function payloadConfigAlias(
 				},
 			} satisfies UserConfig;
 		},
-		// configEnvironment runs per-environment AFTER all environments are
-		// created (including those added by vite-plugin-cloudflare for RSC).
-		// The earlier `config` hook can't see those environments yet.
-		// Only apply resolve.external to vinext's server environments (ssr, rsc).
-		// Skip client and any other environments (e.g. Cloudflare Worker targets
-		// created by @cloudflare/vite-plugin which reject resolve.external).
+		// Apply resolve.external only to the SSR environment.
+		// Skip RSC — @cloudflare/vite-plugin rejects resolve.external on
+		// environments it manages, and it may own RSC via viteEnvironment.
+		// The top-level ssr.external from the config hook already covers
+		// server-side externals for both environments.
 		configEnvironment(name, config) {
-			if (name !== "ssr" && name !== "rsc") {
+			if (name !== "ssr") {
 				return;
 			}
 			return {

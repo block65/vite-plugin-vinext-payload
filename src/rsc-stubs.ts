@@ -164,13 +164,16 @@ export function payloadRscStubs(): Plugin {
 						`throw\\s+[^;]*?Error\\(\\s*["'\`]${escaped}[\\s\\S]*?\\)\\s*[;}]`,
 						"g",
 					);
-					// Client ref proxies: return {} so destructuring works
-					// (hooks often return objects). Other errors: undefined.
-					const returnVal = isClientRefError ? "{}" : "undefined";
+					// Client ref proxies: return a deep no-op proxy that
+					// handles any property access or call without throwing.
+					// Serializer errors: return undefined (value is dropped).
+					const returnExpr = isClientRefError
+						? "(function _np(){return new Proxy(function(){},{get:()=>_np(),apply:()=>_np()})})()"
+						: "undefined";
 					const replaced = result.replace(pattern, (match) =>
 						match.endsWith("}")
-							? `return ${returnVal} }`
-							: `return ${returnVal};`,
+							? `return ${returnExpr} }`
+							: `return ${returnExpr};`,
 					);
 					if (replaced !== result) {
 						result = replaced;

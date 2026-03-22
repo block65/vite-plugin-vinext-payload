@@ -4,6 +4,9 @@ import type { EnvironmentOptions, Plugin } from "vite";
 const FILE_TYPE_STUB = fileURLToPath(
 	new URL("./stubs/file-type.js", import.meta.url),
 );
+const DRIZZLE_KIT_API_STUB = fileURLToPath(
+	new URL("./stubs/drizzle-kit-api.js", import.meta.url),
+);
 
 // Workerd's node:console polyfill defines console.createTask but throws
 // "not implemented" when called. React 19 dev mode checks for its
@@ -85,6 +88,9 @@ export function payloadRscStubs(): Plugin {
 									build.onResolve({ filter: /^file-type$/ }, () => ({
 										path: FILE_TYPE_STUB,
 									}));
+									build.onResolve({ filter: /^drizzle-kit\/api$/ }, () => ({
+										path: DRIZZLE_KIT_API_STUB,
+									}));
 								},
 							},
 						],
@@ -142,9 +148,11 @@ export function payloadRscStubs(): Plugin {
 		// of file-type (e.g. from modules not covered by optimizeDeps).
 		resolveId: {
 			handler(source) {
-				if (this.environment?.name === "rsc" && source === "file-type") {
-					return FILE_TYPE_STUB;
+				if (this.environment?.name !== "rsc") {
+					return;
 				}
+				if (source === "file-type") return FILE_TYPE_STUB;
+				if (source === "drizzle-kit/api") return DRIZZLE_KIT_API_STUB;
 			},
 		},
 	};

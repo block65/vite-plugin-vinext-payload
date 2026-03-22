@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { Lang, parse } from "@ast-grep/napi";
 import type { EnvironmentOptions, Plugin } from "vite";
 import { RSC_STUBS } from "./payload-packages.ts";
 
@@ -105,18 +106,49 @@ export function payloadRscStubs(): Plugin {
 			} satisfies EnvironmentOptions;
 		},
 
-		// Patch console.createTask before React's CJS code evaluates.
 		transform: {
 			handler(code, id) {
 				if (this.environment?.name !== "rsc") {
 					return;
 				}
-				if (id.includes("react") && code.includes("console.createTask")) {
-					return {
-						code: CONSOLE_CREATE_TASK_POLYFILL + code,
-						map: null,
-					};
+
+				let result = code;
+				let modified = false;
+
+				// Patch console.createTask (workerd polyfill throws).
+				if (id.includes("react") && result.includes("console.createTask")) {
+					result = CONSOLE_CREATE_TASK_POLYFILL + result;
+					modified = true;
 				}
+
+				// Patch RSC serializer: replace throw statements for values
+				// that can't cross the server/client boundary with
+				// `return undefined`. Uses AST (not regex) to handle all
+				// throw forms including comma expressions.
+				//
+				// Next.js silently drops these in production. vinext doesn't
+				// replicate that behavior, so every Payload page with field
+				// configs (access functions, hooks, RegExps) would fail.
+				if (
+					id.includes("react-server-dom-webpack") &&
+					result.includes("Client Component")
+				) {
+					const root = parse(Lang.JavaScript, result).root();
+					const throws = root
+						.findAll({ rule: { kind: "throw_statement" } })
+						.filter((t) => t.text().includes("Client Component"));
+
+					if (throws.length > 0) {
+						const edits = throws.map((t) => t.replace("return undefined"));
+						result = root.commitEdits(edits);
+						modified = true;
+					}
+				}
+
+				if (!modified) {
+					return;
+				}
+				return { code: result, map: null };
 			},
 		},
 

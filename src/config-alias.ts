@@ -1,4 +1,5 @@
 import type { EnvironmentOptions, Plugin, UserConfig } from "vite";
+import { SSR_EXTERNAL } from "./payload-packages.ts";
 
 export interface PayloadConfigAliasOptions {
 	/**
@@ -7,19 +8,6 @@ export interface PayloadConfigAliasOptions {
 	 */
 	ssrExternal?: string[];
 }
-
-// Packages that should only be externalized, not bundled.
-// IMPORTANT: ssr.external applies to ALL server environments including
-// RSC. In workerd, externalized packages can't be resolved — only
-// packages that are truly build-time-only or native addons belong here.
-// Runtime CJS packages must be bundled (handled by optimizeDeps).
-const SSR_EXTERNAL = [
-	"esbuild",
-	"wrangler",
-	"miniflare",
-	// Native addon — CJS with circular TDZ issues under Vite's module runner.
-	"sharp",
-];
 
 /**
  * Configures SSR externals and propagates them to all server environments

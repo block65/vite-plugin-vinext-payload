@@ -53,6 +53,7 @@ export { payloadCliStubs } from "./cli-stubs.ts";
 export { payloadCjsInteropDeps } from "./cjs-interop-deps.ts";
 export { payloadRscExportFix } from "./rsc-export-fix.ts";
 export { payloadRscStubs } from "./rsc-stubs.ts";
+export { RSC_STUBS } from "./payload-packages.ts";
 export { payloadServerActionFix } from "./server-action-fix.ts";
 export { payloadUseClientBarrel } from "./use-client-barrel.ts";
 

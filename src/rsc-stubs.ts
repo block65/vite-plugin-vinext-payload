@@ -164,8 +164,13 @@ export function payloadRscStubs(): Plugin {
 						`throw\\s+[^;]*?Error\\(\\s*["'\`]${escaped}[\\s\\S]*?\\)\\s*[;}]`,
 						"g",
 					);
+					// Client ref proxies: return {} so destructuring works
+					// (hooks often return objects). Other errors: undefined.
+					const returnVal = isClientRefError ? "{}" : "undefined";
 					const replaced = result.replace(pattern, (match) =>
-						match.endsWith("}") ? "return undefined }" : "return undefined;",
+						match.endsWith("}")
+							? `return ${returnVal} }`
+							: `return ${returnVal};`,
 					);
 					if (replaced !== result) {
 						result = replaced;

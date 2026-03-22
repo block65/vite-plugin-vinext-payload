@@ -37,12 +37,24 @@ const OPTIMIZE_DEPS_EXCLUDE = [
  * vitejs/vite-plugin-react#775 (@vitejs/plugin-rsc 3rd party compat).
  * Remove once that lands.
  */
-// Previously excluded @payloadcms/storage-r2 and @payloadcms/richtext-lexical
-// as a workaround for vinext#581 / vinext#409 (client reference dedup).
-// Removed: excluding them breaks plugin-rsc's client package proxy,
-// causing "Failed to fetch dynamically imported module" on hydration.
-// With Vite 8/Rolldown, the original issue may no longer apply.
+// Packages with "use client" components that must NOT be pre-bundled
+// in the CLIENT environment — excluding breaks plugin-rsc's client
+// package proxy ("Failed to fetch dynamically imported module").
 const CLIENT_OPTIMIZE_DEPS_EXCLUDE: string[] = [];
+
+/**
+ * Packages excluded from RSC optimizeDeps only.
+ *
+ * These packages have barrel re-exports pointing to "use client" modules.
+ * Pre-bundling merges everything into one chunk, stripping the "use client"
+ * directive. plugin-rsc can't detect the client boundary and executes the
+ * component on the server (where React hooks don't exist).
+ *
+ * Excluding from RSC lets the individual files go through the transform
+ * pipeline where plugin-rsc's `rsc:use-client` transform detects the
+ * directive and creates proper client references.
+ */
+const RSC_OPTIMIZE_DEPS_EXCLUDE = ["@payloadcms/storage-r2"];
 
 /**
  * CJS transitive deps that must be explicitly included in CLIENT
@@ -94,10 +106,11 @@ export function payloadOptimizeDeps(extraExcludes: string[] = []): Plugin {
 					continue;
 				}
 
-				const envExcludes =
-					name === "client"
-						? [...excludes, ...CLIENT_OPTIMIZE_DEPS_EXCLUDE]
-						: excludes;
+				const envExcludes = [
+					...excludes,
+					...(name === "client" ? CLIENT_OPTIMIZE_DEPS_EXCLUDE : []),
+					...(name === "rsc" ? RSC_OPTIMIZE_DEPS_EXCLUDE : []),
+				];
 
 				environments[name] = {
 					optimizeDeps: {

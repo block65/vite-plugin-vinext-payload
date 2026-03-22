@@ -40,6 +40,7 @@ import { payloadOptimizeDeps } from "./optimize-deps.ts";
 import { payloadRscExportFix } from "./rsc-export-fix.ts";
 import { payloadRscStubs } from "./rsc-stubs.ts";
 import { payloadServerActionFix } from "./server-action-fix.ts";
+import { payloadUseClientBarrel } from "./use-client-barrel.ts";
 
 // Re-export individual plugins
 export {
@@ -53,6 +54,7 @@ export { payloadCjsInteropDeps } from "./cjs-interop-deps.ts";
 export { payloadRscExportFix } from "./rsc-export-fix.ts";
 export { payloadRscStubs } from "./rsc-stubs.ts";
 export { payloadServerActionFix } from "./server-action-fix.ts";
+export { payloadUseClientBarrel } from "./use-client-barrel.ts";
 
 export interface PayloadPluginOptions extends PayloadConfigAliasOptions {
 	/** Additional packages to exclude from optimizeDeps. */
@@ -76,6 +78,7 @@ export function payloadPlugin(options: PayloadPluginOptions = {}): Plugin[] {
 	} = options;
 
 	return [
+		payloadUseClientBarrel(),
 		payloadConfigAlias({ ssrExternal }),
 		payloadOptimizeDeps(excludeFromOptimize),
 		payloadCjsTransform(),

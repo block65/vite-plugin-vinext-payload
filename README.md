@@ -2,7 +2,7 @@
 
 Vite plugin for running [Payload CMS](https://payloadcms.com/) with [vinext](https://github.com/cloudflare/vinext) (Cloudflare's Vite-based re-implementation of Next.js).
 
-> **Experimental.** Both vinext and this plugin are experimental. Tested with Payload 3.77.0, vinext 0.0.31, and Vite 7. Vite 8 is not yet supported.
+> **Experimental.** Both vinext and this plugin are experimental. Tested with Payload 3.80.0, vinext 0.0.33, and Vite 8 (Rolldown).
 
 ## Migrating from Next.js
 
@@ -43,12 +43,33 @@ export default defineConfig({
 });
 ```
 
+For Cloudflare Workers with RSC:
+
+```ts
+import { cloudflare } from "@cloudflare/vite-plugin";
+import vinext from "vinext";
+import { defineConfig } from "vite";
+import { payloadPlugin } from "vite-plugin-vinext-payload";
+
+export default defineConfig({
+	plugins: [
+		cloudflare({
+			viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
+		}),
+		vinext(),
+		payloadPlugin({
+			ssrExternal: ["cloudflare:workers"],
+		}),
+	],
+});
+```
+
 ## Options
 
 ```ts
 payloadPlugin({
 	// Additional packages to externalize from SSR bundling
-	ssrExternal: ["some-cjs-package"],
+	ssrExternal: ["some-native-package"],
 
 	// Additional packages to exclude from optimizeDeps
 	excludeFromOptimize: ["some-broken-package"],
@@ -60,16 +81,19 @@ payloadPlugin({
 
 ## What It Does
 
-`payloadPlugin()` composes six sub-plugins:
+`payloadPlugin()` composes these sub-plugins:
 
-| Plugin                   | What it does                                                                                                                                                                  |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `payloadConfigAlias`     | Configures SSR externals for all environments (including RSC)                                                                                                                 |
-| `payloadOptimizeDeps`    | Excludes problematic packages from Vite's pre-bundling and force-includes CJS transitive deps in the client environment                                                       |
-| `payloadCjsTransform`    | Single-pass transform that fixes `this` → `globalThis` in UMD/CJS wrappers and wraps `module.exports` files with ESM scaffolding for the browser                              |
-| `payloadCliStubs`        | Stubs packages not needed at web runtime (`console-table-printer`, `json-schema-to-typescript`, `esbuild-register`, `ws`) to no-ops                                           |
-| `payloadServerActionFix` | Fixes vinext's server action re-render loop by reordering `reactRoot.render()` after the `returnValue` check (AST-based via ast-grep)                                         |
-| `cjsInterop`             | Fixes CJS default export interop for packages like `pluralize` and `bson-objectid` (via [vite-plugin-cjs-interop](https://github.com/nicolo-ribaudo/vite-plugin-cjs-interop)) |
+| Plugin | What it does |
+| --- | --- |
+| `payloadUseClientBarrel` | Auto-detects `@payloadcms/*` barrel files that re-export from `'use client'` modules and excludes them from RSC pre-bundling (pre-bundling strips the directive, breaking client references) |
+| `payloadConfigAlias` | Configures SSR externals — only build tools and native addons are externalized (workerd can't resolve externals at runtime) |
+| `payloadOptimizeDeps` | Per-environment optimizeDeps: excludes problematic packages, force-includes CJS transitive deps for the client |
+| `payloadCjsTransform` | Fixes `this` → `globalThis` in UMD/CJS wrappers and wraps `module.exports` with ESM scaffolding (skips React/ReactDOM which Vite 8 handles natively) |
+| `payloadCliStubs` | Stubs packages not needed at web runtime (`console-table-printer`, `json-schema-to-typescript`, `esbuild-register`, `ws`) |
+| `payloadRscExportFix` | Fixes `@vitejs/plugin-rsc`'s CSS export transform dropping exports after sourcemap comments |
+| `payloadRscStubs` | Stubs `file-type` and `drizzle-kit/api` for RSC/workerd (Node.js APIs unavailable), polyfills workerd's broken `console.createTask` |
+| `payloadServerActionFix` | Fixes vinext's server action re-render loop by reordering `reactRoot.render()` (AST-based via ast-grep) |
+| `cjsInterop` | Fixes CJS default export interop for packages like `bson-objectid` (via [vite-plugin-cjs-interop](https://github.com/nicolo-ribaudo/vite-plugin-cjs-interop)) |
 
 ## A La Carte
 
@@ -77,43 +101,34 @@ Import individual plugins if you need fine-grained control:
 
 ```ts
 import {
+	payloadUseClientBarrel,
 	payloadConfigAlias,
 	payloadOptimizeDeps,
 	payloadCjsTransform,
 	payloadCliStubs,
+	payloadRscExportFix,
+	payloadRscStubs,
 	payloadServerActionFix,
 } from "vite-plugin-vinext-payload";
-
-export default defineConfig({
-	plugins: [
-		vinext(),
-		payloadConfigAlias(),
-		payloadOptimizeDeps(),
-		payloadCjsTransform(),
-		payloadCliStubs(),
-		payloadServerActionFix(),
-	],
-});
 ```
 
 ## Requirements
 
 - Node.js >= 24
-- Vite 6 or 7 (Vite 8 is not yet supported)
-- vinext 0.0.31+
+- Vite 6, 7, or 8
+- vinext 0.0.33+
 - Payload CMS 3.x
 
-## Why This Exists
+## Known Upstream Issues
 
-Payload CMS is built on Next.js and relies heavily on CJS packages and Node.js module resolution. When running on Vite via vinext, several things break:
+These are bugs in dependencies that this plugin works around. See [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for details and ownership.
 
-- CJS packages served via `/@fs/` aren't converted to ESM — browsers choke on `module.exports`
-- UMD wrappers use `this` at module scope, which is `undefined` in Vite's strict ESM environment
-- CLI-only packages (`console-table-printer`, `json-schema-to-typescript`) pull in Node.js APIs that break in the browser and Workers
-- Server actions trigger infinite re-render loops because vinext re-renders the tree before checking return values
-- Per-environment `optimizeDeps` configuration is needed because vinext creates separate client, SSR, and RSC environments
-
-This plugin handles all of that so your `vite.config.ts` stays clean.
+| Issue | Owner | Our workaround |
+| --- | --- | --- |
+| `'use client'` not detected through barrel re-exports | @vitejs/plugin-rsc | Auto-exclude affected packages from RSC optimizeDeps |
+| RSC export transform drops exports after sourcemap comments | @vitejs/plugin-rsc | Post-transform newline insertion |
+| `console.createTask` throws "not implemented" | workerd | Try/catch polyfill |
+| `file-type` / `drizzle-kit/api` unresolvable in workerd | pnpm + Vite | Stub modules for RSC |
 
 ## License
 

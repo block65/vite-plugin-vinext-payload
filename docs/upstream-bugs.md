@@ -63,22 +63,71 @@ modules with `react-server-dom-webpack` in the ID.
 
 ---
 
+## @vitejs/plugin-rsc: `'use client'` not detected through barrel re-exports
+
+**Status:** Not yet filed upstream.
+**Responsibility:** @vitejs/plugin-rsc
+**Repo:** https://github.com/nicolo-ribaudo/vite-plugin-rsc
+
+**Bug:** plugin-rsc's `rsc:use-client` transform only checks each file
+individually for the `'use client'` directive. When a barrel file
+(`export { Foo } from './foo.js'`) re-exports from a `'use client'`
+module, plugin-rsc doesn't see the directive on the barrel and treats
+it as a server module. The component gets executed on the server instead
+of being proxied as a client reference.
+
+Next.js handles this correctly — its bundler propagates `'use client'`
+semantics through re-export chains.
+
+**Example:** `@payloadcms/storage-r2/client` is a barrel that re-exports
+`R2ClientUploadHandler` from `dist/client/R2ClientUploadHandler.js`. Only
+the component file has `'use client'`, not the barrel. plugin-rsc misses
+it, the component runs on the server, `useEffect` doesn't exist →
+`useEffect is not a function`.
+
+**Mechanism:** Pre-bundling (optimizeDeps) makes this worse — it merges
+the barrel and component into one chunk, stripping the `'use client'`
+directive entirely. Even without pre-bundling, plugin-rsc's transform
+at `plugin.js:718-781` bails early if the loaded file doesn't contain
+`"use client"` (line 720).
+
+**Fix (plugin-rsc):** The `rsc:use-client` transform should follow
+re-export chains. When a module only contains re-exports, resolve the
+targets and check if any have `'use client'`. If so, treat the barrel
+as a client module.
+
+**Our workaround:** Exclude `@payloadcms/storage-r2` from RSC
+optimizeDeps (`RSC_OPTIMIZE_DEPS_EXCLUDE` in `src/optimize-deps.ts`).
+This forces individual file loading through the transform pipeline,
+where plugin-rsc sees `'use client'` on the actual component file.
+Additionally, `payloadUseClientBarrel` (`src/use-client-barrel.ts`)
+propagates `'use client'` through barrel files for non-pre-bundled paths.
+
+---
+
 ## @vitejs/plugin-rsc: client reference proxy throws on invocation
 
-**Status:** By design in plugin-rsc.
+**Status:** By design in plugin-rsc (but overly strict for framework use).
 **Responsibility:** @vitejs/plugin-rsc
 **Repo:** https://github.com/nicolo-ribaudo/vite-plugin-rsc
 
 **Bug:** When a `"use client"` export is called as a function on the server
 (not rendered as a component), plugin-rsc's client reference proxy throws
 `"Unexpectedly client reference export '...' is called on server"`. This
-is correct for real bugs but breaks Payload CMS where `@payloadcms/storage-r2`
-exports `useUploadHandlers` (a client hook) that gets invoked during server-side
-initialization.
+is correct for catching real bugs but breaks Payload CMS where server-side
+initialization code touches client exports.
 
-**Our workaround:** Transform hook in `payloadRscStubs` patches the throw
-in `@vitejs/plugin-rsc/dist/core/rsc.js` to `return undefined;`. Only
-applies to modules with `plugin-rsc` in the ID.
+The proxy is generated in two places:
+- `dist/core/rsc.js:21` — runtime proxy creation
+- `dist/plugin.js:761` — transform-time injection into any `"use client"`
+  module (this means the throw can appear in ANY module, not just
+  plugin-rsc files)
+
+**Our workaround:** Transform hook in `payloadRscStubs` patches throws
+containing `"Unexpectedly client reference export"` to return a deep
+no-op Proxy (handles arbitrary property access and function calls).
+Applied to ALL RSC modules since plugin-rsc injects the code into
+third-party packages.
 
 ---
 

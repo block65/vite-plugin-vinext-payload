@@ -70,31 +70,54 @@ export function payloadRscStubs(): Plugin {
 	return {
 		name: "vite-plugin-payload:rsc-stubs",
 
-		// Redirect file-type to stub during RSC optimizeDeps pre-bundling.
-		// The esbuild resolve plugin runs before the external check, so
-		// file-type is inlined from the stub rather than left as a bare
-		// external import.
+		// Redirect stubs during RSC optimizeDeps pre-bundling so they're
+		// inlined rather than left as bare external imports that workerd
+		// can't resolve. Provides both rolldownOptions (Vite 8+/Rolldown)
+		// and esbuildOptions (Vite 6-7/esbuild) for compatibility.
 		configEnvironment(name) {
 			if (name !== "rsc") {
 				return;
 			}
+
+			const stubs: Record<string, string> = {
+				"file-type": FILE_TYPE_STUB,
+				"drizzle-kit/api": DRIZZLE_KIT_API_STUB,
+			};
+
 			return {
 				optimizeDeps: {
+					// Vite 6-7 (esbuild) — deprecated in Vite 8 but still works
 					esbuildOptions: {
 						plugins: [
 							{
-								name: "payload-file-type-stub",
+								name: "payload-rsc-stubs",
 								setup(build) {
-									build.onResolve({ filter: /^file-type$/ }, () => ({
-										path: FILE_TYPE_STUB,
-									}));
-									build.onResolve({ filter: /^drizzle-kit\/api$/ }, () => ({
-										path: DRIZZLE_KIT_API_STUB,
-									}));
+									for (const [pkg, stub] of Object.entries(stubs)) {
+										build.onResolve(
+											{
+												filter: new RegExp(`^${pkg.replace("/", "\\/")}$`),
+											},
+											() => ({ path: stub }),
+										);
+									}
 								},
 							},
 						],
 					},
+					// Vite 8+ (Rolldown) — added via spread to avoid type
+					// errors on Vite versions that don't have the type yet
+					...({
+						rolldownOptions: {
+							plugins: [
+								{
+									name: "payload-rsc-stubs",
+									resolveId(source: string) {
+										return stubs[source] ?? null;
+									},
+								},
+							],
+						},
+					} as Record<string, unknown>),
 				},
 			} satisfies EnvironmentOptions;
 		},

@@ -37,10 +37,12 @@ const OPTIMIZE_DEPS_EXCLUDE = [
  * vitejs/vite-plugin-react#775 (@vitejs/plugin-rsc 3rd party compat).
  * Remove once that lands.
  */
-const CLIENT_OPTIMIZE_DEPS_EXCLUDE = [
-	"@payloadcms/storage-r2",
-	"@payloadcms/richtext-lexical",
-];
+// Previously excluded @payloadcms/storage-r2 and @payloadcms/richtext-lexical
+// as a workaround for vinext#581 / vinext#409 (client reference dedup).
+// Removed: excluding them breaks plugin-rsc's client package proxy,
+// causing "Failed to fetch dynamically imported module" on hydration.
+// With Vite 8/Rolldown, the original issue may no longer apply.
+const CLIENT_OPTIMIZE_DEPS_EXCLUDE: string[] = [];
 
 /**
  * CJS transitive deps that must be explicitly included in CLIENT

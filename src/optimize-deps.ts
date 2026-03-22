@@ -42,19 +42,8 @@ const OPTIMIZE_DEPS_EXCLUDE = [
 // package proxy ("Failed to fetch dynamically imported module").
 const CLIENT_OPTIMIZE_DEPS_EXCLUDE: string[] = [];
 
-/**
- * Packages excluded from RSC optimizeDeps only.
- *
- * These packages have barrel re-exports pointing to "use client" modules.
- * Pre-bundling merges everything into one chunk, stripping the "use client"
- * directive. plugin-rsc can't detect the client boundary and executes the
- * component on the server (where React hooks don't exist).
- *
- * Excluding from RSC lets the individual files go through the transform
- * pipeline where plugin-rsc's `rsc:use-client` transform detects the
- * directive and creates proper client references.
- */
-const RSC_OPTIMIZE_DEPS_EXCLUDE = ["@payloadcms/storage-r2"];
+// RSC 'use client' barrel excludes are handled automatically by
+// payloadUseClientBarrel — see src/use-client-barrel.ts
 
 /**
  * CJS transitive deps that must be explicitly included in CLIENT
@@ -109,7 +98,6 @@ export function payloadOptimizeDeps(extraExcludes: string[] = []): Plugin {
 				const envExcludes = [
 					...excludes,
 					...(name === "client" ? CLIENT_OPTIMIZE_DEPS_EXCLUDE : []),
-					...(name === "rsc" ? RSC_OPTIMIZE_DEPS_EXCLUDE : []),
 				];
 
 				environments[name] = {

@@ -1,114 +1,186 @@
-import { readFile } from "node:fs/promises";
-import type { Plugin } from "vite";
+import { readFile, readdir } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import type { EnvironmentOptions, Plugin } from "vite";
 
 /**
- * Propagates `'use client'` directives through barrel re-export files.
+ * Automatically excludes packages from RSC optimizeDeps when their
+ * subpath exports are barrel files that re-export from `'use client'`
+ * modules.
  *
- * Problem: plugin-rsc only checks each file individually for `'use client'`.
- * When a barrel file (`export { Foo } from './foo.js'`) re-exports from a
- * `'use client'` module, plugin-rsc doesn't see the directive on the barrel
- * and treats it as a server module. The component gets executed on the server
- * instead of being proxied as a client reference.
+ * Problem: pre-bundling (esbuild/Rolldown) merges barrel files with their
+ * re-exported modules, stripping `'use client'` directives. plugin-rsc
+ * can't detect the client boundary and executes the component on the server.
  *
- * Fix: detect pure re-export barrels in the RSC environment and check if
- * their targets have `'use client'`. If so, prepend the directive to the
- * barrel so plugin-rsc picks it up.
+ * Fix: at config time, scan `@payloadcms/*` subpath exports for this
+ * pattern. Matching packages are excluded from RSC optimizeDeps so their
+ * files go through the transform pipeline where plugin-rsc detects
+ * `'use client'` on individual files.
  *
- * This must run before plugin-rsc's `rsc:use-client` transform (`enforce: 'pre'`
- * is not needed since plugin-rsc uses a later order, but we use `enforce: 'pre'`
- * to be safe).
+ * Upstream: @vitejs/plugin-rsc should follow re-export chains to detect
+ * `'use client'` directives.
  */
 export function payloadUseClientBarrel(): Plugin {
-	// Cache resolved 'use client' status per file path
-	const useClientCache = new Map<string, boolean>();
+	let projectRoot = process.cwd();
 
 	return {
 		name: "vite-plugin-payload:use-client-barrel",
-		enforce: "pre",
 
-		transform: {
-			async handler(code, id) {
-				if (this.environment?.name !== "rsc") {
-					return;
-				}
+		config(config) {
+			projectRoot = config.root ?? process.cwd();
+		},
 
-				// Skip if file already has 'use client'
-				if (
-					code.startsWith("'use client'") ||
-					code.startsWith('"use client"')
-				) {
-					return;
-				}
+		async configEnvironment(name) {
+			if (name !== "rsc") {
+				return;
+			}
 
-				// Only process files that are pure re-exports (no other code).
-				// A pure re-export barrel contains only:
-				// - export { ... } from '...'
-				// - export * from '...'
-				// - comments, whitespace, sourcemap URLs
-				const stripped = code
-					.replace(/\/\/.*$/gm, "") // line comments
-					.replace(/\/\*[\s\S]*?\*\//g, "") // block comments
-					.replace(/^\s*$/gm, "") // blank lines
-					.trim();
+			const excludes = await findBarrelClientPackages(
+				["@payloadcms/"],
+				projectRoot,
+			);
 
-				if (!stripped) return;
+			if (excludes.length === 0) {
+				return;
+			}
 
-				// Check all lines are re-exports
-				const lines = stripped.split("\n").map((l) => l.trim());
-				const reExportPattern =
-					/^export\s+\{[^}]*\}\s+from\s+['"][^'"]+['"];?\s*$/;
-				const starReExportPattern =
-					/^export\s+\*\s+from\s+['"][^'"]+['"];?\s*$/;
-
-				const isBarrel = lines.every(
-					(line) =>
-						!line ||
-						reExportPattern.test(line) ||
-						starReExportPattern.test(line),
-				);
-
-				if (!isBarrel) return;
-
-				// Extract source paths from re-exports
-				const sourcePattern = /from\s+['"]([^'"]+)['"]/g;
-				const sources: string[] = [];
-				let match;
-				while ((match = sourcePattern.exec(code)) !== null) {
-					sources.push(match[1]);
-				}
-
-				if (sources.length === 0) return;
-
-				// Resolve each source and check for 'use client'
-				for (const source of sources) {
-					const resolved = await this.resolve(source, id);
-					if (!resolved) continue;
-
-					const resolvedPath = resolved.id;
-
-					// Check cache first
-					let hasUseClient = useClientCache.get(resolvedPath);
-					if (hasUseClient === undefined) {
-						try {
-							const content = await readFile(resolvedPath, "utf-8");
-							hasUseClient =
-								content.startsWith("'use client'") ||
-								content.startsWith('"use client"');
-							useClientCache.set(resolvedPath, hasUseClient);
-						} catch {
-							continue;
-						}
-					}
-
-					if (hasUseClient) {
-						// Prepend 'use client' to the barrel
-						return {
-							code: `'use client';\n${code}`,
-							map: null,
-						};
-					}
-				}
-			},
+			return {
+				optimizeDeps: {
+					exclude: excludes,
+				},
+			} satisfies EnvironmentOptions;
 		},
 	};
+}
+
+/**
+ * Scan node_modules for packages whose subpath exports are barrels
+ * that re-export from `'use client'` modules.
+ */
+async function findBarrelClientPackages(
+	prefixes: string[],
+	root: string,
+): Promise<string[]> {
+	const results: string[] = [];
+
+	for (const prefix of prefixes) {
+		const scope = prefix.startsWith("@") ? prefix.split("/")[0] : null;
+		if (!scope) continue;
+
+		// Read from project's node_modules
+		const scopeDir = join(root, "node_modules", scope);
+		let entries: string[];
+		try {
+			entries = await readdir(scopeDir);
+		} catch {
+			continue;
+		}
+
+		for (const entry of entries) {
+			const pkgName = `${scope}/${entry}`;
+			if (!pkgName.startsWith(prefix)) continue;
+
+			const pkgDir = join(scopeDir, entry);
+			const pkgJsonPath = join(pkgDir, "package.json");
+
+			let pkgJson: { exports?: Record<string, unknown> };
+			try {
+				pkgJson = JSON.parse(await readFile(pkgJsonPath, "utf-8"));
+			} catch {
+				continue;
+			}
+
+			const exports = pkgJson.exports;
+			if (!exports || typeof exports !== "object") continue;
+
+			for (const [subpath, exportEntry] of Object.entries(exports)) {
+				if (subpath === ".") continue;
+
+				const entryPath = resolveExportEntry(exportEntry);
+				if (!entryPath) continue;
+
+				const fullPath = resolve(pkgDir, entryPath);
+				if (await isBarrelReExportingUseClient(fullPath)) {
+					results.push(pkgName);
+					break;
+				}
+			}
+		}
+	}
+
+	return results;
+}
+
+/** Resolve a package.json exports entry to a file path. */
+function resolveExportEntry(entry: unknown): string | null {
+	if (typeof entry === "string") return entry;
+	if (entry && typeof entry === "object") {
+		const obj = entry as Record<string, unknown>;
+		for (const key of ["import", "default"]) {
+			const val = obj[key];
+			if (typeof val === "string") return val;
+			if (val && typeof val === "object") {
+				const nested = val as Record<string, unknown>;
+				if (typeof nested.default === "string") return nested.default;
+				if (typeof nested.import === "string") return nested.import;
+			}
+		}
+	}
+	return null;
+}
+
+/** Check if a file is a pure barrel that re-exports from 'use client' modules. */
+async function isBarrelReExportingUseClient(
+	filePath: string,
+): Promise<boolean> {
+	let code: string;
+	try {
+		code = await readFile(filePath, "utf-8");
+	} catch {
+		return false;
+	}
+
+	// Already has 'use client' — not a broken barrel
+	if (code.startsWith("'use client'") || code.startsWith('"use client"')) {
+		return false;
+	}
+
+	// Strip comments and blank lines
+	const stripped = code
+		.replace(/\/\/.*$/gm, "")
+		.replace(/\/\*[\s\S]*?\*\//g, "")
+		.replace(/^\s*$/gm, "")
+		.trim();
+
+	if (!stripped) return false;
+
+	// Check all lines are re-exports
+	const lines = stripped.split("\n").map((l) => l.trim());
+	const reExportPattern = /^export\s+\{[^}]*\}\s+from\s+['"][^'"]+['"];?\s*$/;
+	const starReExportPattern = /^export\s+\*\s+from\s+['"][^'"]+['"];?\s*$/;
+
+	const isBarrel = lines.every(
+		(line) =>
+			!line || reExportPattern.test(line) || starReExportPattern.test(line),
+	);
+	if (!isBarrel) return false;
+
+	// Check re-export targets for 'use client'
+	const sourcePattern = /from\s+['"]([^'"]+)['"]/g;
+	let match;
+	while ((match = sourcePattern.exec(code)) !== null) {
+		const resolvedSource = resolve(dirname(filePath), match[1]);
+		try {
+			const content = await readFile(resolvedSource, "utf-8");
+			if (
+				content.startsWith("'use client'") ||
+				content.startsWith('"use client"')
+			) {
+				return true;
+			}
+		} catch {
+			// skip unreadable files
+		}
+	}
+
+	return false;
 }

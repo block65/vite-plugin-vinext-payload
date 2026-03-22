@@ -1,11 +1,22 @@
 import { fileURLToPath } from "node:url";
 import type { EnvironmentOptions, Plugin } from "vite";
+import { RSC_STUBS } from "./payload-packages.ts";
 
-const FILE_TYPE_STUB = fileURLToPath(
-	new URL("./stubs/file-type.js", import.meta.url),
-);
-const DRIZZLE_KIT_API_STUB = fileURLToPath(
-	new URL("./stubs/drizzle-kit-api.js", import.meta.url),
+// Static stub files — these must export the named exports that consumers
+// expect. Dynamic empty stubs don't work because Rolldown checks for
+// MISSING_EXPORT on named imports like { fileTypeFromFile }.
+const STUB_FILES: Record<string, string> = {
+	"file-type": fileURLToPath(new URL("./stubs/file-type.js", import.meta.url)),
+	"drizzle-kit/api": fileURLToPath(
+		new URL("./stubs/drizzle-kit-api.js", import.meta.url),
+	),
+};
+
+// Build the stub path map from the curated list + static files
+const stubPaths: Record<string, string> = Object.fromEntries(
+	Object.keys(RSC_STUBS)
+		.filter((pkg) => pkg in STUB_FILES)
+		.map((pkg) => [pkg, STUB_FILES[pkg]]),
 );
 
 // Workerd's node:console polyfill defines console.createTask but throws
@@ -49,10 +60,7 @@ export function payloadRscStubs(): Plugin {
 				return;
 			}
 
-			const stubs: Record<string, string> = {
-				"file-type": FILE_TYPE_STUB,
-				"drizzle-kit/api": DRIZZLE_KIT_API_STUB,
-			};
+			const stubs = stubPaths;
 
 			return {
 				optimizeDeps: {
@@ -118,8 +126,7 @@ export function payloadRscStubs(): Plugin {
 				if (this.environment?.name !== "rsc") {
 					return;
 				}
-				if (source === "file-type") return FILE_TYPE_STUB;
-				if (source === "drizzle-kit/api") return DRIZZLE_KIT_API_STUB;
+				return stubPaths[source] ?? undefined;
 			},
 		},
 	};

@@ -91,7 +91,12 @@ export function payloadRscStubs(): Plugin {
 						plugins: [
 							{
 								name: "payload-rsc-stubs",
-								setup(build) {
+								setup(build: {
+									onResolve: (
+										opts: { filter: RegExp },
+										cb: () => { path: string },
+									) => void;
+								}) {
 									for (const [pkg, stub] of Object.entries(stubs)) {
 										build.onResolve(
 											{

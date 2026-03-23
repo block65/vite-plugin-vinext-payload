@@ -56,17 +56,16 @@ export function payloadUseClientBarrel(): Plugin {
  * Scan node_modules for packages whose subpath exports are barrels
  * that re-export from `'use client'` modules.
  */
-async function findBarrelClientPackages(
+async function* findBarrelClientPackagesIter(
 	prefixes: string[],
 	root: string,
-): Promise<string[]> {
-	const results: string[] = [];
-
-	for (const prefix of prefixes) {
+): AsyncGenerator<string> {
+	for await (const prefix of prefixes) {
 		const scope = prefix.startsWith("@") ? prefix.split("/")[0] : null;
-		if (!scope) continue;
+		if (!scope) {
+			continue;
+		}
 
-		// Read from project's node_modules
 		const scopeDir = join(root, "node_modules", scope);
 		let entries: string[];
 		try {
@@ -75,9 +74,11 @@ async function findBarrelClientPackages(
 			continue;
 		}
 
-		for (const entry of entries) {
+		for await (const entry of entries) {
 			const pkgName = `${scope}/${entry}`;
-			if (!pkgName.startsWith(prefix)) continue;
+			if (!pkgName.startsWith(prefix)) {
+				continue;
+			}
 
 			const pkgDir = join(scopeDir, entry);
 			const pkgJsonPath = join(pkgDir, "package.json");
@@ -90,38 +91,61 @@ async function findBarrelClientPackages(
 			}
 
 			const exports = pkgJson.exports;
-			if (!exports || typeof exports !== "object") continue;
+			if (!exports || typeof exports !== "object") {
+				continue;
+			}
 
-			for (const [subpath, exportEntry] of Object.entries(exports)) {
-				if (subpath === ".") continue;
+			for await (const [subpath, exportEntry] of Object.entries(exports)) {
+				if (subpath === ".") {
+					continue;
+				}
 
 				const entryPath = resolveExportEntry(exportEntry);
-				if (!entryPath) continue;
+				if (!entryPath) {
+					continue;
+				}
 
 				const fullPath = resolve(pkgDir, entryPath);
 				if (await isBarrelReExportingUseClient(fullPath)) {
-					results.push(pkgName);
+					yield pkgName;
 					break;
 				}
 			}
 		}
 	}
+}
 
+async function findBarrelClientPackages(
+	prefixes: string[],
+	root: string,
+): Promise<string[]> {
+	const results: string[] = [];
+	for await (const pkg of findBarrelClientPackagesIter(prefixes, root)) {
+		results.push(pkg);
+	}
 	return results;
 }
 
 /** Resolve a package.json exports entry to a file path. */
 function resolveExportEntry(entry: unknown): string | null {
-	if (typeof entry === "string") return entry;
+	if (typeof entry === "string") {
+		return entry;
+	}
 	if (entry && typeof entry === "object") {
 		const obj = entry as Record<string, unknown>;
 		for (const key of ["import", "default"]) {
 			const val = obj[key];
-			if (typeof val === "string") return val;
+			if (typeof val === "string") {
+				return val;
+			}
 			if (val && typeof val === "object") {
 				const nested = val as Record<string, unknown>;
-				if (typeof nested.default === "string") return nested.default;
-				if (typeof nested.import === "string") return nested.import;
+				if (typeof nested.default === "string") {
+					return nested.default;
+				}
+				if (typeof nested.import === "string") {
+					return nested.import;
+				}
 			}
 		}
 	}
@@ -151,7 +175,9 @@ async function isBarrelReExportingUseClient(
 		.replace(/^\s*$/gm, "")
 		.trim();
 
-	if (!stripped) return false;
+	if (!stripped) {
+		return false;
+	}
 
 	// Check all lines are re-exports
 	const lines = stripped.split("\n").map((l) => l.trim());
@@ -162,25 +188,24 @@ async function isBarrelReExportingUseClient(
 		(line) =>
 			!line || reExportPattern.test(line) || starReExportPattern.test(line),
 	);
-	if (!isBarrel) return false;
+	if (!isBarrel) {
+		return false;
+	}
 
 	// Check re-export targets for 'use client'
 	const sourcePattern = /from\s+['"]([^'"]+)['"]/g;
+	const sources: string[] = [];
 	let match;
 	while ((match = sourcePattern.exec(code)) !== null) {
-		const resolvedSource = resolve(dirname(filePath), match[1]);
-		try {
-			const content = await readFile(resolvedSource, "utf-8");
-			if (
-				content.startsWith("'use client'") ||
-				content.startsWith('"use client"')
-			) {
-				return true;
-			}
-		} catch {
-			// skip unreadable files
-		}
+		sources.push(resolve(dirname(filePath), match[1]));
 	}
 
-	return false;
+	const contents = await Promise.all(
+		sources.map((src) => readFile(src, "utf-8").catch(() => "")),
+	);
+
+	return contents.some(
+		(content) =>
+			content.startsWith("'use client'") || content.startsWith('"use client"'),
+	);
 }

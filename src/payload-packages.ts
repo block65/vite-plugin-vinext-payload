@@ -97,12 +97,10 @@ export const CLIENT_OPTIMIZE_DEPS_INCLUDE = [
 	// Remove: when React ships ESM for compiler-runtime.
 	"react/compiler-runtime",
 
-	// vinext shims these via resolve.alias but doesn't include them in
-	// optimizeDeps. Vite discovers them mid-session → re-optimizes →
-	// page reload, killing in-progress server actions.
+	// vinext shims next/* via resolve.alias. Additional next/* aliases
+	// are auto-discovered and included by payloadOptimizeDeps from the
+	// resolved alias config — no need to hardcode them here.
 	// Remove: when vinext adds these to its own optimizeDeps.include.
-	"next/navigation",
-	"next/link",
 	"@payloadcms/ui",
 ];
 

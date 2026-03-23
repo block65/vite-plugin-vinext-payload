@@ -83,17 +83,20 @@ payloadPlugin({
 
 `payloadPlugin()` composes these sub-plugins:
 
-| Plugin | What it does |
-| --- | --- |
-| `payloadUseClientBarrel` | Auto-detects `@payloadcms/*` barrel files that re-export from `'use client'` modules and excludes them from RSC pre-bundling (pre-bundling strips the directive, breaking client references) |
-| `payloadConfigAlias` | Configures SSR externals — only build tools and native addons are externalized (workerd can't resolve externals at runtime) |
-| `payloadOptimizeDeps` | Per-environment optimizeDeps: excludes problematic packages, force-includes CJS transitive deps for the client |
-| `payloadCjsTransform` | Fixes `this` → `globalThis` in UMD/CJS wrappers and wraps `module.exports` with ESM scaffolding (skips React/ReactDOM which Vite 8 handles natively) |
-| `payloadCliStubs` | Stubs packages not needed at web runtime (`console-table-printer`, `json-schema-to-typescript`, `esbuild-register`, `ws`) |
-| `payloadRscExportFix` | Fixes `@vitejs/plugin-rsc`'s CSS export transform dropping exports after sourcemap comments |
-| `payloadRscStubs` | Stubs `file-type` and `drizzle-kit/api` for RSC/workerd (Node.js APIs unavailable), polyfills workerd's broken `console.createTask` |
-| `payloadServerActionFix` | Fixes vinext's server action re-render loop by reordering `reactRoot.render()` (AST-based via ast-grep) |
-| `cjsInterop` | Fixes CJS default export interop for packages like `bson-objectid` (via [vite-plugin-cjs-interop](https://github.com/nicolo-ribaudo/vite-plugin-cjs-interop)) |
+| Plugin | Owner bug | What it does |
+| --- | --- | --- |
+| `payloadUseClientBarrel` | Payload | Auto-detects `@payloadcms/*` barrel files that re-export from `'use client'` modules and excludes them from RSC pre-bundling (pre-bundling strips the directive, breaking client references) |
+| `payloadConfigAlias` | workerd | Configures SSR externals — only build tools and native addons are externalized (workerd can't resolve externals at runtime) |
+| `payloadOptimizeDeps` | vinext | Per-environment optimizeDeps: excludes problematic packages, force-includes CJS transitive deps for the client. Auto-discovers all `next/*` alias specifiers from the resolved config so the optimizer doesn't discover them at runtime (which causes a full page reload) |
+| `payloadCjsTransform` | Vite | Fixes `this` → `globalThis` in UMD/CJS wrappers and wraps `module.exports` with ESM scaffolding (skips React/ReactDOM which Vite 8 handles natively) |
+| `payloadCliStubs` | Payload | Stubs packages not needed at web runtime (`console-table-printer`, `json-schema-to-typescript`, `esbuild-register`, `ws`) |
+| `payloadNavHydrationFix` | Payload | Patches `DefaultNavClient` and `DocumentTabLink` to not switch element types (`<a>` vs `<div>`) based on `usePathname()`/`useParams()` — prevents React 19 tree-destroying hydration mismatches (AST-based via ast-grep) |
+| `payloadNavigationHydrationFix` | vinext | Patches vinext's `next/navigation` shim on disk so `usePathname`/`useParams`/`useSearchParams` use client snapshots during hydration instead of the server context (which is `null` on the client) |
+| `payloadRedirectFix` | vinext | Catches `NEXT_REDIRECT` errors that leak through the RSC stream during async rendering and converts them to client-side `location.replace()` redirects |
+| `payloadRscExportFix` | @vitejs/plugin-rsc | Fixes `@vitejs/plugin-rsc`'s CSS export transform dropping exports after sourcemap comments |
+| `payloadRscStubs` | workerd / pnpm | Stubs `file-type` and `drizzle-kit/api` for RSC/workerd (Node.js APIs unavailable), polyfills workerd's broken `console.createTask` |
+| `payloadServerActionFix` | vinext | Moves `getReactRoot().render()` after the `returnValue` check in vinext's browser entry so data-returning server actions (like `getFormState`) don't trigger a re-render that resets Payload's form state. Also rewrites the browser entry's relative shim import to use the pre-bundled alias (AST-based via ast-grep) |
+| `cjsInterop` | Vite | Fixes CJS default export interop for packages like `bson-objectid` (via [vite-plugin-cjs-interop](https://github.com/nicolo-ribaudo/vite-plugin-cjs-interop)) |
 
 ## A La Carte
 
@@ -106,6 +109,9 @@ import {
 	payloadOptimizeDeps,
 	payloadCjsTransform,
 	payloadCliStubs,
+	payloadNavHydrationFix,
+	payloadNavigationHydrationFix,
+	payloadRedirectFix,
 	payloadRscExportFix,
 	payloadRscStubs,
 	payloadServerActionFix,
@@ -125,10 +131,15 @@ These are bugs in dependencies that this plugin works around. See [`docs/upstrea
 
 | Issue | Owner | Our workaround |
 | --- | --- | --- |
-| `'use client'` not detected through barrel re-exports | @vitejs/plugin-rsc | Auto-exclude affected packages from RSC optimizeDeps |
+| Barrel exports missing `'use client'` directive | Payload | Auto-exclude affected packages from RSC optimizeDeps |
 | RSC export transform drops exports after sourcemap comments | @vitejs/plugin-rsc | Post-transform newline insertion |
 | `console.createTask` throws "not implemented" | workerd | Try/catch polyfill |
 | `file-type` / `drizzle-kit/api` unresolvable in workerd | pnpm + Vite | Stub modules for RSC |
+| Navigation shim `getServerSnapshot` returns wrong values during hydration | vinext | Patch on disk to use client snapshots |
+| Browser entry imports shims via relative paths → optimizer reload + duplicate React | vinext | Rewrite import to aliased specifier; auto-include all `next/*` aliases in optimizeDeps |
+| `render()` called before `returnValue` check → form state reset | vinext | AST transform to reorder render after returnValue |
+| Components switch element types based on pathname/params → tree-destroying hydration mismatch | Payload | AST transform to force consistent element types |
+| `NEXT_REDIRECT` errors leak through RSC stream during async rendering | vinext | Client-side redirect interception |
 
 ## License
 

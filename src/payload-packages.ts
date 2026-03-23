@@ -96,6 +96,14 @@ export const CLIENT_OPTIMIZE_DEPS_INCLUDE = [
 	// CJS file via /@fs/ and can't import named exports.
 	// Remove: when React ships ESM for compiler-runtime.
 	"react/compiler-runtime",
+
+	// vinext shims these via resolve.alias but doesn't include them in
+	// optimizeDeps. Vite discovers them mid-session → re-optimizes →
+	// page reload, killing in-progress server actions.
+	// Remove: when vinext adds these to its own optimizeDeps.include.
+	"next/navigation",
+	"next/link",
+	"@payloadcms/ui",
 ];
 
 // ---------------------------------------------------------------------------

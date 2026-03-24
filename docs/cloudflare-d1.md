@@ -81,12 +81,6 @@ Remove `"remote": true` from D1 bindings — it requires Cloudflare auth:
 
 ## Known Issues
 
-### "Functions cannot be passed directly to Client Components"
-
-Payload passes functions (`label`, `defaultAccess`, hooks) in field configs across the RSC boundary. Next.js silently drops these; vinext's RSC serializer throws. The admin panel still works — the functions become `undefined` on the client — but the error spams the console.
-
-**Workaround:** Patch vinext to suppress these errors. See [cloudflare/vinext#237](https://github.com/cloudflare/vinext/issues/237).
-
 ### "Response body object should not be disturbed or locked"
 
 Occasional 500 on POST routes (e.g. saving content). The request body is consumed by Payload's handler, then vinext's adapter tries to re-read it. Usually resolves on retry.

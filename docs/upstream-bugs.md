@@ -62,6 +62,10 @@ statements in `react-server-dom-webpack_server__edge.js` to
 `return undefined;` (matching Next.js prod behavior). Only applies to
 modules with `react-server-dom-webpack` in the ID.
 
+**Note:** vinext's `rscOnError` handler only controls the error digest
+sent to the client, not whether the error aborts rendering. Our
+transform replaces the throws entirely — no vinext patch needed.
+
 ---
 
 ## Payload: barrel exports missing `'use client'` directive
@@ -95,32 +99,6 @@ propagates `'use client'` through barrel files for non-pre-bundled paths.
 
 ---
 
-## @vitejs/plugin-rsc: client reference proxy throws on invocation
-
-**Status:** By design in plugin-rsc (but overly strict for framework use).
-**Responsibility:** @vitejs/plugin-rsc
-**Repo:** https://github.com/nicolo-ribaudo/vite-plugin-rsc
-
-**Bug:** When a `"use client"` export is called as a function on the server
-(not rendered as a component), plugin-rsc's client reference proxy throws
-`"Unexpectedly client reference export '...' is called on server"`. This
-is correct for catching real bugs but breaks Payload CMS where server-side
-initialization code touches client exports.
-
-The proxy is generated in two places:
-- `dist/core/rsc.js:21` — runtime proxy creation
-- `dist/plugin.js:761` — transform-time injection into any `"use client"`
-  module (this means the throw can appear in ANY module, not just
-  plugin-rsc files)
-
-**Our workaround:** Transform hook in `payloadRscStubs` patches throws
-containing `"Unexpectedly client reference export"` to return a deep
-no-op Proxy (handles arbitrary property access and function calls).
-Applied to ALL RSC modules since plugin-rsc injects the code into
-third-party packages.
-
----
-
 ## workerd: `console.createTask` throws "not implemented"
 
 **Status:** Not yet filed upstream.
@@ -138,25 +116,6 @@ and calls it for async stack traces, causing a crash.
 **Our workaround:** Transform hook in `payloadRscStubs` prepends a
 try/catch polyfill to React modules that reference `console.createTask`.
 The polyfill detects the broken implementation and replaces it.
-
----
-
-## workerd: can't resolve externalized packages
-
-**Status:** Architecture mismatch (not a bug per se).
-**Responsibility:** This plugin (SSR_EXTERNAL list was too broad for workerd)
-
-**Bug:** `ssr.external` applies to ALL server environments including RSC.
-In Node.js SSR, externalized packages are resolved via Node's native module
-resolution. In workerd (Cloudflare's module runner), there's no native
-module resolution — externalized packages can't be found.
-
-**Affected packages:** `graphql`, `graphql-http`, `drizzle-kit`,
-`drizzle-kit/api`, `pino`, `pluralize` — all were in `SSR_EXTERNAL`.
-
-**Our fix:** Removed runtime packages from `SSR_EXTERNAL`. Only build-time
-tools (`esbuild`, `wrangler`, `miniflare`) and native addons (`sharp`)
-remain externalized. Runtime CJS packages are now handled by optimizeDeps.
 
 ---
 
@@ -180,29 +139,6 @@ migration utilities not needed during RSC rendering.
 **Note:** `drizzle-kit/api` is loaded via dynamic `require()` in the
 pre-bundled chunk, so the Rolldown/esbuild plugins don't intercept it.
 The error is non-fatal — the page renders despite it.
-
----
-
-## vinext: `rscOnError` doesn't suppress function-passing RSC errors
-
-**Status:** Not yet filed upstream.
-**Responsibility:** vinext
-**Repo:** https://github.com/cloudflare/vinext
-
-**Bug:** Next.js silently drops functions passed across the RSC boundary
-(e.g. `label`, `access`, `hooks` in Payload CMS field configs). The
-function prop becomes `undefined` on the client. vinext's `rscOnError`
-handler in `dist/entries/app-rsc-entry.js` does not suppress these
-errors, causing the RSC stream to fail.
-
-**Note:** The `rscOnError` patch in vinext is necessary but insufficient —
-it only controls the error digest sent to the client, not whether the
-error aborts rendering. Our transform-based approach in `payloadRscStubs`
-replaces the throws entirely, preventing the errors from occurring.
-
-**Our workaround:** `node_modules` patch on vinext's `app-rsc-entry.js`
-(see norfolk project's `patches/vinext.patch`) PLUS the transform-based
-suppression in this plugin's `payloadRscStubs`.
 
 ---
 
@@ -320,3 +256,32 @@ to force consistent rendering: `pathname === href` → `false` (always
 render `<Link>`), `$_ ? "link" : "div"` → `"link"`, etc. All transforms
 are AST-based for resilience across Payload versions. The visual
 difference is negligible (active nav items don't get a special indicator).
+
+---
+
+## vinext: `NEXT_REDIRECT` errors leak through RSC stream during async rendering
+
+**Status:** Not yet filed upstream.
+**Responsibility:** vinext
+**Repo:** https://github.com/cloudflare/vinext
+
+**Issue:** Payload uses `redirect()` from `next/navigation` for auth
+checks and route guards. In Next.js, these sentinel errors are caught
+by the framework and turned into HTTP 302 responses.
+
+vinext handles `NEXT_REDIRECT` for server actions (via `x-action-redirect`
+headers) and for synchronous throws during element building
+(`resolveAppPageSpecialError`). But redirects thrown during async
+rendering inside `renderToReadableStream` — e.g. inside async server
+components or Suspense boundaries — are not intercepted. The error
+enters the RSC stream via `rscOnError` and surfaces on the client as:
+
+```
+Uncaught Error: NEXT_REDIRECT:/admin
+  at resolveErrorDev (react-server-dom-webpack_client__browser.js)
+```
+
+**Our workaround:** `payloadRedirectFix` injects a client-side script
+that listens for `error` and `unhandledrejection` events, detects
+`NEXT_REDIRECT` in the error message, and performs
+`location.replace()` (or `location.assign()` for push-type redirects).

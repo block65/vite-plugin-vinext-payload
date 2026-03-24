@@ -49,7 +49,8 @@
 		"preversion": "npm run lint && npm run fmt:check",
 		"test": "node --test test/init.test.ts",
 		"test:e2e": "node --test test/e2e.test.ts",
-		"test:e2e-d1": "node --test test/e2e-d1.test.ts"
+		"test:e2e-d1": "node --test test/e2e-d1.test.ts",
+		"test:e2e-admin": "node --test test/e2e-admin.test.ts"
 	},
 	"dependencies": {
 		"@ast-grep/napi": "^0.42.0",
@@ -60,6 +61,7 @@
 		"@types/node": "^24.12.0",
 		"oxfmt": "^0.41.0",
 		"oxlint": "^1.56.0",
+		"playwright": "^1.52.0",
 		"typescript": "^6.0.1-rc",
 		"vite": "^8.0.1"
 	},

@@ -311,7 +311,7 @@ export async function rewritePayloadConfigForVinext(
     edits.push({
       start: r.start.index,
       end,
-      replacement: "const cfEnv = await getCloudflareEnv()\n",
+      replacement: "",
     });
   }
 
@@ -325,8 +325,13 @@ export async function rewritePayloadConfigForVinext(
   }
 
   // 7. Replace isCLI || !isProduction → !isProduction
+  // Skip occurrences inside cfAssign — that whole node is replaced by step 5.
+  const cfRange = cfAssign?.range();
   for (const check of root.findAll("isCLI || !isProduction")) {
     const r = check.range();
+    if (cfRange && r.start.index >= cfRange.start.index && r.end.index <= cfRange.end.index + 1) {
+      continue;
+    }
     edits.push({ start: r.start.index, end: r.end.index, replacement: "!isProduction" });
   }
 
@@ -360,7 +365,7 @@ export async function rewritePayloadConfigForVinext(
   }
 
   // Add getCloudflareEnv function before export default (if not already present)
-  if (!result.includes("getCloudflareEnv")) {
+  if (!result.includes("function getCloudflareEnv")) {
     const fn = `\nasync function getCloudflareEnv() {
   try {
     const { env } = await import(/* @vite-ignore */ 'cloudflare:workers')

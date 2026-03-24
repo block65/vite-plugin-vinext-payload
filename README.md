@@ -125,9 +125,9 @@ import {
 - vinext 0.0.33+
 - Payload CMS 3.x
 
-## Known Upstream Issues
+## Known Compatibility Issues
 
-These are bugs in dependencies that this plugin works around. See [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for details and ownership.
+These all work fine on Next.js — they exist because vinext reimplements Next.js's framework layer on Vite. See [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for details on what Next.js does differently.
 
 | Issue | Owner | Our workaround |
 | --- | --- | --- |

@@ -79,14 +79,6 @@ Remove `"remote": true` from D1 bindings — it requires Cloudflare auth:
 
 ---
 
-## Known Issues
-
-### "Response body object should not be disturbed or locked"
-
-Occasional 500 on POST routes (e.g. saving content). The request body is consumed by Payload's handler, then vinext's adapter tries to re-read it. Usually resolves on retry.
-
----
-
 ## Reference
 
 - [payloadcms/payload#15876](https://github.com/payloadcms/payload/discussions/15876) — Vinext compatibility issues filed upstream

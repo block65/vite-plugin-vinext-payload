@@ -4,7 +4,7 @@ import { SSR_EXTERNAL } from "./payload-packages.ts";
 export interface PayloadConfigAliasOptions {
 	/**
 	 * Additional packages to externalize from SSR bundling.
-	 * Merged with the built-in list (graphql, drizzle-kit, pino).
+	 * Merged with the built-in list (esbuild, wrangler, miniflare, sharp).
 	 */
 	ssrExternal?: string[];
 }

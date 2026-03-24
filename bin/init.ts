@@ -8,7 +8,6 @@
  * 1. Adds payloadPlugin() to vite.config.ts
  * 2. Extracts serverFunction from layout.tsx into a 'use server' module
  * 3. Adds normalizeParams to admin page.tsx
- * 4. Adds @payload-config path to tsconfig.json
  */
 
 import { readFile, writeFile } from "node:fs/promises";
@@ -346,53 +345,6 @@ async function fixServerFunction({
 	];
 }
 
-async function addTsconfigPath({ cwd, dryRun }: InitOptions): Promise<Result> {
-	const file = join(cwd, "tsconfig.json");
-	const content = await tryRead(file);
-
-	if (!content) {
-		return { file: "tsconfig.json", action: "skipped", reason: "not found" };
-	}
-
-	if (content.includes("@payload-config")) {
-		return {
-			file: "tsconfig.json",
-			action: "skipped",
-			reason: "@payload-config already present",
-		};
-	}
-
-	// Detect config location by trying to read it
-	const configPath = (await tryRead(join(cwd, "src/payload.config.ts")))
-		? "./src/payload.config.ts"
-		: "./payload.config.ts";
-
-	let updated = content;
-
-	if (updated.includes('"paths"')) {
-		updated = updated.replace(
-			/("paths"\s*:\s*\{)/,
-			`$1\n      "@payload-config": ["${configPath}"],`,
-		);
-	} else if (updated.includes('"compilerOptions"')) {
-		updated = updated.replace(
-			/("compilerOptions"\s*:\s*\{)/,
-			`$1\n    "paths": {\n      "@payload-config": ["${configPath}"]\n    },`,
-		);
-	}
-
-	if (updated !== content) {
-		await maybeWrite(file, updated, dryRun);
-		return { file: "tsconfig.json", action: "modified" };
-	}
-
-	return {
-		file: "tsconfig.json",
-		action: "skipped",
-		reason: "could not find insertion point",
-	};
-}
-
 export class InitError extends Error {}
 
 export async function init(options: InitOptions) {
@@ -420,26 +372,19 @@ export async function init(options: InitOptions) {
 	console.log("Initializing vite-plugin-vinext-payload...\n");
 
 	// Run independent transforms concurrently, sequential ones together
-	const [viteConfigResult, tsconfigResult, serverFnResults, pageResult] =
-		await Promise.all([
-			addPayloadPluginToViteConfig(options),
-			addTsconfigPath(options),
-			fixServerFunction(options),
-			applyTemplate(
-				cwd,
-				`${ADMIN_DIR}/page.tsx`,
-				"normalizeParams",
-				PAGE_TSX,
-				dryRun,
-			),
-		]);
+	const [viteConfigResult, serverFnResults, pageResult] = await Promise.all([
+		addPayloadPluginToViteConfig(options),
+		fixServerFunction(options),
+		applyTemplate(
+			cwd,
+			`${ADMIN_DIR}/page.tsx`,
+			"normalizeParams",
+			PAGE_TSX,
+			dryRun,
+		),
+	]);
 
-	const results = [
-		viteConfigResult,
-		tsconfigResult,
-		...serverFnResults,
-		pageResult,
-	];
+	const results = [viteConfigResult, ...serverFnResults, pageResult];
 
 	for (const r of results) {
 		const icon =

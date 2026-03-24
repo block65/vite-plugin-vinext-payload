@@ -61,11 +61,6 @@ describe("init: file transforms", () => {
 		assert.ok(page.includes("segments: undefined"));
 	});
 
-	it("skips tsconfig when @payload-config already present", async () => {
-		await scaffold();
-		const output = await runInit();
-		assert.ok(output.includes("@payload-config already present"));
-	});
 });
 
 describe("init: vite.config.ts styles", () => {

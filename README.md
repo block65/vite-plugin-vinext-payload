@@ -22,7 +22,7 @@ The plugin's `init` command is idempotent — safe to run multiple times. It:
 
 - Adds `payloadPlugin()` to your `vite.config.ts`
 - Extracts the inline server function from `layout.tsx` into a separate `'use server'` module (required for Vite's RSC transform)
-- Adds `normalizeParams` to the admin page (fixes `/admin` 404)
+- Adds `normalizeParams` to the admin page
 
 Use `--dry-run` to preview changes without writing files.
 
@@ -94,7 +94,7 @@ payloadPlugin({
 | `payloadNavigationHydrationFix` | vinext | Patches vinext's `next/navigation` shim on disk so `usePathname`/`useParams`/`useSearchParams` use client snapshots during hydration instead of the server context (which is `null` on the client) |
 | `payloadRedirectFix` | vinext | Catches `NEXT_REDIRECT` errors that leak through the RSC stream during async rendering and converts them to client-side `location.replace()` redirects |
 | `payloadRscExportFix` | @vitejs/plugin-rsc | Fixes `@vitejs/plugin-rsc`'s CSS export transform dropping exports after sourcemap comments |
-| `payloadRscStubs` | workerd / pnpm | Stubs `file-type` and `drizzle-kit/api` for RSC/workerd (Node.js APIs unavailable), polyfills workerd's broken `console.createTask` |
+| `payloadRscStubs` | vinext / workerd / pnpm | Stubs `file-type` and `drizzle-kit/api` for RSC/workerd, polyfills workerd's broken `console.createTask`, patches RSC serializer to silently drop non-serializable values (functions, RegExps) at the server/client boundary (matching Next.js prod behavior) |
 | `payloadServerActionFix` | vinext | Moves `getReactRoot().render()` after the `returnValue` check in vinext's browser entry so data-returning server actions (like `getFormState`) don't trigger a re-render that resets Payload's form state. Also rewrites the browser entry's relative shim import to use the pre-bundled alias (AST-based via ast-grep) |
 | `cjsInterop` | Vite | Fixes CJS default export interop for packages like `bson-objectid` (via [vite-plugin-cjs-interop](https://github.com/nicolo-ribaudo/vite-plugin-cjs-interop)) |
 
@@ -121,7 +121,7 @@ import {
 ## Requirements
 
 - Node.js >= 24
-- Vite 6, 7, or 8
+- Vite 8 (may work on 6/7 but untested)
 - vinext 0.0.33+
 - Payload CMS 3.x
 
@@ -139,6 +139,7 @@ These are bugs in dependencies that this plugin works around. See [`docs/upstrea
 | Browser entry imports shims via relative paths → optimizer reload + duplicate React | vinext | Rewrite import to aliased specifier; auto-include all `next/*` aliases in optimizeDeps |
 | `render()` called before `returnValue` check → form state reset | vinext | AST transform to reorder render after returnValue |
 | Components switch element types based on pathname/params → tree-destroying hydration mismatch | Payload | AST transform to force consistent element types |
+| Non-serializable values (functions, RegExps) not silently dropped at RSC boundary | vinext | Patch serializer throws to `return undefined` |
 | `NEXT_REDIRECT` errors leak through RSC stream during async rendering | vinext | Client-side redirect interception |
 
 ## License

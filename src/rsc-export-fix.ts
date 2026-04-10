@@ -33,16 +33,23 @@ export function payloadRscExportFix(): Plugin {
 					return;
 				}
 
-				// Match: //# sourceMappingURL=…export {  (on same line)
-				const fixed = code.replace(
-					/(\/\/# sourceMappingURL=[^\n]*?)(export\s)/g,
-					"$1\n$2",
-				);
+				// Match:
+				//   //# sourceMappingURL=...export { ... }
+				//   /*# sourceMappingURL=... */export { ... }
+				// and inject a newline so export statements aren't swallowed.
+				const fixed = code
+					.replace(
+						/(\/\/[#@]\s*sourceMappingURL=[^\r\n]*?)(export\s*(?:\{|\*|default\b))/g,
+						"$1\n$2",
+					)
+					.replace(
+						/(\/\*#\s*sourceMappingURL=[^*]*\*\/)(export\s*(?:\{|\*|default\b))/g,
+						"$1\n$2",
+					);
 
 				if (fixed === code) {
 					return;
 				}
-
 				return { code: fixed, map: null };
 			},
 		},

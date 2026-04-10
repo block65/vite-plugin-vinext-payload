@@ -33,6 +33,15 @@ import { dedent } from "./dedent.ts";
  * Error formats (from vinext's navigation.ts shim):
  *   message: `NEXT_REDIRECT:{url}`                         (raw URL)
  *   digest:  `NEXT_REDIRECT;{type};{encodedUrl}[;{status}]` (URL-encoded)
+ *
+ * Injection strategy:
+ *   - `transformIndexHtml`: Works when vinext dev server renders HTML
+ *     in Node.js (no Cloudflare plugin). Vite calls the hook before
+ *     sending the HTML response.
+ *   - `transform` (SSR entry): When the Cloudflare plugin is active,
+ *     HTML is generated inside workerd by vinext's SSR entry, bypassing
+ *     `transformIndexHtml` entirely. We transform the SSR entry to
+ *     prepend the redirect handler `<script>` to the HTML head injection.
  */
 
 // Inline script injected into <head> — runs before React boots.
@@ -74,9 +83,23 @@ const REDIRECT_HANDLER = dedent`
 	})();
 `;
 
+// Minified version for embedding in a JS double-quoted string literal.
+// Uses single quotes to avoid escaping. No newlines, no backslashes.
+const REDIRECT_HANDLER_INLINE =
+	"(function(){function h(e){if(!e)return!1;var m=e.message||'';" +
+	"if(m.indexOf('NEXT_REDIRECT:')===0){location.replace(m.slice(14));return!0}" +
+	"var d=e.digest||'';if(d.indexOf('NEXT_REDIRECT;')===0){var p=d.split(';');" +
+	"var u=decodeURIComponent(p[2]||'');if(u){p[1]==='push'?location.assign(u)" +
+	":location.replace(u);return!0}}return!1}addEventListener('error',function(e)" +
+	"{if(h(e.error))e.preventDefault()},!0);addEventListener('unhandledrejection'," +
+	"function(e){if(h(e.reason))e.preventDefault()})})()";
+
 export function payloadRedirectFix(): Plugin {
 	return {
 		name: "vite-plugin-payload:redirect-fix",
+
+		// Path 1: vinext dev server (Node.js, no Cloudflare plugin).
+		// Vite processes the HTML through transformIndexHtml before sending.
 		transformIndexHtml() {
 			return [
 				{
@@ -85,6 +108,35 @@ export function payloadRedirectFix(): Plugin {
 					injectTo: "head-prepend",
 				},
 			];
+		},
+
+		// Path 2: Cloudflare plugin dev mode.
+		// HTML is generated inside workerd by vinext's SSR entry —
+		// transformIndexHtml never fires. We transform the SSR entry to
+		// prepend the redirect handler <script> to the head injection HTML.
+		transform: {
+			handler(code, id) {
+				if (this.environment?.name !== "ssr") {
+					return null;
+				}
+				if (!id.includes("app-ssr-entry")) {
+					return null;
+				}
+				if (!code.includes("createTickBufferedTransform")) {
+					return null;
+				}
+
+				const scriptTag = `<script>${REDIRECT_HANDLER_INLINE}<\\/script>`;
+				const modified = code.replace(
+					"createTickBufferedTransform(rscEmbed, injectHTML)",
+					`createTickBufferedTransform(rscEmbed, "${scriptTag}" + injectHTML)`,
+				);
+
+				if (modified === code) {
+					return null;
+				}
+				return { code: modified, map: null };
+			},
 		},
 	};
 }

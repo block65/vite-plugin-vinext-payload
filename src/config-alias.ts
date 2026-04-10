@@ -28,29 +28,27 @@ export function payloadConfigAlias(
 					external: [...ssrExternals, "cloudflare:workers"],
 				},
 				build: {
-					rollupOptions: {
+					rolldownOptions: {
 						external: ["cloudflare:workers"],
 					},
 				},
 			} satisfies UserConfig;
 		},
-		// Apply resolve.external only to the SSR environment.
-		// Skip RSC — @cloudflare/vite-plugin rejects resolve.external on
-		// environments it manages, and it may own RSC via viteEnvironment.
-		// The top-level ssr.external from the config hook already covers
-		// server-side externals for both environments.
-		configEnvironment(name, config) {
-			if (name !== "ssr") {
-				return;
+		configEnvironment(name, _config) {
+			// @cloudflare/vite-plugin rejects resolve.external on ALL
+			// environments it manages (both RSC and SSR). Use
+			// build.rolldownOptions.external instead for both.
+			// ssr.external also does NOT propagate to RSC — it only applies
+			// to the "ssr" named environment in Vite's Environment API.
+			if (name === "ssr" || name === "rsc") {
+				return {
+					build: {
+						rolldownOptions: {
+							external: ssrExternals,
+						},
+					},
+				} satisfies EnvironmentOptions;
 			}
-			return {
-				resolve: {
-					external: [
-						...((config.resolve?.external as string[]) ?? []),
-						...ssrExternals,
-					],
-				},
-			} satisfies EnvironmentOptions;
 		},
 	};
 }

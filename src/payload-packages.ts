@@ -16,7 +16,9 @@
 // packages that genuinely can't be bundled (native addons, build tools)
 // must be explicitly externalized.
 //
-// NOTE: ssr.external applies to ALL server environments including RSC.
+// NOTE: ssr.external only applies to the "ssr" named environment in
+// Vite's Environment API — NOT to RSC. The payloadConfigAlias plugin
+// separately externalizes these from RSC via build.rolldownOptions.external.
 // In workerd, externalized packages can't be resolved at runtime — only
 // packages that are truly never imported at runtime belong here.
 // ---------------------------------------------------------------------------

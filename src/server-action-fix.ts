@@ -21,140 +21,124 @@ import type { Plugin } from "vite";
  * Remove: when vinext uses the aliased `next/navigation` in its browser entry
  * and defers render for data-returning server actions.
  */
+
+/**
+ * Rewrite the relative `../shims/navigation.js` import to `next/navigation`
+ * so Vite serves the pre-bundled version instead of the raw shim.
+ */
+function rewriteNavigationImport(code: string): string {
+	const root = parse(Lang.JavaScript, code).root();
+	const navSource = root.find({
+		rule: {
+			kind: "string",
+			regex: "shims/navigation",
+			inside: { kind: "import_statement" },
+		},
+	});
+	if (!navSource) {
+		return code;
+	}
+	return root.commitEdits([navSource.replace('"next/navigation"')]);
+}
+
+// vinext ≤0.0.32: reactRoot.render($ROOT)
+// vinext ≥0.0.33: getReactRoot().render($ROOT)
+const RENDER_PATTERNS = [
+	"getReactRoot().render($ROOT)",
+	"reactRoot.render($ROOT)",
+];
+
+/**
+ * Move the render() call after the returnValue check so data-returning
+ * server actions (like getFormState) don't trigger a re-render that
+ * resets Payload's form state.
+ */
+function moveRenderAfterReturnValue(code: string): string | null {
+	const root = parse(Lang.JavaScript, code).root();
+
+	let ifStmt = null;
+	let matchedPattern: string | null = null;
+
+	for (const pattern of RENDER_PATTERNS) {
+		ifStmt = root.find({
+			rule: {
+				kind: "if_statement",
+				has: { pattern: "result.returnValue", stopBy: "end" },
+				follows: {
+					pattern: `${pattern};`,
+					stopBy: "end",
+				},
+			},
+		});
+		if (ifStmt) {
+			matchedPattern = pattern;
+			break;
+		}
+	}
+
+	if (!ifStmt || !matchedPattern) {
+		return null;
+	}
+
+	const parentBlock = ifStmt.parent();
+	if (!parentBlock) {
+		return null;
+	}
+
+	const renderStmt = parentBlock.find(`${matchedPattern};`);
+	if (!renderStmt) {
+		return null;
+	}
+
+	// Find `return;` or `return undefined;` after the returnValue if-block
+	let returnStmt = ifStmt.next();
+	while (returnStmt) {
+		if (returnStmt.kind() === "return_statement") {
+			break;
+		}
+		returnStmt = returnStmt.next();
+	}
+	if (!returnStmt) {
+		return null;
+	}
+
+	const renderRange = renderStmt.range();
+	const returnRange = returnStmt.range();
+
+	const renderLineStart = code.lastIndexOf("\n", renderRange.start.index) + 1;
+	const renderIndent = code.slice(renderLineStart, renderRange.start.index);
+	const afterRender = code.indexOf("\n", renderRange.end.index);
+	const removeEnd =
+		afterRender !== -1 ? afterRender + 1 : renderRange.end.index;
+
+	const returnLineStart = code.lastIndexOf("\n", returnRange.start.index) + 1;
+
+	const before = code.slice(0, renderLineStart);
+	const middle = code.slice(removeEnd, returnLineStart);
+	const after = code.slice(returnLineStart);
+
+	return before + middle + renderIndent + renderStmt.text() + "\n" + after;
+}
+
 export function payloadServerActionFix(): Plugin {
 	return {
 		name: "vite-plugin-payload:server-action-fix",
 		enforce: "post",
 		transform(code, id) {
-			// Match both virtual module (vinext ≤0.0.32: "virtual:vinext-app-browser-entry")
-			// and compiled file (vinext ≥0.0.33: "vinext/dist/server/app-browser-entry.js")
 			if (!id.includes("app-browser-entry")) {
 				return;
 			}
-
-			// Quick bailout for unrelated modules
 			if (!code.includes("returnValue")) {
 				return;
 			}
 
-			// Fix 2: Rewrite relative navigation import to use the aliased
-			// (and pre-bundled) `next/navigation`. Without this, Vite serves
-			// the raw shim file alongside the pre-bundled version → duplicate
-			// React → optimizer discovers a new dep → full page reload.
-			let transformed = code;
-			const rawRoot = parse(Lang.JavaScript, code).root();
-			const navSource = rawRoot.find({
-				rule: {
-					kind: "string",
-					regex: "shims/navigation",
-					inside: { kind: "import_statement" },
-				},
-			});
-			if (navSource) {
-				const r = navSource.range();
-				transformed =
-					code.slice(0, r.start.index) +
-					'"next/navigation"' +
-					code.slice(r.end.index);
+			const withFixedImport = rewriteNavigationImport(code);
+			const withFixedRender = moveRenderAfterReturnValue(withFixedImport);
+			const result = withFixedRender ?? withFixedImport;
+
+			if (result !== code) {
+				return { code: result, map: null };
 			}
-
-			// Fix 1: Move render() after returnValue check
-			const root = parse(Lang.JavaScript, transformed).root();
-
-			// vinext ≤0.0.32: reactRoot.render($ROOT)
-			// vinext ≥0.0.33: getReactRoot().render($ROOT)
-			const renderPatterns = [
-				"getReactRoot().render($ROOT)",
-				"reactRoot.render($ROOT)",
-			];
-
-			let ifStmt = null;
-			let matchedPattern: string | null = null;
-
-			for (const pattern of renderPatterns) {
-				ifStmt = root.find({
-					rule: {
-						kind: "if_statement",
-						has: { pattern: "result.returnValue", stopBy: "end" },
-						follows: {
-							pattern: `${pattern};`,
-							stopBy: "end",
-						},
-					},
-				});
-				if (ifStmt) {
-					matchedPattern = pattern;
-					break;
-				}
-			}
-
-			if (!ifStmt || !matchedPattern) {
-				// Even if the render pattern isn't found (already patched,
-				// or vinext changed), return the import-rewritten code.
-				if (transformed !== code) {
-					return { code: transformed, map: null };
-				}
-				return;
-			}
-
-			const parentBlock = ifStmt.parent();
-			if (!parentBlock) {
-				if (transformed !== code) {
-					return { code: transformed, map: null };
-				}
-				return;
-			}
-
-			const renderStmt = parentBlock.find(`${matchedPattern};`);
-			if (!renderStmt) {
-				if (transformed !== code) {
-					return { code: transformed, map: null };
-				}
-				return;
-			}
-
-			// Find `return;` or `return undefined;` after the returnValue if-block
-			let returnStmt = ifStmt.next();
-			while (returnStmt) {
-				if (returnStmt.kind() === "return_statement") {
-					break;
-				}
-				returnStmt = returnStmt.next();
-			}
-			if (!returnStmt) {
-				if (transformed !== code) {
-					return { code: transformed, map: null };
-				}
-				return;
-			}
-
-			// Move the render call from before the if-block to just before
-			// the return — so data-returning actions (getFormState) skip the
-			// re-render that resets Payload's form state.
-			const renderRange = renderStmt.range();
-			const returnRange = returnStmt.range();
-
-			const renderLineStart =
-				transformed.lastIndexOf("\n", renderRange.start.index) + 1;
-			const renderIndent = transformed.slice(
-				renderLineStart,
-				renderRange.start.index,
-			);
-			const afterRender = transformed.indexOf("\n", renderRange.end.index);
-			const removeEnd =
-				afterRender !== -1 ? afterRender + 1 : renderRange.end.index;
-
-			const returnLineStart =
-				transformed.lastIndexOf("\n", returnRange.start.index) + 1;
-
-			const before = transformed.slice(0, renderLineStart);
-			const middle = transformed.slice(removeEnd, returnLineStart);
-			const after = transformed.slice(returnLineStart);
-
-			const result =
-				before + middle + renderIndent + renderStmt.text() + "\n" + after;
-
-			return { code: result, map: null };
 		},
 	};
 }

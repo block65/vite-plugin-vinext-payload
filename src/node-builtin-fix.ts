@@ -47,9 +47,9 @@ export function payloadNodeBuiltinFix(): Plugin {
 				if (!id.startsWith("node:")) {
 					return null;
 				}
-				const bare = id.slice(5);
+				const moduleName = id.slice(5);
 				try {
-					return await this.resolve(`unenv/node/${bare}`, importer, {
+					return await this.resolve(`unenv/node/${moduleName}`, importer, {
 						skipSelf: true,
 					});
 				} catch {
@@ -65,23 +65,27 @@ export function payloadNodeBuiltinFix(): Plugin {
 					return null;
 				}
 
-				let result = code;
-				let modified = false;
-
-				// --- undici: wrap detectRuntimeFeatureByExportedProperty ---
-				// (node_modules only)
-				//
-				// The lazy loader calls require('node:X') which Rolldown
-				// converts to init_X() — a void-returning ESM initializer.
-				// Accessing a property on undefined throws a TypeError.
-				// With try-catch, the detection returns false and undici
-				// falls back to its no-op stub.
-				if (
+				const needsUndici =
 					id.includes("node_modules") &&
 					id.includes("undici") &&
-					id.includes("runtime-features")
-				) {
-					const root = parse(Lang.JavaScript, result).root();
+					id.includes("runtime-features");
+				const needsMetaUrl =
+					code.includes("fileURLToPath(import.meta.url)") ||
+					code.includes("createRequire(import.meta.url)");
+
+				if (!needsUndici && !needsMetaUrl) {
+					return null;
+				}
+
+				let result = code;
+				const root = parse(Lang.JavaScript, result).root();
+
+				// undici: wrap detectRuntimeFeatureByExportedProperty in try-catch.
+				// The lazy loader calls require('node:X') which Rolldown converts
+				// to init_X() — a void-returning ESM initializer. Accessing a
+				// property on undefined throws a TypeError. With try-catch, the
+				// detection returns false and undici falls back to its no-op stub.
+				if (needsUndici) {
 					const func = root.find(
 						"function detectRuntimeFeatureByExportedProperty($A, $B) { $$$ }",
 					);
@@ -89,31 +93,24 @@ export function payloadNodeBuiltinFix(): Plugin {
 						const body = func.field("body");
 						if (body) {
 							const r = body.range();
-							// Wrap body in try-catch
 							result =
 								result.slice(0, r.start.index) +
 								`{ try ${body.text()} catch { return false } }` +
 								result.slice(r.end.index);
-							modified = true;
 						}
 					}
 				}
 
-				// --- import.meta.url guards (all files) ---
-				//
-				// In workerd, bundled asset modules may have import.meta.url
-				// as undefined. Guard common patterns with a fallback so
-				// module init doesn't crash. The dummy URL produces "/" —
-				// filesystem ops using this path will fail elsewhere, but
-				// those code paths aren't hit in Workers.
-				if (
-					result.includes("fileURLToPath(import.meta.url)") ||
-					result.includes("createRequire(import.meta.url)")
-				) {
-					const root = parse(Lang.JavaScript, result).root();
+				// import.meta.url guards: in workerd, bundled asset modules may
+				// have import.meta.url as undefined. Guard with a fallback so
+				// module init doesn't crash.
+				if (needsMetaUrl) {
+					// Re-parse if undici transform modified the source
+					const currentRoot =
+						result !== code ? parse(Lang.JavaScript, result).root() : root;
 					const edits = [
-						...root.findAll("fileURLToPath(import.meta.url)"),
-						...root.findAll("createRequire(import.meta.url)"),
+						...currentRoot.findAll("fileURLToPath(import.meta.url)"),
+						...currentRoot.findAll("createRequire(import.meta.url)"),
 					].map((n) =>
 						n.replace(
 							n
@@ -123,12 +120,11 @@ export function payloadNodeBuiltinFix(): Plugin {
 					);
 
 					if (edits.length > 0) {
-						result = root.commitEdits(edits);
-						modified = true;
+						result = currentRoot.commitEdits(edits);
 					}
 				}
 
-				if (modified) {
+				if (result !== code) {
 					return { code: result, map: null };
 				}
 				return null;

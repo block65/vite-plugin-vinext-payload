@@ -112,7 +112,7 @@ that replaces the broken implementation with a no-op.
 ## `node:*` CJS requires bypass cloudflare plugin's resolveId filter
 
 **Responsibility:** Rolldown / @cloudflare/vite-plugin
-**Repo:** https://github.com/nicolo-ribaudo/rolldown (Rolldown), https://github.com/nicolo-ribaudo/workers-sdk (cloudflare plugin)
+**Repo:** https://github.com/rolldown/rolldown (Rolldown), https://github.com/cloudflare/workers-sdk (cloudflare plugin)
 
 **What breaks:** The @cloudflare/vite-plugin resolves `node:*` imports to
 unenv polyfills via a resolveId hook with a Rolldown `filter` option. When

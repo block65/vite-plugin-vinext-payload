@@ -152,6 +152,11 @@ function resolveExportEntry(entry: unknown): string | null {
 	return null;
 }
 
+// Pre-compiled regexes for barrel detection
+const RE_EXPORT_PATTERN = /^export\s+\{[^}]*\}\s+from\s+['"][^'"]+['"];?\s*$/;
+const STAR_RE_EXPORT_PATTERN = /^export\s+\*\s+from\s+['"][^'"]+['"];?\s*$/;
+const EXPORT_SOURCE_RE = /from\s+['"]([^'"]+)['"]/g;
+
 /** Check if a file is a pure barrel that re-exports from 'use client' modules. */
 async function isBarrelReExportingUseClient(
 	filePath: string,
@@ -181,24 +186,21 @@ async function isBarrelReExportingUseClient(
 
 	// Check all lines are re-exports
 	const lines = stripped.split("\n").map((l) => l.trim());
-	const reExportPattern = /^export\s+\{[^}]*\}\s+from\s+['"][^'"]+['"];?\s*$/;
-	const starReExportPattern = /^export\s+\*\s+from\s+['"][^'"]+['"];?\s*$/;
 
 	const isBarrel = lines.every(
 		(line) =>
-			!line || reExportPattern.test(line) || starReExportPattern.test(line),
+			!line ||
+			RE_EXPORT_PATTERN.test(line) ||
+			STAR_RE_EXPORT_PATTERN.test(line),
 	);
 	if (!isBarrel) {
 		return false;
 	}
 
 	// Check re-export targets for 'use client'
-	const sourcePattern = /from\s+['"]([^'"]+)['"]/g;
-	const sources: string[] = [];
-	let match;
-	while ((match = sourcePattern.exec(code)) !== null) {
-		sources.push(resolve(dirname(filePath), match[1]));
-	}
+	const sources = [...code.matchAll(EXPORT_SOURCE_RE)].map((m) =>
+		resolve(dirname(filePath), m[1]),
+	);
 
 	const contents = await Promise.all(
 		sources.map((src) => readFile(src, "utf-8").catch(() => "")),

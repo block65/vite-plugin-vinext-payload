@@ -1,5 +1,10 @@
 import type { Plugin } from "vite";
 
+// Pre-compiled regexes — these run on every node_modules file.
+const REACT_EXCLUDE_RE =
+	/node_modules\/(react|react-dom|react-server-dom-webpack|scheduler)(\/|$)/;
+const TS_CJS_HELPER_RE = /\(this && this\.(__\w+)\)/g;
+
 /**
  * Single-pass CJS/UMD compatibility transform for node_modules.
  *
@@ -30,11 +35,7 @@ export function payloadCjsTransform(): Plugin {
 				// Never touch React/ReactDOM/react-server-dom-webpack —
 				// Rolldown handles their CJS→ESM natively. Our wrapper would
 				// shadow `module` and break their conditional require() pattern.
-				if (
-					/node_modules\/(react|react-dom|react-server-dom-webpack|scheduler)(\/|$)/.test(
-						id,
-					)
-				) {
+				if (REACT_EXCLUDE_RE.test(id)) {
 					return;
 				}
 
@@ -50,7 +51,7 @@ export function payloadCjsTransform(): Plugin {
 				// TypeScript CJS helpers: `(this && this.__importX)` → globalThis
 				if (result.includes("(this && this.")) {
 					result = result.replace(
-						/\(this && this\.(__\w+)\)/g,
+						TS_CJS_HELPER_RE,
 						"(globalThis && globalThis.$1)",
 					);
 				}

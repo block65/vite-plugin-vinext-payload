@@ -37,13 +37,12 @@ function patchNavigation(code: string): string {
 		"$OBJ.useSyncExternalStore(subscribeToNavigation, $CLIENT, $SERVER)",
 	);
 
-	const edits: [number, number, string][] = [];
+	const edits = [];
 	for (const call of calls) {
 		const clientArg = call.getMatch("CLIENT");
 		const serverArg = call.getMatch("SERVER");
 		if (clientArg && serverArg && clientArg.text() !== serverArg.text()) {
-			const r = serverArg.range();
-			edits.push([r.start.index, r.end.index, clientArg.text()]);
+			edits.push(serverArg.replace(clientArg.text()));
 		}
 	}
 
@@ -51,12 +50,7 @@ function patchNavigation(code: string): string {
 		return code;
 	}
 
-	edits.sort((a, b) => b[0] - a[0]);
-	let result = code;
-	for (const [start, end, replacement] of edits) {
-		result = result.slice(0, start) + replacement + result.slice(end);
-	}
-	return result;
+	return root.commitEdits(edits);
 }
 
 function findNavigationShimFromAliases(aliases: unknown): string | null {

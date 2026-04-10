@@ -113,12 +113,10 @@ export function payloadRscStubs(): Plugin {
 				}
 
 				let result = code;
-				let modified = false;
 
 				// Patch console.createTask (workerd polyfill throws).
-				if (id.includes("react") && result.includes("console.createTask")) {
+				if (id.includes("/react/") && result.includes("console.createTask")) {
 					result = CONSOLE_CREATE_TASK_POLYFILL + result;
-					modified = true;
 				}
 
 				// Patch RSC serializer: replace throw statements for values
@@ -141,11 +139,10 @@ export function payloadRscStubs(): Plugin {
 					if (throws.length > 0) {
 						const edits = throws.map((t) => t.replace("return undefined"));
 						result = root.commitEdits(edits);
-						modified = true;
 					}
 				}
 
-				if (!modified) {
+				if (result === code) {
 					return;
 				}
 				return { code: result, map: null };

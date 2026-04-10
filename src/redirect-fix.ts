@@ -1,3 +1,4 @@
+import { Lang, parse } from "@ast-grep/napi";
 import type { Plugin } from "vite";
 import { dedent } from "./dedent.ts";
 
@@ -126,15 +127,22 @@ export function payloadRedirectFix(): Plugin {
 					return null;
 				}
 
-				const scriptTag = `<script>${REDIRECT_HANDLER_INLINE}<\\/script>`;
-				const modified = code.replace(
-					"createTickBufferedTransform(rscEmbed, injectHTML)",
-					`createTickBufferedTransform(rscEmbed, "${scriptTag}" + injectHTML)`,
-				);
-
-				if (modified === code) {
+				// Use AST to find createTickBufferedTransform($RSC, $HTML) and
+				// prepend the redirect script to the second argument.
+				const root = parse(Lang.JavaScript, code).root();
+				const call = root.find("createTickBufferedTransform($RSC, $HTML)");
+				if (!call) {
 					return null;
 				}
+				const htmlArg = call.getMatch("HTML");
+				if (!htmlArg) {
+					return null;
+				}
+				const scriptTag = `<script>${REDIRECT_HANDLER_INLINE}<\\/script>`;
+				const modified = root.commitEdits([
+					htmlArg.replace(`"${scriptTag}" + ${htmlArg.text()}`),
+				]);
+
 				return { code: modified, map: null };
 			},
 		},

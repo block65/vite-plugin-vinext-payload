@@ -2,7 +2,6 @@ import { execFile as execFileCb, spawn, type ChildProcess } from "node:child_pro
 import { readFile, writeFile, mkdir, rm, access } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
-import assert from "node:assert/strict";
 
 /** Known-good version pins for testing. */
 export const VERSIONS = {
@@ -22,7 +21,7 @@ export function createProjectHelpers(testDir: string) {
     return stdout;
   }
 
-  const helpers = {
+  return {
     run,
     npm: (args: string[]) => run("npm", args),
     npx: (args: string[]) => run("npx", args),
@@ -37,8 +36,6 @@ export function createProjectHelpers(testDir: string) {
         .catch(() => false),
     cleanup: () => rm(testDir, { recursive: true, force: true }).catch(() => {}),
   };
-
-  return helpers;
 }
 
 /** Run a production build (vite build) and return stdout. */
@@ -91,27 +88,25 @@ export async function startDevServer(
 
   const port = Number.parseInt(match[1], 10);
 
-  return {
-    port,
-    [Symbol.asyncDispose]: async () => {
-      proc.kill("SIGTERM");
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(() => {
-          proc.kill("SIGKILL");
-          resolve();
-        }, 2000);
-        proc.on("exit", () => {
-          clearTimeout(timeout);
-          resolve();
-        });
+  const kill = async () => {
+    proc.kill("SIGTERM");
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => {
+        proc.kill("SIGKILL");
+        resolve();
+      }, 2000);
+      proc.on("exit", () => {
+        clearTimeout(timeout);
+        resolve();
       });
-    },
+    });
   };
+
+  return { port, kill, [Symbol.asyncDispose]: kill };
 }
 
-/** Wait for a spawned process stdout to match a pattern without destroying the stream. */
+/** Wait for a spawned process stdout to match a pattern. */
 export function waitForOutput(proc: ChildProcess, pattern: RegExp, timeoutMs = 60_000) {
-  assert.ok(proc.stdout || proc.stderr, "process must have stdio");
   proc.stdout?.setEncoding("utf8");
   proc.stderr?.setEncoding("utf8");
 
@@ -140,6 +135,23 @@ export function waitForOutput(proc: ChildProcess, pattern: RegExp, timeoutMs = 6
     proc.stdout?.on("data", onData);
     proc.stderr?.on("data", onData);
   });
+}
+
+/**
+ * Fetch a route from the dev server and assert the status code.
+ * Retries with 2s delay for cold-start compilation.
+ */
+export async function assertStatus(port: number, path: string, expected: number[], retries = 3) {
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < retries; attempt++) {
+    const res = await fetch(`http://localhost:${port}${path}`, { redirect: "manual" });
+    lastStatus = res.status;
+    if (expected.includes(lastStatus)) {
+      return res;
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  throw new Error(`GET ${path} expected ${expected.join("|")}, got ${lastStatus}`);
 }
 
 // ── Fixtures ───────────────────────────────────────────────────────
@@ -308,7 +320,6 @@ export async function rewritePayloadConfigForVinext(
   const code = await helpers.read(configPath);
   const root = parse(Lang.TypeScript, code).root();
 
-  // Collect edits as {start, end, replacement}, apply bottom-up
   const edits: { start: number; end: number; replacement: string }[] = [];
 
   const removeNode = (node: ReturnType<typeof root.find>, includeTrailingNewline = true) => {
@@ -352,11 +363,7 @@ export async function rewritePayloadConfigForVinext(
   if (cfAssign) {
     const r = cfAssign.range();
     const end = code.indexOf("\n", r.end.index) + 1 || r.end.index;
-    edits.push({
-      start: r.start.index,
-      end,
-      replacement: "",
-    });
+    edits.push({ start: r.start.index, end, replacement: "" });
   }
 
   // 6. Replace cloudflare.env.X → cfEnv.X
@@ -369,7 +376,6 @@ export async function rewritePayloadConfigForVinext(
   }
 
   // 7. Replace isCLI || !isProduction → !isProduction
-  // Skip occurrences inside cfAssign — that whole node is replaced by step 5.
   const cfRange = cfAssign?.range();
   for (const check of root.findAll("isCLI || !isProduction")) {
     const r = check.range();
@@ -388,7 +394,6 @@ export async function rewritePayloadConfigForVinext(
   });
   if (wranglerFn) {
     let start = wranglerFn.range().start.index;
-    // Walk back over preceding comment lines
     while (start > 0) {
       const lineStart = code.lastIndexOf("\n", start - 2) + 1;
       const line = code.slice(lineStart, start).trim();
@@ -408,7 +413,7 @@ export async function rewritePayloadConfigForVinext(
     result = result.slice(0, edit.start) + edit.replacement + result.slice(edit.end);
   }
 
-  // Add getCloudflareEnv function before export default (if not already present)
+  // Add getCloudflareEnv function before export default
   if (!result.includes("function getCloudflareEnv")) {
     const fn = `\nasync function getCloudflareEnv() {
   try {
@@ -425,7 +430,6 @@ export async function rewritePayloadConfigForVinext(
     result = result.replace(/(\nexport default)/, fn + "$1");
   }
 
-  // Clean up consecutive blank lines
   result = result.replace(/\n{3,}/g, "\n\n");
 
   await helpers.write(configPath, result);

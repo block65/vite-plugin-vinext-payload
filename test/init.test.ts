@@ -3,9 +3,8 @@
  * Uses a minimal mock project directory — no npm install, no network.
  */
 
-import { describe, it, after } from "node:test";
-import assert from "node:assert/strict";
 import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import { init } from "../bin/init.ts";
 import { createProjectHelpers, scaffoldMockProject, FIXTURES } from "./helpers.ts";
 
@@ -29,15 +28,15 @@ function scaffold(viteConfig?: string, options?: { wranglerConfig?: boolean }) {
 }
 
 describe("init: file transforms", () => {
-	after(cleanup);
+	afterAll(cleanup);
 
 	it("creates serverFunction.ts from inline 'use server' in layout", async () => {
 		await scaffold();
 		await runInit();
 
 		const sf = await read("src/app/(payload)/serverFunction.ts");
-		assert.ok(sf.startsWith("'use server'"));
-		assert.ok(sf.includes("handleServerFunctions"));
+		expect(sf).toMatch(/^'use server'/);
+		expect(sf).toContain("handleServerFunctions");
 	});
 
 	it("rewrites layout.tsx to import from serverFunction.js", async () => {
@@ -45,11 +44,8 @@ describe("init: file transforms", () => {
 		await runInit();
 
 		const layout = await read("src/app/(payload)/layout.tsx");
-		assert.ok(layout.includes("from './serverFunction.js'"));
-		assert.ok(
-			!layout.match(/^\s*'use server'\s*;?\s*$/m),
-			"layout should not have inline 'use server' directive",
-		);
+		expect(layout).toContain("from './serverFunction.js'");
+		expect(layout).not.toMatch(/^\s*'use server'\s*;?\s*$/m);
 	});
 
 	it("adds normalizeParams to page.tsx", async () => {
@@ -57,21 +53,20 @@ describe("init: file transforms", () => {
 		await runInit();
 
 		const page = await read("src/app/(payload)/admin/[[...segments]]/page.tsx");
-		assert.ok(page.includes("normalizeParams"));
-		assert.ok(page.includes("segments: undefined"));
+		expect(page).toContain("normalizeParams");
+		expect(page).toContain("segments: undefined");
 	});
-
 });
 
 describe("init: vite.config.ts styles", () => {
-	after(cleanup);
+	afterAll(cleanup);
 
 	it("handles single-line plugins array", async () => {
 		await scaffold(FIXTURES.viteConfigSingleLine);
 		await runInit();
 
 		const config = await read("vite.config.ts");
-		assert.ok(config.includes("vinext(), payloadPlugin()"), `unexpected format:\n${config}`);
+		expect(config).toContain("vinext(), payloadPlugin()");
 	});
 
 	it("handles multi-line plugins array", async () => {
@@ -79,10 +74,7 @@ describe("init: vite.config.ts styles", () => {
 		await runInit();
 
 		const config = await read("vite.config.ts");
-		assert.ok(
-			config.includes("    vinext(),\n    payloadPlugin(),"),
-			`unexpected format:\n${config}`,
-		);
+		expect(config).toContain("    vinext(),\n    payloadPlugin(),");
 	});
 
 	it("handles tabs and single quotes", async () => {
@@ -90,22 +82,19 @@ describe("init: vite.config.ts styles", () => {
 		await runInit();
 
 		const config = await read("vite.config.ts");
-		assert.ok(config.includes("from 'vite-plugin-vinext-payload'"), "should match single quote style");
-		assert.ok(
-			config.includes("\t\tvinext(),\n\t\tpayloadPlugin(),"),
-			`unexpected format:\n${config}`,
-		);
+		expect(config).toContain("from 'vite-plugin-vinext-payload'");
+		expect(config).toContain("\t\tvinext(),\n\t\tpayloadPlugin(),");
 	});
 });
 
 describe("init: idempotency", () => {
-	after(cleanup);
+	afterAll(cleanup);
 
 	it("reports 0 changes on second run", async () => {
 		await scaffold();
 		await runInit();
 		const output = await runInit();
-		assert.ok(output.includes("0 file(s) changed"));
+		expect(output).toContain("0 file(s) changed");
 	});
 
 	it("does not duplicate payloadPlugin on repeated runs", async () => {
@@ -116,26 +105,26 @@ describe("init: idempotency", () => {
 
 		const config = await read("vite.config.ts");
 		const matches = config.match(/payloadPlugin/g) ?? [];
-		assert.equal(matches.length, 2, "should have exactly 2 mentions (import + call)");
+		expect(matches).toHaveLength(2); // import + call
 	});
 });
 
 describe("init: edge cases", () => {
-	after(cleanup);
+	afterAll(cleanup);
 
 	it("skips when serverFunction.ts already exists", async () => {
 		await scaffold();
 		await write("src/app/(payload)/serverFunction.ts", "'use server'\n");
 
 		const output = await runInit();
-		assert.ok(output.includes("already exists"));
+		expect(output).toContain("already exists");
 	});
 
 	it("skips vite.config.ts when payloadPlugin already present", async () => {
 		await scaffold();
 		await runInit();
 		const output = await runInit();
-		assert.ok(output.includes("payloadPlugin already present"));
+		expect(output).toContain("payloadPlugin already present");
 	});
 
 	it("dry-run does not write files", async () => {
@@ -143,33 +132,24 @@ describe("init: edge cases", () => {
 		await runInit(true);
 
 		const config = await read("vite.config.ts");
-		assert.equal(config, FIXTURES.viteConfigSingleLine);
-		assert.ok(!(await exists("src/app/(payload)/serverFunction.ts")));
+		expect(config).toBe(FIXTURES.viteConfigSingleLine);
+		expect(await exists("src/app/(payload)/serverFunction.ts")).toBe(false);
 		const page = await read("src/app/(payload)/admin/[[...segments]]/page.tsx");
-		assert.equal(page, FIXTURES.originalPage);
+		expect(page).toBe(FIXTURES.originalPage);
 	});
 });
 
 describe("init: cloudflare plugin", () => {
-	after(cleanup);
+	afterAll(cleanup);
 
 	it("adds cloudflare() when wrangler.jsonc exists", async () => {
 		await scaffold(undefined, { wranglerConfig: true });
 		await runInit();
 
 		const config = await read("vite.config.ts");
-		assert.ok(
-			config.includes('@cloudflare/vite-plugin'),
-			`should add cloudflare import:\n${config}`,
-		);
-		assert.ok(
-			config.includes('cloudflare('),
-			`should add cloudflare() call:\n${config}`,
-		);
-		assert.ok(
-			config.includes('viteEnvironment'),
-			`should configure RSC environment:\n${config}`,
-		);
+		expect(config).toContain("@cloudflare/vite-plugin");
+		expect(config).toContain("cloudflare(");
+		expect(config).toContain("viteEnvironment");
 	});
 
 	it("adds @cloudflare/vite-plugin to devDependencies", async () => {
@@ -177,10 +157,7 @@ describe("init: cloudflare plugin", () => {
 		await runInit();
 
 		const pkg = JSON.parse(await read("package.json"));
-		assert.ok(
-			pkg.devDependencies["@cloudflare/vite-plugin"],
-			"should add @cloudflare/vite-plugin to devDependencies",
-		);
+		expect(pkg.devDependencies["@cloudflare/vite-plugin"]).toBeDefined();
 	});
 
 	it("places cloudflare() before vinext()", async () => {
@@ -188,9 +165,7 @@ describe("init: cloudflare plugin", () => {
 		await runInit();
 
 		const config = await read("vite.config.ts");
-		const cfIdx = config.indexOf("cloudflare(");
-		const vinextIdx = config.indexOf("vinext()");
-		assert.ok(cfIdx < vinextIdx, `cloudflare() should come before vinext():\n${config}`);
+		expect(config.indexOf("cloudflare(")).toBeLessThan(config.indexOf("vinext()"));
 	});
 
 	it("handles multi-line plugins array with wrangler config", async () => {
@@ -198,9 +173,9 @@ describe("init: cloudflare plugin", () => {
 		await runInit();
 
 		const config = await read("vite.config.ts");
-		assert.ok(config.includes("cloudflare("), `missing cloudflare():\n${config}`);
-		assert.ok(config.includes("payloadPlugin()"), `missing payloadPlugin():\n${config}`);
-		assert.ok(config.includes("vinext()"), `missing vinext():\n${config}`);
+		expect(config).toContain("cloudflare(");
+		expect(config).toContain("payloadPlugin()");
+		expect(config).toContain("vinext()");
 	});
 
 	it("skips cloudflare() when already present", async () => {
@@ -210,7 +185,7 @@ describe("init: cloudflare plugin", () => {
 
 		const config = await read("vite.config.ts");
 		const matches = config.match(/cloudflare\(/g) ?? [];
-		assert.equal(matches.length, 1, `should have exactly 1 cloudflare() call:\n${config}`);
+		expect(matches).toHaveLength(1);
 	});
 
 	it("does not add cloudflare() without wrangler config", async () => {
@@ -218,10 +193,6 @@ describe("init: cloudflare plugin", () => {
 		await runInit();
 
 		const config = await read("vite.config.ts");
-		assert.ok(
-			!config.includes("@cloudflare/vite-plugin"),
-			`should not add cloudflare without wrangler config:\n${config}`,
-		);
+		expect(config).not.toContain("@cloudflare/vite-plugin");
 	});
-
 });

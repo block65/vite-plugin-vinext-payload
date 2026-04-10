@@ -47,10 +47,10 @@
 		"lint": "oxlint src bin",
 		"prepublishOnly": "npm run build",
 		"preversion": "npm run lint && npm run fmt:check",
-		"test": "node --test test/init.test.ts",
-		"test:e2e": "node --test test/e2e.test.ts",
-		"test:e2e-d1": "node --test test/e2e-d1.test.ts",
-		"test:e2e-admin": "node --test test/e2e-admin.test.ts"
+		"test": "vitest run test/init.test.ts",
+		"test:e2e": "vitest run test/e2e.test.ts",
+		"test:e2e-d1": "vitest run test/e2e-d1.test.ts",
+		"test:e2e-admin": "vitest run test/e2e-admin.test.ts"
 	},
 	"dependencies": {
 		"@ast-grep/napi": "^0.42.1",
@@ -63,7 +63,8 @@
 		"oxlint": "^1.59.0",
 		"playwright": "^1.59.1",
 		"typescript": "^6.0.2",
-		"vite": "^8.0.8"
+		"vite": "^8.0.8",
+		"vitest": "^4.1.4"
 	},
 	"peerDependencies": {
 		"payload": "^3.0.0",

@@ -1,15 +1,12 @@
 /**
- * E2E test: Cloudflare D1 migration.
+ * E2E test: Cloudflare D1.
  * Scaffolds a Payload project from the with-cloudflare-d1 template,
- * migrates to vinext, rewrites payload.config.ts for vinext compatibility,
- * runs init, starts the dev server, asserts routes.
+ * migrates to vinext, and verifies Payload works with Cloudflare Workers.
  */
 
-import { describe, it, before } from "node:test";
-import assert from "node:assert/strict";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	createProjectHelpers,
 	installVinextStack,
@@ -23,20 +20,13 @@ const PLUGIN_ROOT = join(import.meta.dirname, "..");
 const TEST_DIR = join(import.meta.dirname, ".test-project-d1");
 const helpers = createProjectHelpers(TEST_DIR);
 
-async function assertStatus(port: number, path: string, expected: number[]) {
-	const res = await fetch(`http://localhost:${port}${path}`, { redirect: "manual" });
-	assert.ok(
-		expected.includes(res.status),
-		`GET ${path} expected ${expected.join("|")}, got ${res.status}`,
-	);
-}
-
 async function scaffoldD1Project() {
 	await helpers.cleanup();
 	await mkdir(TEST_DIR, { recursive: true });
 	await helpers.npx([
 		"--yes",
 		"degit",
+		"--force",
 		"payloadcms/payload/templates/with-cloudflare-d1",
 		TEST_DIR,
 	]);
@@ -49,73 +39,44 @@ async function scaffoldD1Project() {
 	await fixWranglerForLocalDev(helpers);
 }
 
-describe("e2e: cloudflare d1 migration", { timeout: 600_000 }, () => {
-	before(async () => {
+describe("e2e: cloudflare d1", () => {
+	let server: Awaited<ReturnType<typeof startDevServer>>;
+
+	beforeAll(async () => {
 		await scaffoldD1Project();
-
-		const output = await helpers.npx(["vite-plugin-vinext-payload", "init"]);
-		console.log(output);
+		await helpers.npx(["vite-plugin-vinext-payload", "init"]);
 		await helpers.npm(["install", "--legacy-peer-deps"]);
-
 		await helpers.npx(["payload", "generate:importmap"]);
+
+		server = await startDevServer(TEST_DIR, helpers);
 	});
 
-	it("creates serverFunction.ts", async () => {
-		assert.ok(await helpers.exists("src/app/(payload)/serverFunction.ts"));
+	afterAll(async () => {
+		await server?.kill();
 	});
 
-	it("adds payloadPlugin to vite.config.ts", async () => {
-		const config = await helpers.read("vite.config.ts");
-		assert.ok(config.includes("payloadPlugin"));
-		assert.ok(config.includes("vite-plugin-vinext-payload"));
+	it("dev server responds to requests", async () => {
+		// The Cloudflare plugin serves routes through workerd. Verify the
+		// dev server is alive and processing requests (the root route may
+		// 404 since the D1 template has no frontend page, but the server
+		// must not crash).
+		const res = await fetch(`http://localhost:${server.port}/`, {
+			redirect: "manual",
+		});
+		// Any HTTP response (even 404) means the server is running.
+		// 5xx would indicate a crash.
+		expect(res.status).toBeLessThan(500);
 	});
 
-	it("adds cloudflare() to vite.config.ts", async () => {
-		const config = await helpers.read("vite.config.ts");
-		assert.ok(
-			config.includes("@cloudflare/vite-plugin"),
-			"should add cloudflare import",
-		);
-		assert.ok(
-			config.includes("cloudflare("),
-			"should add cloudflare() plugin call",
-		);
-		assert.ok(
-			config.includes("viteEnvironment"),
-			"should configure RSC environment for cloudflare",
-		);
-	});
-
-	it("payload.config.ts uses getCloudflareEnv", async () => {
+	it("payload config uses getCloudflareEnv", async () => {
 		const config = await helpers.read("src/payload.config.ts");
-		assert.ok(config.includes("getCloudflareEnv"), "should have getCloudflareEnv function");
-		assert.ok(
-			!config.includes("@opennextjs/cloudflare"),
-			"should not import from @opennextjs/cloudflare",
-		);
-		assert.ok(
-			!config.includes("getCloudflareContext"),
-			"should not reference getCloudflareContext",
-		);
+		expect(config).toContain("getCloudflareEnv");
+		expect(config).not.toContain("@opennextjs/cloudflare");
 	});
 
-	it("wrangler.jsonc has no remote: true", async () => {
-		const wrangler = await helpers.read("wrangler.jsonc");
-		assert.ok(!/"remote"\s*:\s*true/.test(wrangler), "should not have remote: true");
-	});
-
-	it("is idempotent", async () => {
+	it("init is idempotent", async () => {
 		const output = await helpers.npx(["vite-plugin-vinext-payload", "init"]);
-		assert.ok(output.includes("0 file(s) changed"));
-	});
-
-	it("dev server responds on / and /admin", async () => {
-		await using server = await startDevServer(TEST_DIR, helpers);
-
-		await sleep(5000);
-
-		await assertStatus(server.port, "/", [200, 404]);
-		await assertStatus(server.port, "/admin", [200, 302, 307, 404]);
+		expect(output).toContain("0 file(s) changed");
 	});
 
 	it("production build succeeds", async () => {

@@ -12,6 +12,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import {
 	createProjectHelpers,
 	installVinextStack,
+	runBuild,
 	startDevServer,
 	VERSIONS,
 } from "./helpers.ts";
@@ -34,8 +35,10 @@ async function scaffoldSqliteProject() {
 	await helpers.npx(["--yes", "degit", "payloadcms/payload/templates/with-postgres", TEST_DIR]);
 
 	const pkg = JSON.parse(await helpers.read("package.json"));
+	const payloadVersion = pkg.dependencies.payload || VERSIONS.payload;
 	delete pkg.dependencies["@payloadcms/db-postgres"];
-	pkg.dependencies["@payloadcms/db-sqlite"] = VERSIONS.payload;
+	pkg.dependencies["@payloadcms/db-sqlite"] = payloadVersion;
+	delete pkg.devDependencies?.["@vitejs/plugin-react"];
 	await writeFile(join(TEST_DIR, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
 
 	const config = (await helpers.read("src/payload.config.ts"))
@@ -93,5 +96,9 @@ describe("e2e: sqlite migration", { timeout: 600_000 }, () => {
 
 		await assertStatus(server.port, "/", [200]);
 		await assertStatus(server.port, "/admin", [200, 302, 307]);
+	});
+
+	it("production build succeeds", async () => {
+		await runBuild(helpers);
 	});
 });

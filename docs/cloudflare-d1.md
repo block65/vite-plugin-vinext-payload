@@ -64,9 +64,19 @@ const cfEnv = await getCloudflareEnv();
 + bucket: cfEnv.R2,
 ```
 
-### Step 5: Fix wrangler.jsonc for local dev
+### Step 5: Clean up wrangler.jsonc for vinext
 
-Remove `"remote": true` from D1 bindings — it requires Cloudflare auth:
+Remove the OpenNext-specific `main` and `assets` fields. The `@cloudflare/vite-plugin` manages these automatically based on the Vite build output:
+
+```diff
+- "main": "node_modules/@opennextjs/cloudflare/dist/worker.js",
+- "assets": {
+-   "directory": ".open-next/assets",
+-   "binding": "ASSETS"
+- },
+```
+
+Also remove `"remote": true` from D1 bindings — it requires Cloudflare auth for local dev:
 
 ```diff
   "d1_databases": [{
@@ -75,6 +85,22 @@ Remove `"remote": true` from D1 bindings — it requires Cloudflare auth:
     "database_name": "...",
 -   "remote": true
   }]
+```
+
+### Step 6: Avoid top-level binding assertions
+
+Cloudflare validates workers by executing module code during upload.
+Bindings (D1, R2) are **not** populated during this validation step.
+Any top-level assertions like `assert(cfEnv.D1, "D1 binding required")`
+will crash the upload. Access bindings at request time, or guard them:
+
+```ts
+// ❌ Crashes during upload validation
+const cfEnv = await getCloudflareEnv();
+assert(cfEnv.D1, "D1 binding required");
+
+// ✅ Safe — D1 is only accessed when handling requests
+const cfEnv = await getCloudflareEnv();
 ```
 
 ---

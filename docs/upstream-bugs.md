@@ -26,10 +26,33 @@ plugin-rsc's `output.move()` path.
 
 ---
 
+## `getHTMLDiffComponents` missing export in RSC build
+
+**Responsibility:** @vitejs/plugin-rsc / Rolldown (triggered by Payload UI module layout)
+**Repo:** https://github.com/vitejs/vite-plugin-react (packages/plugin-rsc)
+**Upstream:** not filed yet
+
+**What breaks:** On current Payload templates (`payload@3.82.1`) with
+vinext `0.0.41`, RSC build can fail with:
+`"getHTMLDiffComponents" is not exported by @payloadcms/ui/dist/elements/HTMLDiff/index.js`.
+The source module exports it, but the RSC build graph sees it as missing.
+
+**Why Next.js works:** Next.js uses its own RSC/bundling pipeline, not
+`@vitejs/plugin-rsc` + Rolldown.
+
+**Our workaround:** `payloadHtmlDiffExportFix` patches
+`@payloadcms/ui/dist/exports/rsc/index.js` on disk at build start to
+replace the brittle re-export with a stable fallback export for
+`getHTMLDiffComponents`.
+
+---
+
 ## Non-serializable RSC values not silently dropped
 
 **Responsibility:** vinext
 **Repo:** https://github.com/cloudflare/vinext
+**Upstream:** https://github.com/cloudflare/vinext/issues/237
+**Status:** OPEN (updated 2026-03-07)
 
 **What breaks:** React's RSC serializer throws when functions, RegExps,
 or class instances cross the server/client boundary. Payload field configs
@@ -86,6 +109,96 @@ that replaces the broken implementation with a no-op.
 
 ---
 
+## `node:*` CJS requires bypass cloudflare plugin's resolveId filter
+
+**Responsibility:** Rolldown / @cloudflare/vite-plugin
+**Repo:** https://github.com/nicolo-ribaudo/rolldown (Rolldown), https://github.com/nicolo-ribaudo/workers-sdk (cloudflare plugin)
+
+**What breaks:** The @cloudflare/vite-plugin resolves `node:*` imports to
+unenv polyfills via a resolveId hook with a Rolldown `filter` option. When
+a CJS module uses `require('node:worker_threads')` (as undici does in
+lazy-loaded feature detectors), Rolldown may not fire the filtered hook
+for the CJS require call. The `node:*` import goes unresolved.
+
+**Why Next.js works:** Next.js externalizes Node.js builtins during SSR
+bundling. They resolve at runtime against the Node.js standard library.
+
+**Our workaround:** `payloadNodeBuiltinFix` provides a filterless
+resolveId fallback that catches any `node:*` specifier missed by the
+cloudflare plugin and routes it to `unenv/node/${bare}`.
+
+---
+
+## undici `detectRuntimeFeatureByExportedProperty` crashes on void
+
+**Responsibility:** Rolldown (CJS→ESM interop)
+
+**What breaks:** undici's `runtime-features.js` uses lazy loaders like
+`() => require('node:worker_threads')` to detect runtime features.
+Rolldown's CJS→ESM interop converts this to `() => init_worker_threads()`
+— an ESM namespace initializer that returns `void`, not the module object.
+`detectRuntimeFeatureByExportedProperty` then tries to access a property
+on `undefined`, throwing a TypeError (`markAsUncloneable is not a function`).
+
+**Why Next.js works:** Next.js externalizes undici during SSR. The
+`require()` calls execute against real Node.js modules that return proper
+objects.
+
+**Our workaround:** `payloadNodeBuiltinFix` wraps
+`detectRuntimeFeatureByExportedProperty` in a try-catch so the detection
+returns `false` and undici falls back to its no-op stubs.
+
+---
+
+## `import.meta.url` undefined in bundled workerd asset chunks
+
+**Responsibility:** workerd (Cloudflare Workers runtime)
+**Repo:** https://github.com/cloudflare/workerd
+
+**What breaks:** Bundled asset modules deployed to workerd may have
+`import.meta.url` as `undefined`. Packages like Payload use
+`fileURLToPath(import.meta.url)` or `createRequire(import.meta.url)` at
+module scope to derive `__dirname` or load native addons. These crash
+during Cloudflare's upload validation step (which executes the module to
+verify it has event handlers). `import.meta.dirname` is also `undefined`.
+
+**Why Next.js works:** Next.js SSR runs in Node.js where `import.meta.url`
+is always set to the module's `file://` URL. Even during production builds,
+Next.js resolves `__dirname` at build time via webpack's `__dirname` shim.
+
+**Our workaround:** `payloadNodeBuiltinFix` transforms both
+`fileURLToPath(import.meta.url)` and `createRequire(import.meta.url)` to
+use `import.meta.url ?? "file:///"`. The dummy URL produces `"/"` — any
+filesystem operation using this path will fail, but those code paths
+aren't reached in Workers.
+
+---
+
+## `ssr.external` only applies to "ssr" environment, not RSC
+
+**Responsibility:** Vite (Environment API)
+
+**What breaks:** Vite's `ssr.external` configuration only applies to the
+environment named `"ssr"`. When the @cloudflare/vite-plugin manages a
+`"rsc"` environment (with `viteEnvironment: { name: "rsc" }`), packages
+listed in `ssr.external` are not externalized from the RSC build. This
+causes unresolvable imports (e.g., blake3-wasm's `./node.js` platform
+file) in the RSC bundle.
+
+Additionally, `resolve.external` cannot be used because the cloudflare
+plugin validates and rejects it on all environments it manages.
+
+**Why Next.js works:** Next.js has a single SSR bundling pass that handles
+both RSC and SSR. Its externals configuration applies uniformly to all
+server-side modules.
+
+**Our workaround:** `payloadConfigAlias` uses `configEnvironment` to set
+`build.rolldownOptions.external` on both the `"ssr"` and `"rsc"` environments.
+This bypasses the `ssr.external` naming limitation and the cloudflare
+plugin's `resolve.external` validation.
+
+---
+
 ## Transitive deps unavailable in workerd
 
 **Responsibility:** workerd / Payload packaging
@@ -104,6 +217,32 @@ bundle.
 **Our workaround:** `payloadRscStubs` provides empty stub modules for
 both packages. They're never invoked during RSC rendering — `file-type`
 is for upload detection, `drizzle-kit/api` is for migrations.
+
+---
+
+## CJS packages fail in App Router dev
+
+**Responsibility:** vinext
+**Repo:** https://github.com/cloudflare/vinext
+**Upstream:** https://github.com/cloudflare/vinext/issues/666
+**Status:** OPEN (updated 2026-03-30)
+
+**What breaks:** App Router forces `noExternal: true` for RSC/SSR
+environments, so raw CommonJS packages from `node_modules` are pushed
+through Vite/plugin-rsc transforms. CJS patterns like `module.exports`
+and `this`-as-global cause parse errors ("A module cannot have multiple
+default exports") or runtime failures.
+
+**Why Next.js works:** Next.js externalizes most `node_modules` during
+SSR and uses webpack's CJS interop layer for the rest. The bundler
+natively understands `module.exports` and `this`-as-global.
+
+**Our workaround:** `payloadCjsTransform` rewrites `this` → `globalThis`
+in UMD/CJS wrappers and wraps `module.exports` with ESM scaffolding.
+Skips React/ReactDOM to avoid double-wrapping.
+
+**Remove when:** vinext fixes #666 natively. PR #665 fixes Pages Router
+only; App Router needs separate work.
 
 ---
 
@@ -134,6 +273,7 @@ the client store has correct values at hydration time.
 
 **Responsibility:** vinext
 **Repo:** https://github.com/cloudflare/vinext
+**Upstream:** not filed (low priority; architectural choice in vinext)
 
 **What breaks:** vinext's browser entry imports the navigation shim via
 `from "../shims/navigation.js"` (relative path) instead of the aliased
@@ -157,6 +297,7 @@ doesn't discover them at runtime.
 
 **Responsibility:** vinext
 **Repo:** https://github.com/cloudflare/vinext
+**Upstream:** not filed (related: https://github.com/cloudflare/vinext/pull/620)
 
 **What breaks:** vinext calls `getReactRoot().render(result.root)` before
 checking `result.returnValue`. Every server action — including
@@ -197,6 +338,8 @@ become `"link"`, `pathname === href` becomes `false`, etc.
 
 **Responsibility:** vinext
 **Repo:** https://github.com/cloudflare/vinext
+**Upstream:** https://github.com/cloudflare/vinext/issues/654
+**Status:** OPEN (updated 2026-03-25)
 
 **What breaks:** Payload uses `redirect()` for auth checks. When thrown
 during async rendering inside `renderToReadableStream`, vinext doesn't
@@ -209,3 +352,47 @@ are converted to proper HTTP 302 responses.
 
 **Our workaround:** `payloadRedirectFix` injects a client-side script
 that intercepts the leaked error and performs `location.replace()`.
+
+**Remove when:** vinext fixes #654 to handle page-level redirects
+(not just server action redirects).
+
+---
+
+## Rolldown inlines Workers entry wrapper into bare function
+
+**Responsibility:** Rolldown / @cloudflare/vite-plugin
+**Repo:** https://github.com/rolldown/rolldown, https://github.com/cloudflare/workers-sdk
+**Upstream:**
+- https://github.com/cloudflare/workers-sdk/issues/10213 (original report, closed)
+- https://github.com/cloudflare/workers-sdk/pull/10544 (fix: `preserveEntrySignatures: "strict"`)
+- https://github.com/rolldown/rolldown/issues/3500 (`preserveEntrySignatures` feature request)
+- https://github.com/rolldown/rolldown/issues/6449 (strict mode validation)
+**Status:** workers-sdk #10213 CLOSED, workers-sdk #10544 MERGED, rolldown #3500 CLOSED, rolldown #6449 CLOSED (checked 2026-04-10)
+
+**What breaks:** vinext's `app-router-entry.js` exports
+`{ async fetch(request, _env, ctx) { ... rscHandler(request, ctx) ... } }`
+— the Workers module handler format. When Payload's large dependency
+graph (500KB+ RSC bundle) is bundled with Rolldown on Vite 8, Rolldown
+inlines the wrapper and exports the RSC handler as a bare
+`async function handler(request, ctx)`. Cloudflare Workers expects the
+default export to be an object with a `fetch` method; a bare function
+produces error 10068: "no registered event handlers".
+
+The @cloudflare/vite-plugin sets `preserveEntrySignatures: "strict"`
+(PR #10544, fixing #10213) to prevent this. On Vite 8, this goes into
+`rolldownOptions`, but Rolldown doesn't fully enforce it — the wrapper
+object still gets inlined away on large bundles. Small apps aren't
+affected because Rolldown doesn't need to inline their entry modules.
+
+**Why Next.js works:** Next.js doesn't target Cloudflare Workers
+directly. Its server entry runs in Node.js or Edge Runtime, neither of
+which validates the shape of the default export.
+
+**Our workaround:** `payloadNodeBuiltinFix` adds a `generateBundle`
+hook that inspects the RSC entry chunk. If the default export is a
+function declaration (not already a `{ fetch }` object), it rewrites
+the export to wrap it:
+`{ fetch: (request, env, ctx) => handler(request, ctx) }`.
+
+**Remove when:** Rolldown fully enforces `preserveEntrySignatures: "strict"`
+for entry module inlining, preventing the wrapper from being optimized away.

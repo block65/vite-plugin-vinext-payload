@@ -27,10 +27,14 @@ export function payloadCjsTransform(): Plugin {
 					return;
 				}
 
-				// Never touch React/ReactDOM — Rolldown handles their CJS→ESM
-				// natively. Our wrapper would shadow `module` and break their
-				// conditional require() pattern.
-				if (/node_modules\/(react|react-dom|scheduler)(\/|$)/.test(id)) {
+				// Never touch React/ReactDOM/react-server-dom-webpack —
+				// Rolldown handles their CJS→ESM natively. Our wrapper would
+				// shadow `module` and break their conditional require() pattern.
+				if (
+					/node_modules\/(react|react-dom|react-server-dom-webpack|scheduler)(\/|$)/.test(
+						id,
+					)
+				) {
 					return;
 				}
 
@@ -43,11 +47,13 @@ export function payloadCjsTransform(): Plugin {
 					result = result.replaceAll("})(this,", "})(globalThis,");
 				}
 
-				// TypeScript CJS helpers: `(this && this.__importDefault)`
-				result = result.replaceAll(
-					/\(this\s*&&\s*this\.(__\w+)\)/g,
-					"(globalThis && globalThis.$1)",
-				);
+				// TypeScript CJS helpers: `(this && this.__importX)` → globalThis
+				if (result.includes("(this && this.")) {
+					result = result.replace(
+						/\(this && this\.(__\w+)\)/g,
+						"(globalThis && globalThis.$1)",
+					);
+				}
 
 				// --- module.exports wrapping (client only) ---
 

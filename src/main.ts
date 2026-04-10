@@ -36,8 +36,10 @@ import {
 	payloadConfigAlias,
 	type PayloadConfigAliasOptions,
 } from "./config-alias.ts";
+import { payloadHtmlDiffExportFix } from "./html-diff-export-fix.ts";
 import { payloadNavHydrationFix } from "./nav-hydration-fix.ts";
 import { payloadNavigationHydrationFix } from "./navigation-hydration-fix.ts";
+import { payloadNodeBuiltinFix } from "./node-builtin-fix.ts";
 import { payloadOptimizeDeps } from "./optimize-deps.ts";
 import { payloadRedirectFix } from "./redirect-fix.ts";
 import { payloadRscExportFix } from "./rsc-export-fix.ts";
@@ -52,7 +54,9 @@ export {
 } from "./config-alias.ts";
 export { payloadNavHydrationFix } from "./nav-hydration-fix.ts";
 export { payloadNavigationHydrationFix } from "./navigation-hydration-fix.ts";
+export { payloadNodeBuiltinFix } from "./node-builtin-fix.ts";
 export { payloadOptimizeDeps } from "./optimize-deps.ts";
+export { payloadHtmlDiffExportFix } from "./html-diff-export-fix.ts";
 export { payloadCjsTransform } from "./cjs-transform.ts";
 export { payloadCliStubs } from "./cli-stubs.ts";
 export { payloadCjsInteropDeps } from "./cjs-interop-deps.ts";
@@ -87,6 +91,8 @@ export function payloadPlugin(options: PayloadPluginOptions = {}): Plugin[] {
 	return [
 		payloadUseClientBarrel(),
 		payloadConfigAlias({ ssrExternal }),
+		payloadNodeBuiltinFix(),
+		payloadHtmlDiffExportFix(),
 		payloadOptimizeDeps(excludeFromOptimize),
 		payloadCjsTransform(),
 		payloadCliStubs(),

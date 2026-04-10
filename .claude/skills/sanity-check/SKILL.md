@@ -4,7 +4,7 @@ description: Run a full sanity check on the vite-plugin-vinext-payload project �
 
 ---
 
-Run this skill as a **subagent on sonnet** — it's mechanical work that doesn't need opus. Use `Agent` with `model: "sonnet"` and `run_in_background: true`. Report the result summary when the agent completes.
+Run this skill as a **subagent with a strong fit for speed/cost without sacrificing quality.** — it's mechanical work that doesn't use superpowered AI. Report the result summary when the agent completes.
 
 Run all checks sequentially from the project root. Stop and report on first failure unless the user asks to run everything regardless.
 

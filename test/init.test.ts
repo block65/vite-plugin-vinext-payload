@@ -24,8 +24,8 @@ async function runInit(dryRun = false) {
 	return logs.join("\n");
 }
 
-function scaffold(viteConfig?: string) {
-	return scaffoldMockProject(TEST_DIR, viteConfig);
+function scaffold(viteConfig?: string, options?: { wranglerConfig?: boolean }) {
+	return scaffoldMockProject(TEST_DIR, viteConfig, options);
 }
 
 describe("init: file transforms", () => {
@@ -148,4 +148,80 @@ describe("init: edge cases", () => {
 		const page = await read("src/app/(payload)/admin/[[...segments]]/page.tsx");
 		assert.equal(page, FIXTURES.originalPage);
 	});
+});
+
+describe("init: cloudflare plugin", () => {
+	after(cleanup);
+
+	it("adds cloudflare() when wrangler.jsonc exists", async () => {
+		await scaffold(undefined, { wranglerConfig: true });
+		await runInit();
+
+		const config = await read("vite.config.ts");
+		assert.ok(
+			config.includes('@cloudflare/vite-plugin'),
+			`should add cloudflare import:\n${config}`,
+		);
+		assert.ok(
+			config.includes('cloudflare('),
+			`should add cloudflare() call:\n${config}`,
+		);
+		assert.ok(
+			config.includes('viteEnvironment'),
+			`should configure RSC environment:\n${config}`,
+		);
+	});
+
+	it("adds @cloudflare/vite-plugin to devDependencies", async () => {
+		await scaffold(undefined, { wranglerConfig: true });
+		await runInit();
+
+		const pkg = JSON.parse(await read("package.json"));
+		assert.ok(
+			pkg.devDependencies["@cloudflare/vite-plugin"],
+			"should add @cloudflare/vite-plugin to devDependencies",
+		);
+	});
+
+	it("places cloudflare() before vinext()", async () => {
+		await scaffold(undefined, { wranglerConfig: true });
+		await runInit();
+
+		const config = await read("vite.config.ts");
+		const cfIdx = config.indexOf("cloudflare(");
+		const vinextIdx = config.indexOf("vinext()");
+		assert.ok(cfIdx < vinextIdx, `cloudflare() should come before vinext():\n${config}`);
+	});
+
+	it("handles multi-line plugins array with wrangler config", async () => {
+		await scaffold(FIXTURES.viteConfigMultiLine, { wranglerConfig: true });
+		await runInit();
+
+		const config = await read("vite.config.ts");
+		assert.ok(config.includes("cloudflare("), `missing cloudflare():\n${config}`);
+		assert.ok(config.includes("payloadPlugin()"), `missing payloadPlugin():\n${config}`);
+		assert.ok(config.includes("vinext()"), `missing vinext():\n${config}`);
+	});
+
+	it("skips cloudflare() when already present", async () => {
+		await scaffold(undefined, { wranglerConfig: true });
+		await runInit();
+		await runInit();
+
+		const config = await read("vite.config.ts");
+		const matches = config.match(/cloudflare\(/g) ?? [];
+		assert.equal(matches.length, 1, `should have exactly 1 cloudflare() call:\n${config}`);
+	});
+
+	it("does not add cloudflare() without wrangler config", async () => {
+		await scaffold();
+		await runInit();
+
+		const config = await read("vite.config.ts");
+		assert.ok(
+			!config.includes("@cloudflare/vite-plugin"),
+			`should not add cloudflare without wrangler config:\n${config}`,
+		);
+	});
+
 });

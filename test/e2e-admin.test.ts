@@ -23,6 +23,7 @@ import {
 import {
 	createProjectHelpers,
 	installVinextStack,
+	runBuild,
 	startDevServer,
 	VERSIONS,
 } from "./helpers.ts";
@@ -201,5 +202,9 @@ describe("e2e: admin ui (sqlite)", { timeout: 600_000 }, () => {
 			0,
 			`Uncaught errors: ${uncaught.map((e) => e.text).join(", ")}`,
 		);
+	});
+
+	it("production build succeeds", async () => {
+		await runBuild(helpers);
 	});
 });

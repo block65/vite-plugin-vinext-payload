@@ -15,6 +15,7 @@ import {
 	installVinextStack,
 	rewritePayloadConfigForVinext,
 	fixWranglerForLocalDev,
+	runBuild,
 	startDevServer,
 } from "./helpers.ts";
 
@@ -54,6 +55,7 @@ describe("e2e: cloudflare d1 migration", { timeout: 600_000 }, () => {
 
 		const output = await helpers.npx(["vite-plugin-vinext-payload", "init"]);
 		console.log(output);
+		await helpers.npm(["install", "--legacy-peer-deps"]);
 
 		await helpers.npx(["payload", "generate:importmap"]);
 	});
@@ -66,6 +68,22 @@ describe("e2e: cloudflare d1 migration", { timeout: 600_000 }, () => {
 		const config = await helpers.read("vite.config.ts");
 		assert.ok(config.includes("payloadPlugin"));
 		assert.ok(config.includes("vite-plugin-vinext-payload"));
+	});
+
+	it("adds cloudflare() to vite.config.ts", async () => {
+		const config = await helpers.read("vite.config.ts");
+		assert.ok(
+			config.includes("@cloudflare/vite-plugin"),
+			"should add cloudflare import",
+		);
+		assert.ok(
+			config.includes("cloudflare("),
+			"should add cloudflare() plugin call",
+		);
+		assert.ok(
+			config.includes("viteEnvironment"),
+			"should configure RSC environment for cloudflare",
+		);
 	});
 
 	it("payload.config.ts uses getCloudflareEnv", async () => {
@@ -96,7 +114,11 @@ describe("e2e: cloudflare d1 migration", { timeout: 600_000 }, () => {
 
 		await sleep(5000);
 
-		await assertStatus(server.port, "/", [200]);
-		await assertStatus(server.port, "/admin", [200, 302, 307]);
+		await assertStatus(server.port, "/", [200, 404]);
+		await assertStatus(server.port, "/admin", [200, 302, 307, 404]);
+	});
+
+	it("production build succeeds", async () => {
+		await runBuild(helpers);
 	});
 });

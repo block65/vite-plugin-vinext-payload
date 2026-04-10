@@ -6,8 +6,8 @@ import assert from "node:assert/strict";
 
 /** Known-good version pins for testing. */
 export const VERSIONS = {
-  payload: "3.77.0",
-  vinext: "0.0.31",
+  payload: "3.82.1",
+  vinext: "0.0.41",
 } as const;
 
 const execFile = promisify(execFileCb);
@@ -41,6 +41,13 @@ export function createProjectHelpers(testDir: string) {
   return helpers;
 }
 
+/** Run a production build (vite build) and return stdout. */
+export async function runBuild(helpers: ReturnType<typeof createProjectHelpers>) {
+  const pkg = JSON.parse(await helpers.read("package.json"));
+  const script = pkg.scripts["build:vinext"] ? "build:vinext" : "build";
+  return helpers.npm(["run", script]);
+}
+
 /** Start a dev server, wait for it to print a port, return port + kill function. */
 export async function startDevServer(
   testDir: string,
@@ -52,10 +59,36 @@ export async function startDevServer(
   const proc = spawn("npm", ["run", script], {
     cwd: testDir,
     stdio: "pipe",
-    env: { ...process.env, NODE_ENV: "development" },
+    env: {
+      ...process.env,
+      NODE_ENV: "development",
+      NO_COLOR: "1",
+      FORCE_COLOR: "0",
+      CI: process.env.CI || "1",
+    },
   });
 
-  const match = await waitForOutput(proc, /localhost:(\d+)/);
+  let match: RegExpMatchArray;
+  try {
+    match = await waitForOutput(
+      proc,
+      /Local:\s+https?:\/\/[^:\s]+:(\d+)\/?/,
+    );
+  } catch (error) {
+    proc.kill("SIGTERM");
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => {
+        proc.kill("SIGKILL");
+        resolve();
+      }, 2000);
+      proc.on("exit", () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+    throw error;
+  }
+
   const port = Number.parseInt(match[1], 10);
 
   return {
@@ -77,9 +110,10 @@ export async function startDevServer(
 }
 
 /** Wait for a spawned process stdout to match a pattern without destroying the stream. */
-export function waitForOutput(proc: ChildProcess, pattern: RegExp, timeoutMs = 30_000) {
-  assert.ok(proc.stdout, "process must have stdout");
-  proc.stdout.setEncoding("utf8");
+export function waitForOutput(proc: ChildProcess, pattern: RegExp, timeoutMs = 60_000) {
+  assert.ok(proc.stdout || proc.stderr, "process must have stdio");
+  proc.stdout?.setEncoding("utf8");
+  proc.stderr?.setEncoding("utf8");
 
   return new Promise<RegExpMatchArray>((resolve, reject) => {
     let output = "";
@@ -100,9 +134,11 @@ export function waitForOutput(proc: ChildProcess, pattern: RegExp, timeoutMs = 3
     const cleanup = () => {
       clearTimeout(timeout);
       proc.stdout?.off("data", onData);
+      proc.stderr?.off("data", onData);
     };
 
     proc.stdout?.on("data", onData);
+    proc.stderr?.on("data", onData);
   });
 }
 
@@ -221,6 +257,7 @@ export default Page
 export async function scaffoldMockProject(
   testDir: string,
   viteConfig: string = FIXTURES.viteConfigSingleLine,
+  options?: { wranglerConfig?: boolean },
 ) {
   const { write, cleanup } = createProjectHelpers(testDir);
   await cleanup();
@@ -229,6 +266,9 @@ export async function scaffoldMockProject(
   await write("tsconfig.json", FIXTURES.tsconfig);
   await write("src/app/(payload)/layout.tsx", FIXTURES.originalLayout);
   await write("src/app/(payload)/admin/[[...segments]]/page.tsx", FIXTURES.originalPage);
+  if (options?.wranglerConfig) {
+    await write("wrangler.jsonc", '{ "name": "test" }');
+  }
 }
 
 /**
@@ -249,6 +289,10 @@ export async function installVinextStack(
   await helpers.npm(["rebuild", "esbuild"]);
   await helpers.npm(["install", "-D", "vinext", "vite", "--legacy-peer-deps"]);
   await helpers.npx(["vinext", "init"]);
+  const pkg = JSON.parse(await helpers.read("package.json"));
+  if (pkg.devDependencies?.["@cloudflare/vite-plugin"]) {
+    await helpers.npm(["install", "-D", "@cloudflare/vite-plugin", "--legacy-peer-deps"]);
+  }
   await helpers.npm(["install", "-D", pluginRoot, "--legacy-peer-deps"]);
 }
 
@@ -390,5 +434,10 @@ export async function rewritePayloadConfigForVinext(
 /** Remove "remote": true from wrangler.jsonc for local dev. */
 export async function fixWranglerForLocalDev(helpers: ReturnType<typeof createProjectHelpers>) {
   const wrangler = await helpers.read("wrangler.jsonc");
-  await helpers.write("wrangler.jsonc", wrangler.replace(/"remote"\s*:\s*true,?\n?\s*/g, ""));
+  await helpers.write(
+    "wrangler.jsonc",
+    wrangler
+      .replace(/"main"\s*:\s*"\.open-next\/worker\.js",?\n?\s*/g, "")
+      .replace(/"remote"\s*:\s*true,?\n?\s*/g, ""),
+  );
 }

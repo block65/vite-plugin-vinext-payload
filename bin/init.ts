@@ -10,7 +10,7 @@
  * 3. Adds normalizeParams to admin page.tsx
  */
 
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, access } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, Lang } from "@ast-grep/napi";
 import type { PackageJson } from "type-fest";
@@ -29,6 +29,29 @@ interface Result {
 
 const PAYLOAD_DIR = "src/app/(payload)";
 const ADMIN_DIR = `${PAYLOAD_DIR}/admin/[[...segments]]`;
+
+const WRANGLER_CONFIG_FILES = [
+	"wrangler.jsonc",
+	"wrangler.json",
+	"wrangler.toml",
+];
+
+async function findWranglerConfig(cwd: string): Promise<string | null> {
+	const exists = await Promise.all(
+		WRANGLER_CONFIG_FILES.map((file) =>
+			access(join(cwd, file)).then(
+				() => true,
+				() => false,
+			),
+		),
+	);
+	const matchIndex = exists.findIndex(Boolean);
+	return matchIndex === -1 ? null : WRANGLER_CONFIG_FILES[matchIndex];
+}
+
+async function hasWranglerConfig(cwd: string): Promise<boolean> {
+	return (await findWranglerConfig(cwd)) !== null;
+}
 
 const SERVER_FUNCTION_TS = dedent`
   'use server'
@@ -169,97 +192,178 @@ async function applyTemplate(
 async function addPayloadPluginToViteConfig({
 	cwd,
 	dryRun,
-}: InitOptions): Promise<Result> {
+}: InitOptions): Promise<Result[]> {
 	const file = join(cwd, "vite.config.ts");
 	const content = await tryRead(file);
 
 	if (!content) {
-		return { file: "vite.config.ts", action: "skipped", reason: "not found" };
+		return [{ file: "vite.config.ts", action: "skipped", reason: "not found" }];
 	}
 
-	if (content.includes("payloadPlugin")) {
-		return {
+	const results: Result[] = [];
+	let updated = content;
+
+	// --- Add payloadPlugin() ---
+	if (!updated.includes("payloadPlugin")) {
+		const root = parse(Lang.TypeScript, updated).root();
+
+		const vinextCall = root.find({
+			rule: {
+				pattern: "vinext()",
+				inside: { kind: "array", stopBy: "end" },
+			},
+		});
+
+		if (!vinextCall) {
+			results.push({
+				file: "vite.config.ts",
+				action: "skipped",
+				reason: "could not find vinext() in plugins array",
+			});
+		} else {
+			const allImports = root.findAll({ rule: { kind: "import_statement" } });
+			const lastImport = allImports.at(-1);
+
+			if (!lastImport) {
+				results.push({
+					file: "vite.config.ts",
+					action: "skipped",
+					reason: "no import statements found",
+				});
+			} else {
+				const pluginsArray = vinextCall.parent();
+				if (!pluginsArray || pluginsArray.kind() !== "array") {
+					results.push({
+						file: "vite.config.ts",
+						action: "skipped",
+						reason: "vinext() not inside an array",
+					});
+				} else {
+					const lastImportEnd = lastImport.range().end.index;
+					const quote = lastImport.text().includes("'") ? "'" : '"';
+					const importLine = `\nimport { payloadPlugin } from ${quote}vite-plugin-vinext-payload${quote};`;
+
+					const vinextRange = vinextCall.range();
+					const vinextLineStart =
+						updated.lastIndexOf("\n", vinextRange.start.index) + 1;
+					const isSingleLine = !pluginsArray.text().includes("\n");
+
+					const { pluginInsert, insertAt } = isSingleLine
+						? {
+								pluginInsert: ", payloadPlugin()",
+								insertAt:
+									updated[vinextRange.end.index] === ","
+										? vinextRange.end.index + 1
+										: vinextRange.end.index,
+							}
+						: (() => {
+								const indent = updated.slice(
+									vinextLineStart,
+									vinextRange.start.index,
+								);
+								const hasComma = updated[vinextRange.end.index] === ",";
+								return {
+									pluginInsert:
+										(hasComma ? "" : ",") + "\n" + indent + "payloadPlugin(),",
+									insertAt: hasComma
+										? vinextRange.end.index + 1
+										: vinextRange.end.index,
+								};
+							})();
+
+					updated =
+						updated.slice(0, lastImportEnd) +
+						importLine +
+						updated.slice(lastImportEnd, insertAt) +
+						pluginInsert +
+						updated.slice(insertAt);
+
+					results.push({ file: "vite.config.ts", action: "modified" });
+				}
+			}
+		}
+	} else {
+		results.push({
 			file: "vite.config.ts",
 			action: "skipped",
 			reason: "payloadPlugin already present",
-		};
+		});
 	}
 
-	const root = parse(Lang.TypeScript, content).root();
+	// --- Add cloudflare() for projects with wrangler config ---
+	const needsCloudflare =
+		(await hasWranglerConfig(cwd)) &&
+		!updated.includes("@cloudflare/vite-plugin");
 
-	const vinextCall = root.find({
-		rule: {
-			pattern: "vinext()",
-			inside: { kind: "array", stopBy: "end" },
-		},
-	});
+	if (needsCloudflare) {
+		const root = parse(Lang.TypeScript, updated).root();
 
-	if (!vinextCall) {
-		return {
-			file: "vite.config.ts",
-			action: "skipped",
-			reason: "could not find vinext() in plugins array",
-		};
-	}
+		const vinextCall = root.find({
+			rule: {
+				pattern: "vinext()",
+				inside: { kind: "array", stopBy: "end" },
+			},
+		});
 
-	const allImports = root.findAll({ rule: { kind: "import_statement" } });
-	const lastImport = allImports.at(-1);
+		if (vinextCall) {
+			const allImports = root.findAll({
+				rule: { kind: "import_statement" },
+			});
+			const lastImport = allImports.at(-1);
 
-	if (!lastImport) {
-		return {
-			file: "vite.config.ts",
-			action: "skipped",
-			reason: "no import statements found",
-		};
-	}
+			if (lastImport) {
+				const quote = lastImport.text().includes("'") ? "'" : '"';
+				const importLine = `\nimport { cloudflare } from ${quote}@cloudflare/vite-plugin${quote};`;
+				const lastImportEnd = lastImport.range().end.index;
 
-	const pluginsArray = vinextCall.parent();
-	if (!pluginsArray || pluginsArray.kind() !== "array") {
-		return {
-			file: "vite.config.ts",
-			action: "skipped",
-			reason: "vinext() not inside an array",
-		};
-	}
+				const pluginsArray = vinextCall.parent();
+				const vinextRange = vinextCall.range();
+				const isSingleLine =
+					pluginsArray && !pluginsArray.text().includes("\n");
 
-	const lastImportEnd = lastImport.range().end.index;
-	const quote = lastImport.text().includes("'") ? "'" : '"';
-	const importLine = `\nimport { payloadPlugin } from ${quote}vite-plugin-vinext-payload${quote};`;
+				const cfPlugin =
+					'cloudflare({ viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] } })';
 
-	const vinextRange = vinextCall.range();
-	const vinextLineStart =
-		content.lastIndexOf("\n", vinextRange.start.index) + 1;
-	const isSingleLine = !pluginsArray.text().includes("\n");
+				// Insert cloudflare() before vinext()
+				const vinextLineStart =
+					updated.lastIndexOf("\n", vinextRange.start.index) + 1;
 
-	const { pluginInsert, insertAt } = isSingleLine
-		? {
-				pluginInsert: ", payloadPlugin()",
-				insertAt:
-					content[vinextRange.end.index] === ","
-						? vinextRange.end.index + 1
-						: vinextRange.end.index,
+				let cfInsert: string;
+				let cfInsertAt: number;
+
+				if (isSingleLine) {
+					cfInsert = `${cfPlugin}, `;
+					cfInsertAt = vinextRange.start.index;
+				} else {
+					const indent = updated.slice(
+						vinextLineStart,
+						vinextRange.start.index,
+					);
+					cfInsert = `${indent}${cfPlugin},\n`;
+					cfInsertAt = vinextLineStart;
+				}
+
+				updated =
+					updated.slice(0, lastImportEnd) +
+					importLine +
+					updated.slice(lastImportEnd, cfInsertAt) +
+					cfInsert +
+					updated.slice(cfInsertAt);
+
+				results.push({
+					file: "vite.config.ts",
+					action: "modified",
+					reason: "added cloudflare() for wrangler config",
+				});
 			}
-		: (() => {
-				const indent = content.slice(vinextLineStart, vinextRange.start.index);
-				const hasComma = content[vinextRange.end.index] === ",";
-				return {
-					pluginInsert:
-						(hasComma ? "" : ",") + "\n" + indent + "payloadPlugin(),",
-					insertAt: hasComma
-						? vinextRange.end.index + 1
-						: vinextRange.end.index,
-				};
-			})();
+		}
+	}
 
-	const updated =
-		content.slice(0, lastImportEnd) +
-		importLine +
-		content.slice(lastImportEnd, insertAt) +
-		pluginInsert +
-		content.slice(insertAt);
+	if (results.some((r) => r.action !== "skipped")) {
+		await maybeWrite(file, updated, dryRun);
+	}
 
-	await maybeWrite(file, updated, dryRun);
-	return { file: "vite.config.ts", action: "modified" };
+	return results;
 }
 
 /**
@@ -372,7 +476,7 @@ export async function init(options: InitOptions) {
 	console.log("Initializing vite-plugin-vinext-payload...\n");
 
 	// Run independent transforms concurrently, sequential ones together
-	const [viteConfigResult, serverFnResults, pageResult] = await Promise.all([
+	const [viteConfigResults, serverFnResults, pageResult] = await Promise.all([
 		addPayloadPluginToViteConfig(options),
 		fixServerFunction(options),
 		applyTemplate(
@@ -384,7 +488,30 @@ export async function init(options: InitOptions) {
 		),
 	]);
 
-	const results = [viteConfigResult, ...serverFnResults, pageResult];
+	const results = [...viteConfigResults, ...serverFnResults, pageResult];
+
+	// Add @cloudflare/vite-plugin to devDependencies if cloudflare() was added
+	const addedCloudflare = viteConfigResults.some((r) =>
+		r.reason?.includes("cloudflare"),
+	);
+	if (addedCloudflare && !allDeps["@cloudflare/vite-plugin"]) {
+		const pkgPath = join(cwd, "package.json");
+		const pkgContent = JSON.parse(await readFile(pkgPath, "utf8"));
+		pkgContent.devDependencies = {
+			...pkgContent.devDependencies,
+			"@cloudflare/vite-plugin": "^1",
+		};
+		await maybeWrite(
+			pkgPath,
+			JSON.stringify(pkgContent, null, 2) + "\n",
+			dryRun,
+		);
+		results.push({
+			file: "package.json",
+			action: "modified",
+			reason: "added @cloudflare/vite-plugin",
+		});
+	}
 
 	for (const r of results) {
 		const icon =

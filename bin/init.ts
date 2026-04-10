@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { parse, Lang } from "@ast-grep/napi";
 import type { PackageJson } from "type-fest";
 import { dedent } from "../src/dedent.ts";
+import { tryRead } from "../src/try-read.ts";
 
 interface InitOptions {
 	cwd: string;
@@ -145,14 +146,6 @@ async function readManifest(cwd: string): Promise<PackageJson> {
 		return JSON.parse(content) as PackageJson;
 	} catch {
 		throw new InitError("package.json contains invalid JSON.");
-	}
-}
-
-async function tryRead(path: string): Promise<string | null> {
-	try {
-		return await readFile(path, "utf8");
-	} catch {
-		return null;
 	}
 }
 
@@ -378,8 +371,8 @@ async function fixServerFunction({
 	const layoutFile = join(cwd, PAYLOAD_DIR, "layout.tsx");
 
 	// Check if serverFunction.ts already exists
-	const existingServerFn = await tryRead(serverFnFile);
-	if (existingServerFn) {
+	const serverFnContent = await tryRead(serverFnFile);
+	if (serverFnContent) {
 		const layoutContent = await tryRead(layoutFile);
 		if (!layoutContent || layoutContent.includes("serverFunction.js")) {
 			return [

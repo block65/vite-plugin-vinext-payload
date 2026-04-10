@@ -1,7 +1,8 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Plugin } from "vite";
 import { dedent } from "./dedent.ts";
+import { tryRead } from "./try-read.ts";
 
 const TARGET_RELATIVE = join(
 	"node_modules",
@@ -15,6 +16,9 @@ const TARGET_RELATIVE = join(
 
 const ORIGINAL_EXPORT =
 	"export { escapeDiffHTML, getHTMLDiffComponents, unescapeDiffHTML } from '../../elements/HTMLDiff/index.js';";
+
+const PATCHED_REGION_RE =
+	/import \{ jsx as _jsx \} from "react\/jsx-runtime";[\s\S]*?export \{ escapeDiffHTML, payloadGetHTMLDiffComponents as getHTMLDiffComponents, unescapeDiffHTML \};/;
 
 const PATCHED_EXPORT = dedent`
 	import { jsx as _jsx } from "react/jsx-runtime";
@@ -51,14 +55,6 @@ const PATCHED_EXPORT = dedent`
 	export { escapeDiffHTML, payloadGetHTMLDiffComponents as getHTMLDiffComponents, unescapeDiffHTML };
 `;
 
-async function tryRead(path: string): Promise<string | null> {
-	try {
-		return await readFile(path, "utf8");
-	} catch {
-		return null;
-	}
-}
-
 /**
  * Fixes a Payload RSC export regression seen with latest templates on
  * vinext/Rolldown builds, where `getHTMLDiffComponents` is reported
@@ -80,12 +76,9 @@ export function payloadHtmlDiffExportFix(): Plugin {
 			if (!content) {
 				return;
 			}
-			const patchedRegion =
-				/import \{ jsx as _jsx \} from "react\/jsx-runtime";[\s\S]*?export \{ escapeDiffHTML, payloadGetHTMLDiffComponents as getHTMLDiffComponents, unescapeDiffHTML \};/;
-
 			let updated = content;
-			if (patchedRegion.test(updated)) {
-				updated = updated.replace(patchedRegion, PATCHED_EXPORT.trimEnd());
+			if (PATCHED_REGION_RE.test(updated)) {
+				updated = updated.replace(PATCHED_REGION_RE, PATCHED_EXPORT.trimEnd());
 			} else if (updated.includes(ORIGINAL_EXPORT)) {
 				updated = updated.replace(ORIGINAL_EXPORT, PATCHED_EXPORT.trimEnd());
 			} else {

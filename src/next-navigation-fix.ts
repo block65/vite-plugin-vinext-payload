@@ -25,7 +25,7 @@ import type { Plugin } from "vite";
  * hooks, matching Next.js's `PathnameContext` / `SearchParamsContext`.
  */
 
-const PATCH_MARKER = "/* patched:navigation-hydration-fix */";
+const PATCH_MARKER = "/* patched:next-navigation-fix */";
 
 function patchNavigation(code: string): string {
 	// Find all useSyncExternalStore(subscribeToNavigation, clientSnapshot, serverSnapshot)
@@ -90,9 +90,9 @@ function findNavigationShimFromAliases(aliases: unknown): string | null {
 	return null;
 }
 
-export function payloadNavigationHydrationFix(): Plugin {
+export function payloadNextNavigationFix(): Plugin {
 	return {
-		name: "vite-plugin-payload:navigation-hydration-fix",
+		name: "vite-plugin-payload:next-navigation-fix",
 
 		configResolved(config) {
 			const shimPath = findNavigationShimFromAliases(config.resolve.alias);

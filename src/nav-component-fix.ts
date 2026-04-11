@@ -27,9 +27,9 @@ import type { Plugin } from "vite";
  * Remove: when vinext's navigation hooks use React context like Next.js,
  * or Payload removes the conditional element type rendering.
  */
-export function payloadNavHydrationFix(): Plugin {
+export function payloadNavComponentFix(): Plugin {
 	return {
-		name: "vite-plugin-payload:nav-hydration-fix",
+		name: "vite-plugin-payload:nav-component-fix",
 		transform(code, id) {
 			if (!id.includes("@payloadcms")) {
 				return;

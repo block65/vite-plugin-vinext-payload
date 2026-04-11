@@ -3,26 +3,12 @@
  *
  * Vite plugin for running Payload CMS with vinext.
  *
- * Use `payloadPlugin()` for the batteries-included experience, or
- * import individual plugins to compose your own setup.
- *
  * @example
  * ```ts
- * // Batteries-included
  * import { payloadPlugin } from "vite-plugin-vinext-payload";
  *
  * export default defineConfig({
  *   plugins: [vinext(), payloadPlugin()],
- * });
- * ```
- *
- * @example
- * ```ts
- * // À la carte
- * import { payloadConfigAlias, payloadCliStubs } from "vite-plugin-vinext-payload";
- *
- * export default defineConfig({
- *   plugins: [vinext(), payloadConfigAlias(), payloadCliStubs()],
  * });
  * ```
  */
@@ -32,42 +18,26 @@ import { cjsInterop } from "vite-plugin-cjs-interop";
 import { payloadCjsInteropDeps } from "./cjs-interop-deps.ts";
 import { payloadCjsTransform } from "./cjs-transform.ts";
 import { payloadCliStubs } from "./cli-stubs.ts";
-import {
-	payloadConfigAlias,
-	type PayloadConfigAliasOptions,
-} from "./config-alias.ts";
 import { payloadHtmlDiffExportFix } from "./html-diff-export-fix.ts";
-import { payloadNavHydrationFix } from "./nav-hydration-fix.ts";
-import { payloadNavigationHydrationFix } from "./navigation-hydration-fix.ts";
-import { payloadNodeBuiltinFix } from "./node-builtin-fix.ts";
+import { payloadNavComponentFix } from "./nav-component-fix.ts";
+import { payloadNextNavigationFix } from "./next-navigation-fix.ts";
 import { payloadOptimizeDeps } from "./optimize-deps.ts";
 import { payloadRedirectFix } from "./redirect-fix.ts";
 import { payloadRscExportFix } from "./rsc-export-fix.ts";
-import { payloadRscStubs } from "./rsc-stubs.ts";
+import { payloadRscRuntime } from "./rsc-runtime.ts";
 import { payloadServerActionFix } from "./server-action-fix.ts";
+import { payloadServerExternals } from "./server-externals.ts";
 import { payloadUseClientBarrel } from "./use-client-barrel.ts";
+import { payloadWorkerdCompat } from "./workerd-compat.ts";
+import { payloadWorkerdEntry } from "./workerd-entry.ts";
 
-// Re-export individual plugins
-export {
-	payloadConfigAlias,
-	type PayloadConfigAliasOptions,
-} from "./config-alias.ts";
-export { payloadNavHydrationFix } from "./nav-hydration-fix.ts";
-export { payloadNavigationHydrationFix } from "./navigation-hydration-fix.ts";
-export { payloadNodeBuiltinFix } from "./node-builtin-fix.ts";
-export { payloadOptimizeDeps } from "./optimize-deps.ts";
-export { payloadHtmlDiffExportFix } from "./html-diff-export-fix.ts";
-export { payloadCjsTransform } from "./cjs-transform.ts";
-export { payloadCliStubs } from "./cli-stubs.ts";
-export { payloadCjsInteropDeps } from "./cjs-interop-deps.ts";
-export { payloadRedirectFix } from "./redirect-fix.ts";
-export { payloadRscExportFix } from "./rsc-export-fix.ts";
-export { payloadRscStubs } from "./rsc-stubs.ts";
-export { RSC_STUBS } from "./payload-packages.ts";
-export { payloadServerActionFix } from "./server-action-fix.ts";
-export { payloadUseClientBarrel } from "./use-client-barrel.ts";
+export interface PayloadPluginOptions {
+	/**
+	 * Additional packages to externalize from server (SSR + RSC) bundling.
+	 * Merged with the built-in list (esbuild, wrangler, miniflare, sharp).
+	 */
+	ssrExternal?: string[];
 
-export interface PayloadPluginOptions extends PayloadConfigAliasOptions {
 	/** Additional packages to exclude from optimizeDeps. */
 	excludeFromOptimize?: string[];
 
@@ -76,10 +46,11 @@ export interface PayloadPluginOptions extends PayloadConfigAliasOptions {
 }
 
 /**
- * Batteries-included Payload CMS compatibility for Vite.
+ * Payload CMS compatibility for Vite + vinext.
  *
- * Returns all sub-plugins with sensible defaults. For fine-grained
- * control, import the individual plugins instead.
+ * Returns the full set of sub-plugins that make Payload run on Vite's
+ * Environment API, plugin-rsc, and (optionally) workerd via
+ * `@cloudflare/vite-plugin`.
  */
 export function payloadPlugin(options: PayloadPluginOptions = {}): Plugin[] {
 	const {
@@ -90,17 +61,18 @@ export function payloadPlugin(options: PayloadPluginOptions = {}): Plugin[] {
 
 	return [
 		payloadUseClientBarrel(),
-		payloadConfigAlias({ ssrExternal }),
-		payloadNodeBuiltinFix(),
+		payloadServerExternals({ ssrExternal }),
+		payloadWorkerdCompat(),
+		payloadWorkerdEntry(),
 		payloadHtmlDiffExportFix(),
 		payloadOptimizeDeps(excludeFromOptimize),
 		payloadCjsTransform(),
 		payloadCliStubs(),
-		payloadNavHydrationFix(),
-		payloadNavigationHydrationFix(),
+		payloadNavComponentFix(),
+		payloadNextNavigationFix(),
 		payloadRedirectFix(),
 		payloadRscExportFix(),
-		payloadRscStubs(),
+		payloadRscRuntime(),
 		payloadServerActionFix(),
 		cjsInterop({
 			dependencies: [...payloadCjsInteropDeps, ...extraCjsInterop],

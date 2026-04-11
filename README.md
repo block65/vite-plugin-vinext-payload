@@ -2,7 +2,11 @@
 
 Vite plugin for running [Payload CMS](https://payloadcms.com/) with [vinext](https://github.com/cloudflare/vinext) (Cloudflare's Vite-based re-implementation of Next.js).
 
-> **Experimental.** Both vinext and this plugin are experimental. Latest validation targeted Payload 3.82.1 templates with vinext 0.0.41 and Vite 8 (Rolldown); see known RSC build regression notes in [`docs/upstream-bugs.md`](docs/upstream-bugs.md).
+> **Experimental.** Both vinext and this plugin are experimental.
+>
+> **Validated against:** Payload `3.82.1`, vinext `0.0.41`, Vite `^8.0.0` (Rolldown), Node `>=24`.
+>
+> Peer dependency ranges are pinned to the validated stack — see [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for known regressions.
 
 ## Migrating from Next.js
 
@@ -23,6 +27,7 @@ The plugin's `init` command is idempotent — safe to run multiple times. It:
 - Adds `payloadPlugin()` to your `vite.config.ts`
 - Extracts the inline server function from `layout.tsx` into a separate `'use server'` module (required for Vite's RSC transform)
 - Adds `normalizeParams` to the admin page
+- If a `wrangler.{jsonc,json,toml}` is present, also adds `cloudflare()` to `vite.config.ts` and `@cloudflare/vite-plugin` to `devDependencies`
 
 Use `--dry-run` to preview changes without writing files.
 
@@ -57,12 +62,12 @@ export default defineConfig({
 			viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
 		}),
 		vinext(),
-		payloadPlugin({
-			ssrExternal: ["cloudflare:workers"],
-		}),
+		payloadPlugin(),
 	],
 });
 ```
+
+`cloudflare:workers` is externalized automatically — no need to pass it via `ssrExternal`.
 
 ## Options
 
@@ -81,53 +86,32 @@ payloadPlugin({
 
 ## What It Does
 
-`payloadPlugin()` composes these sub-plugins:
+`payloadPlugin()` composes these sub-plugins. They are not exported individually — splits exist purely for readability and maintenance:
 
 | Plugin | Owner bug | What it does |
 | --- | --- | --- |
 | `payloadUseClientBarrel` | Payload | Auto-detects `@payloadcms/*` barrel files that re-export from `'use client'` modules and excludes them from RSC pre-bundling (pre-bundling strips the directive, breaking client references) |
-| `payloadConfigAlias` | Vite | Configures SSR/RSC externals via `build.rolldownOptions.external` — only build tools and native addons are externalized (workerd can't resolve externals at runtime). Uses `configEnvironment` to apply to both `ssr` and `rsc` environments (Vite's `ssr.external` only applies to the `ssr` environment) |
-| `payloadNodeBuiltinFix` | workerd / Rolldown | Fixes four Workers runtime compatibility issues: (1) resolveId fallback for `node:*` CJS requires that bypass @cloudflare/vite-plugin's filtered hook, (2) try-catch wrapper for undici's `detectRuntimeFeatureByExportedProperty` which crashes due to Rolldown's CJS→ESM interop returning void, (3) `import.meta.url ?? "file:///"` guards for `fileURLToPath` and `createRequire` patterns that crash when bundled in workerd asset chunks, (4) `generateBundle` hook that re-wraps the entry export in `{ fetch }` when Rolldown inlines vinext's Workers handler wrapper into a bare function (regression of [workers-sdk#10213](https://github.com/cloudflare/workers-sdk/issues/10213) on Vite 8/Rolldown) |
+| `payloadServerExternals` | Vite | Externalizes packages from both `ssr` and `rsc` environments. Only build tools and native addons are externalized (workerd can't resolve externals at runtime). Uses `configEnvironment` because `ssr.external` only applies to the `ssr` environment, and writes to `build.rolldownOptions.external` because `@cloudflare/vite-plugin` rejects `resolve.external` |
+| `payloadWorkerdCompat` | workerd / Rolldown | Three module-resolution / bundle-time fixes needed before code can evaluate inside workerd: (1) `resolveId` fallback for `node:*` CJS requires that bypass `@cloudflare/vite-plugin`'s filtered hook, (2) try-catch wrapper for undici's `detectRuntimeFeatureByExportedProperty` which crashes due to Rolldown's CJS→ESM interop returning void, (3) `import.meta.url ?? "file:///"` guards for `fileURLToPath` / `createRequire` patterns that crash in bundled workerd asset chunks |
+| `payloadWorkerdEntry` | Rolldown / @cloudflare/vite-plugin | `generateBundle` hook that re-wraps the RSC entry default export in `{ fetch }` when Rolldown inlines vinext's Workers handler wrapper into a bare function (regression of [workers-sdk#10213](https://github.com/cloudflare/workers-sdk/issues/10213) on Vite 8/Rolldown) |
 | `payloadHtmlDiffExportFix` | @vitejs/plugin-rsc / Rolldown | Patches `@payloadcms/ui/dist/exports/rsc/index.js` at build start to stabilize `getHTMLDiffComponents` export when RSC/Rolldown reports it as missing in latest templates |
 | `payloadOptimizeDeps` | vinext | Per-environment optimizeDeps: excludes problematic packages, force-includes CJS transitive deps for the client. Auto-discovers all `next/*` alias specifiers from the resolved config so the optimizer doesn't discover them at runtime (which causes a full page reload) |
 | `payloadCjsTransform` | Vite | Fixes `this` → `globalThis` in UMD/CJS wrappers and wraps `module.exports` with ESM scaffolding (skips React/ReactDOM which Vite 8 handles natively) |
 | `payloadCliStubs` | Payload | Stubs packages not needed at web runtime (`console-table-printer`, `json-schema-to-typescript`, `esbuild-register`, `ws`) |
-| `payloadNavHydrationFix` | Payload | Patches `DefaultNavClient` and `DocumentTabLink` to not switch element types (`<a>` vs `<div>`) based on `usePathname()`/`useParams()` — prevents React 19 tree-destroying hydration mismatches (AST-based via ast-grep) |
-| `payloadNavigationHydrationFix` | vinext | Patches vinext's `next/navigation` shim on disk so `usePathname`/`useParams`/`useSearchParams` use client snapshots during hydration instead of the server context (which is `null` on the client) |
+| `payloadNavComponentFix` | Payload | Patches `DefaultNavClient` and `DocumentTabLink` to not switch element types (`<a>` vs `<div>`) based on `usePathname()`/`useParams()` — prevents React 19 tree-destroying hydration mismatches (AST-based via ast-grep) |
+| `payloadNextNavigationFix` | vinext | Patches vinext's `next/navigation` shim on disk so `usePathname`/`useParams`/`useSearchParams` use client snapshots during hydration instead of the server context (which is `null` on the client) |
 | `payloadRedirectFix` | vinext | Catches `NEXT_REDIRECT` errors that leak through the RSC stream during async rendering and converts them to client-side `location.replace()` redirects |
 | `payloadRscExportFix` | @vitejs/plugin-rsc | Fixes `@vitejs/plugin-rsc`'s CSS export transform dropping exports after sourcemap comments |
-| `payloadRscStubs` | vinext / workerd / pnpm | Stubs `file-type` and `drizzle-kit/api` for RSC/workerd, polyfills workerd's broken `console.createTask`, patches RSC serializer to silently drop non-serializable values (functions, RegExps) at the server/client boundary (matching Next.js prod behavior) |
+| `payloadRscRuntime` | vinext / workerd / pnpm | RSC environment patches for workerd: stubs `file-type` and `drizzle-kit/api`, polyfills workerd's broken `console.createTask`, and patches the RSC serializer to silently drop non-serializable values (functions, RegExps) at the server/client boundary (matching Next.js prod behavior) |
 | `payloadServerActionFix` | vinext | Moves `getReactRoot().render()` after the `returnValue` check in vinext's browser entry so data-returning server actions (like `getFormState`) don't trigger a re-render that resets Payload's form state. Also rewrites the browser entry's relative shim import to use the pre-bundled alias (AST-based via ast-grep) |
 | `cjsInterop` | Vite | Fixes CJS default export interop for packages like `bson-objectid` (via [vite-plugin-cjs-interop](https://github.com/nicolo-ribaudo/vite-plugin-cjs-interop)) |
 
-## A La Carte
-
-Import individual plugins if you need fine-grained control:
-
-```ts
-import {
-	payloadUseClientBarrel,
-	payloadConfigAlias,
-	payloadNodeBuiltinFix,
-	payloadHtmlDiffExportFix,
-	payloadOptimizeDeps,
-	payloadCjsTransform,
-	payloadCliStubs,
-	payloadNavHydrationFix,
-	payloadNavigationHydrationFix,
-	payloadRedirectFix,
-	payloadRscExportFix,
-	payloadRscStubs,
-	payloadServerActionFix,
-} from "vite-plugin-vinext-payload";
-```
-
 ## Requirements
 
-- Node.js >= 24
-- Vite 8 (may work on 6/7 but untested)
-- vinext 0.0.37+
-- Payload CMS 3.x
+- Node.js `>=24`
+- Vite `^8.0.0`
+- vinext `0.0.41` (exact — vinext is pre-1.0; every patch can break things)
+- Payload CMS `^3.82.0`
 
 ## Known Compatibility Issues
 
@@ -151,6 +135,7 @@ These all work fine on Next.js — they exist because vinext reimplements Next.j
 | Non-serializable values (functions, RegExps) not silently dropped at RSC boundary | vinext | Patch serializer throws to `return undefined` |
 | `NEXT_REDIRECT` errors leak through RSC stream during async rendering | vinext | Client-side redirect interception |
 | Rolldown inlines Workers entry wrapper into bare function | Rolldown / @cloudflare/vite-plugin | `generateBundle` hook re-wraps default export in `{ fetch }` ([workers-sdk#10213](https://github.com/cloudflare/workers-sdk/issues/10213)) |
+| CJS default export interop (e.g. `bson-objectid`) breaks named-import desugaring | Vite | `vite-plugin-cjs-interop` for the curated package list |
 
 ## License
 

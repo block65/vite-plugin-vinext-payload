@@ -34,28 +34,37 @@ const CONSOLE_CREATE_TASK_POLYFILL =
 	"try{console.createTask('_')}catch(_e){console.createTask=function(){return{run:function(f){return f()}}}};\n";
 
 /**
- * Stubs and polyfills for the RSC environment running in workerd.
+ * RSC environment runtime patches for workerd.
  *
- * - `file-type`: uses Node.js fs/streams — transitively imported by
- *   `@payloadcms/db-d1-sqlite` but never invoked during RSC rendering.
- *   Without the stub, the pre-bundled chunk contains a bare
- *   `import 'file-type'` that the workerd module runner can't resolve.
+ * Three things in one plugin — all colocated because they only apply to
+ * the `rsc` environment running inside workerd:
  *
- * - `drizzle-kit/api`: migration utilities from `@payloadcms/db-d1-sqlite`,
- *   not needed during RSC rendering. pnpm strict isolation prevents
- *   resolution during pre-bundling.
+ * - **Stubs** for `file-type` and `drizzle-kit/api`. Both are transitively
+ *   imported by `@payloadcms/db-d1-sqlite` but never invoked during RSC
+ *   rendering. Without stubs, the pre-bundled chunk contains a bare
+ *   `import 'file-type'` that the workerd module runner can't resolve;
+ *   `drizzle-kit/api` is unresolvable under pnpm strict isolation.
  *
- * - `console.createTask`: workerd polyfill throws instead of being a
- *   no-op, breaking React 19 dev mode's async stack trace support.
+ * - **`console.createTask` polyfill** for workerd. Workerd's `node:console`
+ *   polyfill defines `console.createTask` but throws "not implemented"
+ *   when called. React 19 dev mode checks for its existence and calls it
+ *   for async stack traces. We prepend an idempotent no-op patch to React
+ *   modules that reference it.
+ *
+ * - **RSC serializer patch** that converts the "Client Component" throw
+ *   in `react-server-dom-webpack` into `return undefined`. Next.js
+ *   silently drops non-serializable values (functions, RegExps, etc.) at
+ *   the server/client boundary in production. vinext doesn't replicate
+ *   that behavior, so every Payload page with field configs (access
+ *   functions, hooks, RegExps) would fail without this patch.
  */
-export function payloadRscStubs(): Plugin {
+export function payloadRscRuntime(): Plugin {
 	return {
-		name: "vite-plugin-payload:rsc-stubs",
+		name: "vite-plugin-payload:rsc-runtime",
 
 		// Redirect stubs during RSC optimizeDeps pre-bundling so they're
 		// inlined rather than left as bare external imports that workerd
-		// can't resolve. Provides both rolldownOptions (Vite 8+/Rolldown)
-		// and esbuildOptions (Vite 6-7/esbuild) for compatibility.
+		// can't resolve.
 		configEnvironment(name) {
 			if (name !== "rsc") {
 				return;
@@ -65,36 +74,13 @@ export function payloadRscStubs(): Plugin {
 
 			return {
 				optimizeDeps: {
-					// Vite 6-7 (esbuild) — deprecated in Vite 8 but still works
-					esbuildOptions: {
-						plugins: [
-							{
-								name: "payload-rsc-stubs",
-								setup(build: {
-									onResolve: (
-										opts: { filter: RegExp },
-										cb: () => { path: string },
-									) => void;
-								}) {
-									for (const [pkg, stub] of Object.entries(stubs)) {
-										build.onResolve(
-											{
-												filter: new RegExp(`^${pkg.replace("/", "\\/")}$`),
-											},
-											() => ({ path: stub }),
-										);
-									}
-								},
-							},
-						],
-					},
 					// Vite 8+ (Rolldown) — added via spread to avoid type
 					// errors on Vite versions that don't have the type yet
 					...({
 						rolldownOptions: {
 							plugins: [
 								{
-									name: "payload-rsc-stubs",
+									name: "payload-rsc-runtime-stubs",
 									resolveId(source: string) {
 										return stubs[source] ?? null;
 									},

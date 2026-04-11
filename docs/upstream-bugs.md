@@ -64,7 +64,7 @@ layer (`packages/next/src/server/app-render/`) and silently drops the
 values — they become `undefined` on the client. This is intentional
 production behavior, not a bug suppression.
 
-**Our workaround:** `payloadRscStubs` patches the throw statements in
+**Our workaround:** `payloadRscRuntime` patches the throw statements in
 `react-server-dom-webpack` to `return undefined`, matching Next.js prod
 behavior. vinext's `rscOnError` only controls the error digest, not
 whether rendering aborts — our transform prevents the throw entirely.
@@ -104,7 +104,7 @@ for async stack traces, causing a crash.
 neither of which has a broken `console.createTask`. This is specific to
 workerd's polyfill.
 
-**Our workaround:** `payloadRscStubs` prepends a try/catch polyfill
+**Our workaround:** `payloadRscRuntime` prepends a try/catch polyfill
 that replaces the broken implementation with a no-op.
 
 ---
@@ -123,7 +123,7 @@ for the CJS require call. The `node:*` import goes unresolved.
 **Why Next.js works:** Next.js externalizes Node.js builtins during SSR
 bundling. They resolve at runtime against the Node.js standard library.
 
-**Our workaround:** `payloadNodeBuiltinFix` provides a filterless
+**Our workaround:** `payloadWorkerdCompat` provides a filterless
 resolveId fallback that catches any `node:*` specifier missed by the
 cloudflare plugin and routes it to `unenv/node/${bare}`.
 
@@ -144,7 +144,7 @@ on `undefined`, throwing a TypeError (`markAsUncloneable is not a function`).
 `require()` calls execute against real Node.js modules that return proper
 objects.
 
-**Our workaround:** `payloadNodeBuiltinFix` wraps
+**Our workaround:** `payloadWorkerdCompat` wraps
 `detectRuntimeFeatureByExportedProperty` in a try-catch so the detection
 returns `false` and undici falls back to its no-op stubs.
 
@@ -166,7 +166,7 @@ verify it has event handlers). `import.meta.dirname` is also `undefined`.
 is always set to the module's `file://` URL. Even during production builds,
 Next.js resolves `__dirname` at build time via webpack's `__dirname` shim.
 
-**Our workaround:** `payloadNodeBuiltinFix` transforms both
+**Our workaround:** `payloadWorkerdCompat` transforms both
 `fileURLToPath(import.meta.url)` and `createRequire(import.meta.url)` to
 use `import.meta.url ?? "file:///"`. The dummy URL produces `"/"` — any
 filesystem operation using this path will fail, but those code paths
@@ -192,7 +192,7 @@ plugin validates and rejects it on all environments it manages.
 both RSC and SSR. Its externals configuration applies uniformly to all
 server-side modules.
 
-**Our workaround:** `payloadConfigAlias` uses `configEnvironment` to set
+**Our workaround:** `payloadServerExternals` uses `configEnvironment` to set
 `build.rolldownOptions.external` on both the `"ssr"` and `"rsc"` environments.
 This bypasses the `ssr.external` naming limitation and the cloudflare
 plugin's `resolve.external` validation.
@@ -214,7 +214,7 @@ layout. And these deps are only used during build/migration, not at
 request time — Next.js's tree-shaking removes them from the runtime
 bundle.
 
-**Our workaround:** `payloadRscStubs` provides empty stub modules for
+**Our workaround:** `payloadRscRuntime` provides empty stub modules for
 both packages. They're never invoked during RSC rendering — `file-type`
 is for upload detection, `drizzle-kit/api` is for migrations.
 
@@ -262,7 +262,7 @@ fallback values (`"/"`, `{}`, empty search) instead of the real URL.
 entire tree, so server and client values are always consistent during
 hydration.
 
-**Our workaround:** `payloadNavigationHydrationFix` patches the shim on
+**Our workaround:** `payloadNextNavigationFix` patches the shim on
 disk so `getServerSnapshot` uses the client snapshot function. The
 browser entry calls `setClientParams()` before `hydrateRoot()`, so
 the client store has correct values at hydration time.
@@ -328,7 +328,7 @@ element-type mismatch and discards the entire server-rendered subtree.
 during SSR and hydration (via React context), so the conditional rendering
 always produces the same element type on both sides.
 
-**Our workaround:** `payloadNavHydrationFix` uses ast-grep to force
+**Our workaround:** `payloadNavComponentFix` uses ast-grep to force
 consistent rendering: ternaries with `"link"` / `"div"` alternatives
 become `"link"`, `pathname === href` becomes `false`, etc.
 
@@ -388,7 +388,7 @@ affected because Rolldown doesn't need to inline their entry modules.
 directly. Its server entry runs in Node.js or Edge Runtime, neither of
 which validates the shape of the default export.
 
-**Our workaround:** `payloadNodeBuiltinFix` adds a `generateBundle`
+**Our workaround:** `payloadWorkerdEntry` adds a `generateBundle`
 hook that inspects the RSC entry chunk. If the default export is a
 function declaration (not already a `{ fetch }` object), it rewrites
 the export to wrap it:

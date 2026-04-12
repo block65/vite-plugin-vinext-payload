@@ -104,8 +104,10 @@ for async stack traces, causing a crash.
 neither of which has a broken `console.createTask`. This is specific to
 workerd's polyfill.
 
-**Our workaround:** `payloadRscRuntime` prepends a try/catch polyfill
-that replaces the broken implementation with a no-op.
+**Our workaround:** `payloadWorkerdCompat` prepends a try/catch polyfill
+that replaces the broken implementation with a no-op. Injected via both
+Vite `transform` hook (for non-pre-bundled modules) and
+`optimizeDeps.rolldownOptions.plugins` (for pre-bundled deps like React).
 
 ---
 

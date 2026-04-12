@@ -20,36 +20,16 @@ const stubPaths: Record<string, string> = Object.fromEntries(
 		.map((pkg) => [pkg, STUB_FILES[pkg]]),
 );
 
-// Workerd's node:console polyfill defines console.createTask but throws
-// "not implemented" when called. React 19 dev mode checks for its
-// existence and calls it for async stack traces.
-// Upstream: workerd should make createTask a no-op, not throw.
-//
-// This polyfill is prepended to RSC modules that reference createTask.
-// ESM hoists imports before executing body statements, so the polyfill
-// runs after imports resolve but before the module's __commonJS wrapper
-// evaluates React's CJS code. It's idempotent — once patched, subsequent
-// modules pass the try and skip the assignment.
-const CONSOLE_CREATE_TASK_POLYFILL =
-	"try{console.createTask('_')}catch(_e){console.createTask=function(){return{run:function(f){return f()}}}};\n";
-
 /**
  * RSC environment runtime patches for workerd.
  *
- * Three things in one plugin — all colocated because they only apply to
- * the `rsc` environment running inside workerd:
+ * Two things in one plugin — both only apply to the `rsc` environment:
  *
  * - **Stubs** for `file-type` and `drizzle-kit/api`. Both are transitively
  *   imported by `@payloadcms/db-d1-sqlite` but never invoked during RSC
  *   rendering. Without stubs, the pre-bundled chunk contains a bare
  *   `import 'file-type'` that the workerd module runner can't resolve;
  *   `drizzle-kit/api` is unresolvable under pnpm strict isolation.
- *
- * - **`console.createTask` polyfill** for workerd. Workerd's `node:console`
- *   polyfill defines `console.createTask` but throws "not implemented"
- *   when called. React 19 dev mode checks for its existence and calls it
- *   for async stack traces. We prepend an idempotent no-op patch to React
- *   modules that reference it.
  *
  * - **RSC serializer patch** that converts the "Client Component" throw
  *   in `react-server-dom-webpack` into `return undefined`. Next.js
@@ -99,11 +79,6 @@ export function payloadRscRuntime(): Plugin {
 				}
 
 				let result = code;
-
-				// Patch console.createTask (workerd polyfill throws).
-				if (id.includes("/react/") && result.includes("console.createTask")) {
-					result = CONSOLE_CREATE_TASK_POLYFILL + result;
-				}
 
 				// Patch RSC serializer: replace throw statements for values
 				// that can't cross the server/client boundary with

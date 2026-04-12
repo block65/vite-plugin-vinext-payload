@@ -1,10 +1,13 @@
 /**
- * E2E test: Cloudflare D1.
+ * E2E test: Cloudflare D1 (workerd).
+ *
  * Scaffolds a Payload project from the with-cloudflare-d1 template,
- * migrates to vinext, and verifies Payload works with Cloudflare Workers.
+ * migrates to vinext, and verifies Payload works inside workerd.
+ * Tests the admin UI to exercise React module loading — this is the
+ * only test that runs inside workerd where console.createTask throws.
  */
 
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -12,6 +15,7 @@ import {
 	installVinextStack,
 	rewritePayloadConfigForVinext,
 	fixWranglerForLocalDev,
+	assertStatus,
 	runBuild,
 	startDevServer,
 } from "./helpers.ts";
@@ -22,6 +26,7 @@ const helpers = createProjectHelpers(TEST_DIR);
 
 async function scaffoldD1Project() {
 	await helpers.cleanup();
+	const { mkdir } = await import("node:fs/promises");
 	await mkdir(TEST_DIR, { recursive: true });
 	await helpers.npx([
 		"--yes",
@@ -55,16 +60,13 @@ describe("e2e: cloudflare d1", () => {
 		await server?.kill();
 	});
 
-	it("dev server responds to requests", async () => {
-		// The Cloudflare plugin serves routes through workerd. Verify the
-		// dev server is alive and processing requests (the root route may
-		// 404 since the D1 template has no frontend page, but the server
-		// must not crash).
-		const res = await fetch(`http://localhost:${server.port}/`, {
-			redirect: "manual",
-		});
-		// Any HTTP response (even 404) means the server is running.
-		// 5xx would indicate a crash.
+	it("admin UI loads in workerd without crashing", async () => {
+		const res = await assertStatus(server.port, "/admin", [200, 302, 307]);
+		expect(res.status).toBeLessThan(500);
+	});
+
+	it("admin API responds in workerd", async () => {
+		const res = await assertStatus(server.port, "/api/users", [200, 401, 403]);
 		expect(res.status).toBeLessThan(500);
 	});
 

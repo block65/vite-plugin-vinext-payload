@@ -1,35 +1,52 @@
 import { Lang, parse } from "@ast-grep/napi";
-import type { Plugin } from "vite";
+import type { EnvironmentOptions, Plugin } from "vite";
 
-/**
- * Module-resolution and bundle-time compatibility fixes for code running
- * inside workerd (the Cloudflare Workers runtime).
- *
- * Three problems, three fixes — all needed before any module can
- * actually evaluate in workerd:
- *
- * 1. **`node:*` resolveId fallback** — `@cloudflare/vite-plugin` resolves
- *    `node:*` imports to unenv polyfills via a resolveId hook with a
- *    Rolldown filter. That filter may not fire for CJS `require()` calls,
- *    so we provide a filterless fallback that routes `node:*` to unenv.
- *
- * 2. **undici try-catch wrapper** — Rolldown's CJS→ESM interop converts
- *    `require('node:X')` inside arrow functions to `init_X()`, which
- *    returns `void` instead of the module object. undici's
- *    `detectRuntimeFeatureByExportedProperty` then crashes accessing a
- *    property on `undefined`. We wrap it in try-catch so detection
- *    returns false and undici falls back to its no-op stub.
- *
- * 3. **`import.meta.url` guard** — Bundled modules in workerd asset
- *    chunks may have `import.meta.url` as `undefined`. Packages like
- *    payload use `fileURLToPath(import.meta.url)` at module scope to
- *    derive `__dirname`, which crashes during module init. We rewrite
- *    `import.meta.url` to `import.meta.url ?? "file:///"` so module
- *    initialization survives.
- */
+// Workerd's node:console polyfill defines console.createTask but throws
+// "not implemented" when called. React 19 dev mode checks for its
+// existence and calls it for async stack traces.
+// Upstream: workerd should make createTask a no-op, not throw.
+const CONSOLE_CREATE_TASK_POLYFILL =
+	"try{console.createTask('_')}catch(_e){console.createTask=function(){return{run:function(f){return f()}}}};\n";
+
+function prependCreateTaskPolyfill(code: string): string {
+	return CONSOLE_CREATE_TASK_POLYFILL + code;
+}
+
+function needsCreateTaskPolyfill(code: string, id: string): boolean {
+	return id.includes("react") && code.includes("console.createTask");
+}
+
 export function payloadWorkerdCompat(): Plugin {
 	return {
 		name: "vite-plugin-payload:workerd-compat",
+
+		configEnvironment(name) {
+			if (name !== "rsc") {
+				return;
+			}
+
+			return {
+				optimizeDeps: {
+					...({
+						rolldownOptions: {
+							plugins: [
+								{
+									name: "payload-workerd-console-createtask",
+									transform(code: string, id: string) {
+										if (needsCreateTaskPolyfill(code, id)) {
+											return {
+												code: prependCreateTaskPolyfill(code),
+												map: null,
+											};
+										}
+									},
+								},
+							],
+						},
+					} as Record<string, unknown>),
+				},
+			} satisfies EnvironmentOptions;
+		},
 
 		resolveId: {
 			async handler(id, importer) {
@@ -58,6 +75,8 @@ export function payloadWorkerdCompat(): Plugin {
 					return null;
 				}
 
+				const needsCreateTask =
+					envName === "rsc" && needsCreateTaskPolyfill(code, id);
 				const needsUndici =
 					id.includes("node_modules") &&
 					id.includes("undici") &&
@@ -66,11 +85,15 @@ export function payloadWorkerdCompat(): Plugin {
 					code.includes("fileURLToPath(import.meta.url)") ||
 					code.includes("createRequire(import.meta.url)");
 
-				if (!needsUndici && !needsMetaUrl) {
+				if (!needsCreateTask && !needsUndici && !needsMetaUrl) {
 					return null;
 				}
 
 				let result = code;
+
+				if (needsCreateTask) {
+					result = prependCreateTaskPolyfill(result);
+				}
 				const root = parse(Lang.JavaScript, result).root();
 
 				// undici: wrap detectRuntimeFeatureByExportedProperty in try-catch.

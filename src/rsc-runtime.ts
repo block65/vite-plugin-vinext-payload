@@ -13,6 +13,21 @@ const STUB_FILES: Record<string, string> = {
 	),
 };
 
+// Inline stub for createRequire-based requires of drizzle-kit/api.
+// resolveId hooks can't intercept createRequire() calls — they produce
+// a runtime Node.js require that bypasses all bundler resolution.
+// We transform the source during pre-bundling to inline no-op stubs.
+const DRIZZLE_KIT_API_INLINE_STUB = [
+	"({",
+	"  generateSQLiteDrizzleJson: () => ({}),",
+	"  generateSQLiteMigration: async () => [],",
+	"  pushSQLiteSchema: async () => ({ apply: async () => {}, hasDataLoss: false, warnings: [] }),",
+	"  generateDrizzleJson: () => ({}),",
+	"  generateMigration: async () => [],",
+	"  pushSchema: async () => ({ apply: async () => {}, hasDataLoss: false, warnings: [] }),",
+	"})",
+].join(" ");
+
 // Build the stub path map from the curated list + static files
 const stubPaths: Record<string, string> = Object.fromEntries(
 	Object.keys(RSC_STUBS)
@@ -64,6 +79,15 @@ export function payloadRscRuntime(): Plugin {
 									resolveId(source: string) {
 										return stubs[source] ?? null;
 									},
+									transform(code: string) {
+										if (!code.includes("drizzle-kit/api")) return null;
+										const replaced = code.replace(
+											/require\s*\(\s*['"]drizzle-kit\/api['"]\s*\)/g,
+											DRIZZLE_KIT_API_INLINE_STUB,
+										);
+										if (replaced === code) return null;
+										return { code: replaced, map: null };
+									},
 								},
 							],
 						},
@@ -79,6 +103,15 @@ export function payloadRscRuntime(): Plugin {
 				}
 
 				let result = code;
+
+				// createRequire-based requires bypass resolveId — catch at
+				// transform time for non-pre-bundled modules.
+				if (result.includes("drizzle-kit/api")) {
+					result = result.replace(
+						/require\s*\(\s*['"]drizzle-kit\/api['"]\s*\)/g,
+						DRIZZLE_KIT_API_INLINE_STUB,
+					);
+				}
 
 				// Patch RSC serializer: replace throw statements for values
 				// that can't cross the server/client boundary with

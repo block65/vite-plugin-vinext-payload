@@ -216,8 +216,12 @@ layout. And these deps are only used during build/migration, not at
 request time — Next.js's tree-shaking removes them from the runtime
 bundle.
 
-**Our workaround:** `payloadRscRuntime` provides empty stub modules for
-both packages. They're never invoked during RSC rendering — `file-type`
+**Our workaround:** `payloadRscRuntime` stubs both packages. `file-type`
+is handled via `resolveId` → static stub file. `drizzle-kit/api` is
+loaded via `createRequire(import.meta.url)` which bypasses all bundler
+resolution hooks, so we use a `transform` hook to replace the
+`require('drizzle-kit/api')` call with inline no-op stubs during
+pre-bundling. They're never invoked during RSC rendering — `file-type`
 is for upload detection, `drizzle-kit/api` is for migrations.
 
 ---

@@ -80,12 +80,16 @@ export function payloadRscRuntime(): Plugin {
 										return stubs[source] ?? null;
 									},
 									transform(code: string) {
-										if (!code.includes("drizzle-kit/api")) return null;
+										if (!code.includes("drizzle-kit/api")) {
+											return null;
+										}
 										const replaced = code.replace(
 											/require\s*\(\s*['"]drizzle-kit\/api['"]\s*\)/g,
 											DRIZZLE_KIT_API_INLINE_STUB,
 										);
-										if (replaced === code) return null;
+										if (replaced === code) {
+											return null;
+										}
 										return { code: replaced, map: null };
 									},
 								},

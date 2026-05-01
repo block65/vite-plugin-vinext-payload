@@ -5,8 +5,8 @@ import { promisify } from "node:util";
 
 /** Known-good version pins for testing. */
 export const VERSIONS = {
-  payload: "3.82.1",
-  vinext: "0.0.41",
+  payload: "3.84.1",
+  vinext: "0.0.45",
 } as const;
 
 const execFile = promisify(execFileCb);
@@ -435,13 +435,13 @@ export async function rewritePayloadConfigForVinext(
   await helpers.write(configPath, result);
 }
 
-/** Remove "remote": true from wrangler.jsonc for local dev. */
+/** Replace OpenNext main with vinext entry and remove "remote": true for local dev. */
 export async function fixWranglerForLocalDev(helpers: ReturnType<typeof createProjectHelpers>) {
   const wrangler = await helpers.read("wrangler.jsonc");
   await helpers.write(
     "wrangler.jsonc",
     wrangler
-      .replace(/"main"\s*:\s*"\.open-next\/worker\.js",?\n?\s*/g, "")
+      .replace(/"main"\s*:\s*"\.open-next\/worker\.js"/g, '"main": "vinext/server/app-router-entry"')
       .replace(/"remote"\s*:\s*true,?\n?\s*/g, ""),
   );
 }

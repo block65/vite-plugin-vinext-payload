@@ -59,7 +59,7 @@
 	},
 	"devDependencies": {
 		"@types/node": "^25.6.0",
-		"oxfmt": "^0.44.0",
+		"oxfmt": "^0.47.0",
 		"oxlint": "^1.59.0",
 		"playwright": "^1.59.1",
 		"typescript": "^6.0.2",
@@ -68,7 +68,7 @@
 	},
 	"peerDependencies": {
 		"payload": "^3.82.0",
-		"vinext": "0.0.41",
+		"vinext": "0.0.45",
 		"vite": "^8.0.0"
 	},
 	"engines": {

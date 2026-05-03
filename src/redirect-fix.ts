@@ -115,6 +115,12 @@ export function payloadRedirectFix(): Plugin {
 		// HTML is generated inside workerd by vinext's SSR entry —
 		// transformIndexHtml never fires. We transform the SSR entry to
 		// prepend the redirect handler <script> to the head injection HTML.
+		//
+		// vinext passes a `getInsertedHTML` *function* as the second arg
+		// to createTickBufferedTransform — it's invoked per tick to get
+		// the current inserted HTML. We must wrap it (not concatenate),
+		// or the function gets coerced to its toString() source and
+		// rendered as text into the head, causing a hydration mismatch.
 		transform: {
 			handler(code, id) {
 				if (this.environment?.name !== "ssr") {
@@ -127,8 +133,6 @@ export function payloadRedirectFix(): Plugin {
 					return null;
 				}
 
-				// Use AST to find createTickBufferedTransform($RSC, $HTML) and
-				// prepend the redirect script to the second argument.
 				const root = parse(Lang.JavaScript, code).root();
 				const call = root.find("createTickBufferedTransform($RSC, $HTML)");
 				if (!call) {
@@ -139,9 +143,10 @@ export function payloadRedirectFix(): Plugin {
 					return null;
 				}
 				const scriptTag = `<script>${REDIRECT_HANDLER_INLINE}<\\/script>`;
-				const modified = root.commitEdits([
-					htmlArg.replace(`"${scriptTag}" + ${htmlArg.text()}`),
-				]);
+				// Wrap the per-tick getInsertedHTML function. Must remain
+				// a function — see comment block above.
+				const wrapped = `(() => "${scriptTag}" + (${htmlArg.text()})())`;
+				const modified = root.commitEdits([htmlArg.replace(wrapped)]);
 
 				return { code: modified, map: null };
 			},

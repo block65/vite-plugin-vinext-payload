@@ -15,8 +15,15 @@ import type { Plugin } from "vite";
  * (workers-sdk#10544) but Rolldown doesn't fully enforce it for this
  * inlining case. This is a regression of workers-sdk#10213 on Vite 8.
  *
- * We detect a bare function default export in `generateBundle` and
- * replace it with the `{ fetch }` object that Workers expects.
+ * The default export can take several shapes depending on how Rolldown
+ * processes vinext's entry:
+ *   - `function NAME(...)` declaration (bare function)
+ *   - `var NAME = createAppRscHandler({...})` (call result — also a bare function)
+ *   - `var NAME = { fetch: ... }` (already correct)
+ *
+ * We can't always tell statically which shape we're looking at, so we
+ * emit a runtime check that wraps only when the original default is a
+ * function value.
  *
  * References:
  *   - https://github.com/cloudflare/workers-sdk/issues/10213
@@ -48,26 +55,19 @@ export function payloadWorkerdEntry(): Plugin {
 				}
 
 				const handlerName = exportMatch[1];
-
-				// Only patch if the default export is a function declaration,
-				// not already a `{ fetch }` wrapper object.
-				const funcPattern = new RegExp(
-					`(?:async\\s+)?function\\s+${handlerName}\\s*\\(`,
-				);
-				if (!funcPattern.test(chunk.code)) {
-					continue;
-				}
-
 				const oldExport = exportMatch[0];
 				const otherExports = exportMatch[2]; // e.g. ", generateStaticParamsMap"
 
 				chunk.code = chunk.code.replace(
 					oldExport,
 					[
-						`var __payload_worker_handler = { async fetch(request, env, ctx) {`,
-						`  try { return await ${handlerName}(request, env, ctx); }`,
-						`  catch (e) { console.error("[payload-worker]", e?.stack ?? e?.message ?? e); throw e; }`,
-						`} };`,
+						`var __payload_worker_handler_orig = ${handlerName};`,
+						`var __payload_worker_handler = typeof __payload_worker_handler_orig === "function"`,
+						`  ? { async fetch(request, env, ctx) {`,
+						`      try { return await __payload_worker_handler_orig(request, env, ctx); }`,
+						`      catch (e) { console.error("[payload-worker]", e?.stack ?? e?.message ?? e); throw e; }`,
+						`    } }`,
+						`  : __payload_worker_handler_orig;`,
 						`export { __payload_worker_handler as default${otherExports} }`,
 					].join("\n"),
 				);

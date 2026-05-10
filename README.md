@@ -4,7 +4,7 @@ Vite plugin for running [Payload CMS](https://payloadcms.com/) with [vinext](htt
 
 > **Experimental.** Both vinext and this plugin are experimental.
 >
-> **Validated against:** Payload `3.82.1`, vinext `0.0.41`, Vite `^8.0.0` (Rolldown), Node `>=24`.
+> **Validated against:** Payload `3.84.1`, vinext `0.0.49`, Vite `^8.0.0` (Rolldown), Node `>=24`.
 >
 > Peer dependency ranges are pinned to the validated stack — see [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for known regressions.
 
@@ -110,7 +110,7 @@ payloadPlugin({
 
 - Node.js `>=24`
 - Vite `^8.0.0`
-- vinext `0.0.41` (exact — vinext is pre-1.0; every patch can break things)
+- vinext `0.0.49` (exact — vinext is pre-1.0; every patch can break things)
 - Payload CMS `^3.82.0`
 
 ## Known Compatibility Issues

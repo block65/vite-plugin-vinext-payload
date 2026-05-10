@@ -32,8 +32,8 @@ plugin-rsc's `output.move()` path.
 **Repo:** https://github.com/vitejs/vite-plugin-react (packages/plugin-rsc)
 **Upstream:** not filed yet
 
-**What breaks:** On current Payload templates (`payload@3.82.1`) with
-vinext `0.0.41`, RSC build can fail with:
+**What breaks:** On current Payload templates (`payload@3.84.1`) with
+vinext `0.0.49`, RSC build can fail with:
 `"getHTMLDiffComponents" is not exported by @payloadcms/ui/dist/elements/HTMLDiff/index.js`.
 The source module exports it, but the RSC build graph sees it as missing.
 

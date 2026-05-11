@@ -2,12 +2,22 @@ import { parse, Lang } from "@ast-grep/napi";
 import type { Plugin } from "vite";
 
 /**
- * Fixes two issues in vinext's browser entry (`app-browser-entry`):
+ * Fixes issues in vinext's browser entry and navigation controller:
  *
- * 1. **Server action re-render** — vinext calls render() on the React root
- *    before checking if the action returned a value. This causes Payload's
- *    Form to receive a new `initialState` → REPLACE_STATE resets the form.
- *    Fix: move render() after the `returnValue` check.
+ * 1. **Server action re-render** — for data-returning server actions (e.g.
+ *    Payload's `getFormState` via `useActionState`), vinext applies the new
+ *    RSC tree before returning the data. The re-render hands Payload's Form
+ *    a fresh `initialState` → REPLACE_STATE resets pending field edits
+ *    (e.g. dropdown changes revert on blur), and the next blur fires another
+ *    `getFormState`, looping RSC requests.
+ *
+ *    - vinext ≤0.0.46: the render-then-check-returnValue happens directly
+ *      in `app-browser-entry`. Fix: move render() after the returnValue
+ *      check.
+ *    - vinext ≥0.0.47 (controller refactor): `commitSameUrlNavigatePayload`
+ *      moved into `app-browser-navigation-controller` and now calls
+ *      `dispatchApprovedVisibleCommit` unconditionally before returning the
+ *      action's data. Fix: gate that dispatch on `!returnValue`.
  *
  * 2. **Optimizer reload on cold start** — the browser entry imports vinext's
  *    navigation shim via a relative path (`../shims/navigation.js`), bypassing
@@ -19,7 +29,7 @@ import type { Plugin } from "vite";
  * Uses ast-grep for structural AST matching.
  *
  * Remove: when vinext uses the aliased `next/navigation` in its browser entry
- * and defers render for data-returning server actions.
+ * and skips the visible commit for data-returning server actions.
  */
 
 /**
@@ -120,11 +130,51 @@ function moveRenderAfterReturnValue(code: string): string | null {
 	return before + middle + renderIndent + renderStmt.text() + "\n" + after;
 }
 
+// vinext ≥0.0.47: gate the unconditional dispatchApprovedVisibleCommit in
+// commitSameUrlNavigatePayload on !returnValue so data-returning server
+// actions don't re-apply the RSC tree (which would reset Payload's form).
+function gateDispatchOnReturnValue(code: string): string | null {
+	const root = parse(Lang.JavaScript, code).root();
+	const ifStmt = root.find({
+		rule: {
+			pattern: "if ($COND) dispatchApprovedVisibleCommit($$$ARGS);",
+			inside: {
+				kind: "function_declaration",
+				has: { kind: "identifier", regex: "^commitSameUrlNavigatePayload$" },
+				stopBy: "end",
+			},
+		},
+	});
+	if (!ifStmt) {
+		return null;
+	}
+	const cond = ifStmt.getMatch("COND");
+	if (!cond) {
+		return null;
+	}
+	const condText = cond.text();
+	if (condText.includes("returnValue")) {
+		return null;
+	}
+	return root.commitEdits([cond.replace(`${condText} && !returnValue`)]);
+}
+
 export function payloadServerActionFix(): Plugin {
 	return {
 		name: "vite-plugin-payload:server-action-fix",
 		enforce: "post",
 		transform(code, id) {
+			if (id.includes("app-browser-navigation-controller")) {
+				if (!code.includes("commitSameUrlNavigatePayload")) {
+					return;
+				}
+				const fixed = gateDispatchOnReturnValue(code);
+				if (fixed && fixed !== code) {
+					return { code: fixed, map: null };
+				}
+				return;
+			}
+
 			if (!id.includes("app-browser-entry")) {
 				return;
 			}

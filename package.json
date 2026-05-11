@@ -47,7 +47,7 @@
 		"lint": "oxlint src bin",
 		"prepublishOnly": "npm run build",
 		"preversion": "npm run lint && npm run fmt:check",
-		"test": "vitest run test/init.test.ts",
+		"test": "vitest run test/init.test.ts test/server-action-fix.test.ts",
 		"test:e2e": "vitest run test/e2e.test.ts",
 		"test:e2e-d1": "vitest run test/e2e-d1.test.ts",
 		"test:e2e-admin": "vitest run test/e2e-admin.test.ts"

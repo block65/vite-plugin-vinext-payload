@@ -4,7 +4,7 @@ Vite plugin for running [Payload CMS](https://payloadcms.com/) with [vinext](htt
 
 > **Experimental.** Both vinext and this plugin are experimental.
 >
-> **Validated against:** Payload `3.84.1`, vinext `0.0.49`, Vite `^8.0.0` (Rolldown), Node `>=24`.
+> **Validated against:** Payload `3.84.1`, vinext `0.0.50`, Vite `^8.0.13` (Rolldown), Node `>=24`.
 >
 > Peer dependency ranges are pinned to the validated stack — see [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for known regressions.
 
@@ -103,14 +103,14 @@ payloadPlugin({
 | `payloadRedirectFix` | vinext | Catches `NEXT_REDIRECT` errors that leak through the RSC stream during async rendering and converts them to client-side `location.replace()` redirects |
 | `payloadRscExportFix` | @vitejs/plugin-rsc | Fixes `@vitejs/plugin-rsc`'s CSS export transform dropping exports after sourcemap comments |
 | `payloadRscRuntime` | vinext / workerd / pnpm | RSC environment patches: stubs `file-type` and `drizzle-kit/api`, and patches the RSC serializer to silently drop non-serializable values (functions, RegExps) at the server/client boundary (matching Next.js prod behavior) |
-| `payloadServerActionFix` | vinext | Moves `getReactRoot().render()` after the `returnValue` check in vinext's browser entry so data-returning server actions (like `getFormState`) don't trigger a re-render that resets Payload's form state. Also rewrites the browser entry's relative shim import to use the pre-bundled alias (AST-based via ast-grep) |
+| `payloadServerActionFix` | vinext | Prevents data-returning server actions (like `getFormState`) from triggering a re-render that resets Payload's form state. Two shapes depending on vinext version: on ≤0.0.46, moves `getReactRoot().render()` after the `returnValue` check in `app-browser-entry`; on ≥0.0.47, gates the unconditional visible-commit dispatch (`dispatchApprovedVisibleCommit` in 0.0.47–0.0.49, renamed to `dispatchSynchronousVisibleCommit` in 0.0.50) in `app-browser-navigation-controller` on `!returnValue`. Also rewrites the browser entry's relative shim import to use the pre-bundled alias (AST-based via ast-grep) |
 | `cjsInterop` | Vite | Fixes CJS default export interop for packages like `bson-objectid` (via [vite-plugin-cjs-interop](https://github.com/nicolo-ribaudo/vite-plugin-cjs-interop)) |
 
 ## Requirements
 
 - Node.js `>=24`
 - Vite `^8.0.0`
-- vinext `0.0.49` (exact — vinext is pre-1.0; every patch can break things)
+- vinext `0.0.50` (exact — vinext is pre-1.0; every patch can break things)
 - Payload CMS `^3.82.0`
 
 ## Known Compatibility Issues

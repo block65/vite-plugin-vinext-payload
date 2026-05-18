@@ -14,10 +14,13 @@ import type { Plugin } from "vite";
  *    - vinext ≤0.0.46: the render-then-check-returnValue happens directly
  *      in `app-browser-entry`. Fix: move render() after the returnValue
  *      check.
- *    - vinext ≥0.0.47 (controller refactor): `commitSameUrlNavigatePayload`
- *      moved into `app-browser-navigation-controller` and now calls
+ *    - vinext 0.0.47–0.0.49: `commitSameUrlNavigatePayload` moved into
+ *      `app-browser-navigation-controller` and called
  *      `dispatchApprovedVisibleCommit` unconditionally before returning the
- *      action's data. Fix: gate that dispatch on `!returnValue`.
+ *      action's data.
+ *    - vinext ≥0.0.50: same site, but the call was renamed to
+ *      `dispatchSynchronousVisibleCommit` (a thinner sync wrapper around the
+ *      approved-commit applier). Fix: gate the dispatch on `!returnValue`.
  *
  * 2. **Optimizer reload on cold start** — the browser entry imports vinext's
  *    navigation shim via a relative path (`../shims/navigation.js`), bypassing
@@ -130,33 +133,43 @@ function moveRenderAfterReturnValue(code: string): string | null {
 	return before + middle + renderIndent + renderStmt.text() + "\n" + after;
 }
 
-// vinext ≥0.0.47: gate the unconditional dispatchApprovedVisibleCommit in
-// commitSameUrlNavigatePayload on !returnValue so data-returning server
-// actions don't re-apply the RSC tree (which would reset Payload's form).
+// Gate the unconditional dispatch in commitSameUrlNavigatePayload on
+// !returnValue so data-returning server actions don't re-apply the RSC tree
+// (which would reset Payload's form). vinext 0.0.47–0.0.49 called
+// `dispatchApprovedVisibleCommit`; 0.0.50 renamed it to
+// `dispatchSynchronousVisibleCommit`. Match either.
+const DISPATCH_PATTERNS = [
+	"if ($COND) dispatchSynchronousVisibleCommit($$$ARGS);",
+	"if ($COND) dispatchApprovedVisibleCommit($$$ARGS);",
+];
+
 function gateDispatchOnReturnValue(code: string): string | null {
 	const root = parse(Lang.JavaScript, code).root();
-	const ifStmt = root.find({
-		rule: {
-			pattern: "if ($COND) dispatchApprovedVisibleCommit($$$ARGS);",
-			inside: {
-				kind: "function_declaration",
-				has: { kind: "identifier", regex: "^commitSameUrlNavigatePayload$" },
-				stopBy: "end",
+	for (const pattern of DISPATCH_PATTERNS) {
+		const ifStmt = root.find({
+			rule: {
+				pattern,
+				inside: {
+					kind: "function_declaration",
+					has: { kind: "identifier", regex: "^commitSameUrlNavigatePayload$" },
+					stopBy: "end",
+				},
 			},
-		},
-	});
-	if (!ifStmt) {
-		return null;
+		});
+		if (!ifStmt) {
+			continue;
+		}
+		const cond = ifStmt.getMatch("COND");
+		if (!cond) {
+			continue;
+		}
+		const condText = cond.text();
+		if (condText.includes("returnValue")) {
+			return null;
+		}
+		return root.commitEdits([cond.replace(`${condText} && !returnValue`)]);
 	}
-	const cond = ifStmt.getMatch("COND");
-	if (!cond) {
-		return null;
-	}
-	const condText = cond.text();
-	if (condText.includes("returnValue")) {
-		return null;
-	}
-	return root.commitEdits([cond.replace(`${condText} && !returnValue`)]);
+	return null;
 }
 
 export function payloadServerActionFix(): Plugin {

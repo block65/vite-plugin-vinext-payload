@@ -33,7 +33,7 @@ plugin-rsc's `output.move()` path.
 **Upstream:** not filed yet
 
 **What breaks:** On current Payload templates (`payload@3.84.1`) with
-vinext `0.0.49`, RSC build can fail with:
+vinext `0.0.50`, RSC build can fail with:
 `"getHTMLDiffComponents" is not exported by @payloadcms/ui/dist/elements/HTMLDiff/index.js`.
 The source module exports it, but the RSC build graph sees it as missing.
 
@@ -231,7 +231,7 @@ is for upload detection, `drizzle-kit/api` is for migrations.
 **Responsibility:** vinext
 **Repo:** https://github.com/cloudflare/vinext
 **Upstream:** https://github.com/cloudflare/vinext/issues/666
-**Status:** OPEN (updated 2026-03-30)
+**Status:** OPEN (updated 2026-05-10)
 
 **What breaks:** App Router forces `noExternal: true` for RSC/SSR
 environments, so raw CommonJS packages from `node_modules` are pushed
@@ -305,18 +305,30 @@ doesn't discover them at runtime.
 **Repo:** https://github.com/cloudflare/vinext
 **Upstream:** not filed (related: https://github.com/cloudflare/vinext/pull/620)
 
-**What breaks:** vinext calls `getReactRoot().render(result.root)` before
-checking `result.returnValue`. Every server action — including
-data-returning ones like `getFormState` — triggers a full re-render.
-For Payload, this resets form state: array field rows flash and disappear.
+**What breaks:** vinext applies the new RSC tree before checking
+`result.returnValue`. Every server action — including data-returning ones
+like `getFormState` — triggers a full re-render. For Payload, this resets
+form state: array field rows flash and disappear.
+
+The bug has moved across vinext versions:
+- ≤0.0.46: `getReactRoot().render(result.root)` runs in `app-browser-entry`
+  before the `returnValue` check.
+- 0.0.47–0.0.49: refactored — `commitSameUrlNavigatePayload` in
+  `app-browser-navigation-controller` unconditionally calls
+  `dispatchApprovedVisibleCommit` before returning the action's data.
+- ≥0.0.50: same site as 0.0.47–0.0.49, but the call was renamed to
+  `dispatchSynchronousVisibleCommit` (a thinner sync wrapper).
 
 **Why Next.js works:** Next.js's server action handler (`app-router.js`)
 checks `returnValue` first and only re-renders for void mutations. Data-
 returning actions pass the value back to the caller without touching
 the React tree.
 
-**Our workaround:** `payloadServerActionFix` uses ast-grep to move the
-render call after the `returnValue` check.
+**Our workaround:** `payloadServerActionFix` uses ast-grep. On ≤0.0.46 it
+moves the render call after the `returnValue` check. On ≥0.0.47 it gates
+the visible-commit dispatch on `!returnValue` (matching either dispatcher
+name). A drift detector unit test transforms the real installed vinext
+file so a future shape change fails loudly.
 
 ---
 
@@ -373,7 +385,7 @@ that intercepts the leaked error and performs `location.replace()`.
 - https://github.com/cloudflare/workers-sdk/pull/10544 (fix: `preserveEntrySignatures: "strict"`)
 - https://github.com/rolldown/rolldown/issues/3500 (`preserveEntrySignatures` feature request)
 - https://github.com/rolldown/rolldown/issues/6449 (strict mode validation)
-**Status:** workers-sdk #10213 CLOSED, workers-sdk #10544 MERGED, rolldown #3500 CLOSED, rolldown #6449 CLOSED (checked 2026-04-10)
+**Status:** workers-sdk #10213 CLOSED, workers-sdk #10544 MERGED, rolldown #3500 CLOSED, rolldown #6449 CLOSED (checked 2026-05-18)
 
 **What breaks:** vinext's `app-router-entry.js` exports
 `{ async fetch(request, _env, ctx) { ... rscHandler(request, ctx) ... } }`

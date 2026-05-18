@@ -53,22 +53,22 @@
 		"test:e2e-admin": "vitest run test/e2e-admin.test.ts"
 	},
 	"dependencies": {
-		"@ast-grep/napi": "^0.42.1",
+		"@ast-grep/napi": "^0.42.2",
 		"type-fest": "^5.6.0",
-		"vite-plugin-cjs-interop": "^3.3.0"
+		"vite-plugin-cjs-interop": "^4.0.0"
 	},
 	"devDependencies": {
-		"@types/node": "^25.6.2",
-		"oxfmt": "^0.48.0",
-		"oxlint": "^1.63.0",
-		"playwright": "^1.59.1",
+		"@types/node": "^25.8.0",
+		"oxfmt": "^0.50.0",
+		"oxlint": "^1.65.0",
+		"playwright": "^1.60.0",
 		"typescript": "^6.0.2",
-		"vite": "^8.0.11",
-		"vitest": "^4.1.4"
+		"vite": "^8.0.13",
+		"vitest": "^4.1.6"
 	},
 	"peerDependencies": {
 		"payload": "^3.82.0",
-		"vinext": "0.0.49",
+		"vinext": "0.0.50",
 		"vite": "^8.0.0"
 	},
 	"engines": {

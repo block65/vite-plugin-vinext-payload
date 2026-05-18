@@ -3,12 +3,13 @@
  *
  * Regression coverage for the form-state-revert / RSC-loop bug:
  * vinext ≥0.0.47 moved `commitSameUrlNavigatePayload` from
- * `app-browser-entry` into `app-browser-navigation-controller` and now
- * unconditionally calls `dispatchApprovedVisibleCommit` before returning
- * the action's data. For Payload's `getFormState` (data-only action via
- * `useActionState`), that re-applies a stale RSC tree and resets the form
- * via REPLACE_STATE — observed as dropdowns reverting on blur and an
- * infinite loop of RSC requests.
+ * `app-browser-entry` into `app-browser-navigation-controller` and
+ * unconditionally calls a visible-commit dispatcher before returning the
+ * action's data — `dispatchApprovedVisibleCommit` in 0.0.47–0.0.49,
+ * renamed to `dispatchSynchronousVisibleCommit` in 0.0.50. For Payload's
+ * `getFormState` (data-only action via `useActionState`), that re-applies
+ * a stale RSC tree and resets the form via REPLACE_STATE — observed as
+ * dropdowns reverting on blur and an infinite loop of RSC requests.
  *
  * The transform gates the dispatch on `!returnValue`.
  */
@@ -119,8 +120,11 @@ describe("payloadServerActionFix: navigation controller (vinext ≥0.0.47)", () 
 		const result = callTransform(plugin, real, realPath);
 		expect(result).toBeTruthy();
 		const code = (result as { code: string }).code;
-		expect(code).toContain(
-			"if (latestApproval.approvedCommit && !returnValue) dispatchApprovedVisibleCommit",
+		// vinext 0.0.50 renamed the call to dispatchSynchronousVisibleCommit;
+		// older versions used dispatchApprovedVisibleCommit. Either is fine —
+		// what matters is the `&& !returnValue` gate landing in front of it.
+		expect(code).toMatch(
+			/if \(latestApproval\.approvedCommit && !returnValue\) dispatch(Approved|Synchronous)VisibleCommit/,
 		);
 	});
 });

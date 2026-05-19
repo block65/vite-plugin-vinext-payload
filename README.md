@@ -1,10 +1,13 @@
 # vite-plugin-vinext-payload
 
-Vite plugin for running [Payload CMS](https://payloadcms.com/) with [vinext](https://github.com/cloudflare/vinext) (Cloudflare's Vite-based re-implementation of Next.js).
+Vite plugin for running [Payload CMS](https://payloadcms.com/) on Cloudflare Workers. Two modes:
+
+- **`payloadPlugin()`** — full Payload (admin UI + REST/GraphQL) with [vinext](https://github.com/cloudflare/vinext), Cloudflare's Vite-based re-implementation of Next.js.
+- **`payloadWorkerPlugin()`** — headless Payload exposing only its [Local API](https://payloadcms.com/docs/local-api/overview) via `WorkerEntrypoint` RPC, no admin UI. Pair with any Vite-based frontend framework (TanStack Start, SvelteKit, Remix, Nuxt) running as the parent worker.
 
 > **Experimental.** Both vinext and this plugin are experimental.
 >
-> **Validated against:** Payload `3.84.1`, vinext `0.0.50`, Vite `^8.0.13` (Rolldown), Node `>=24`.
+> **Validated against:** Payload `3.84.1`, vinext `0.0.50` (optional — only needed for `payloadPlugin`), Vite `^8.0.13` (Rolldown), Node `>=24`.
 >
 > Peer dependency ranges are pinned to the validated stack — see [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for known regressions.
 
@@ -69,9 +72,66 @@ export default defineConfig({
 
 `cloudflare:workers` is externalized automatically — no need to pass it via `ssrExternal`.
 
+## Headless RPC Worker (no admin UI)
+
+Run Payload as a separate Cloudflare auxiliary worker that exposes its Local API over `WorkerEntrypoint` RPC. The parent worker (TanStack Start, SvelteKit, Remix, Nuxt, etc.) talks to it via a service binding — no HTTP, no admin UI, no vinext.
+
+```ts
+// services/website/vite.config.ts (parent worker)
+import { cloudflare } from "@cloudflare/vite-plugin";
+import { payloadWorkerPlugin } from "vite-plugin-vinext-payload";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+	plugins: [
+		// ...your framework plugin (tanstackStart, sveltekit, etc.)
+		cloudflare({
+			viteEnvironment: { name: "ssr" },
+			auxiliaryWorkers: [
+				{
+					configPath: "../payload-cms/wrangler.jsonc",
+					config: { main: "../payload-cms/src/rpc-only.ts" },
+				},
+			],
+		}),
+		// `env` is the auxiliary worker's vite env name (the cloudflare
+		// plugin normalizes the worker's `name` from wrangler.jsonc:
+		// "payload-cms" → "payload_cms"). Check `[vite] (...)` in the dev
+		// log if you're unsure.
+		...payloadWorkerPlugin({ env: "payload_cms" }),
+	],
+});
+```
+
+```ts
+// services/payload-cms/src/rpc-only.ts
+import { WorkerEntrypoint } from "cloudflare:workers";
+import { getPayload } from "payload";
+import config from "./payload.config";
+
+export class CmsEntrypoint extends WorkerEntrypoint<Env> {
+	async find(args: Parameters<Awaited<ReturnType<typeof getPayload>>["find"]>[0]) {
+		const payload = await getPayload({ config });
+		return payload.find(args);
+	}
+	// Expose whatever Local API surface you need.
+}
+
+// Required so the worker module satisfies wrangler's `fetch` shape, but
+// the parent calls this worker over the service binding, not via HTTP.
+export default {
+	fetch: () => new Response("rpc-only", { status: 404 }),
+};
+```
+
+Then in the parent's `wrangler.jsonc`, add a service binding pointing at `CmsEntrypoint` and call its methods from your loader / API route / server function. See Cloudflare's [WorkerEntrypoint docs](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/rpc/) for the binding shape.
+
+`payloadWorkerPlugin` composes a subset of the same sub-plugins as `payloadPlugin` (workerd polyfills, server externals, optimize-deps excludes, file-type / drizzle-kit/api stubs, CJS interop, CLI stubs) — everything needed for Payload's Local API to evaluate inside workerd, but none of the admin-UI / RSC / next-navigation fixes.
+
 ## Options
 
 ```ts
+// Full Payload + vinext
 payloadPlugin({
 	// Additional packages to externalize from SSR bundling
 	ssrExternal: ["some-native-package"],
@@ -81,6 +141,18 @@ payloadPlugin({
 
 	// Additional CJS packages needing default export interop
 	cjsInteropDeps: ["some-cjs-dep"],
+});
+
+// Headless Payload-as-auxiliary-worker
+payloadWorkerPlugin({
+	// Required — the vite env name of the auxiliary worker (cloudflare
+	// plugin normalizes the wrangler `name` to a JS identifier).
+	env: "payload_cms",
+
+	// Optional — same shape as payloadPlugin
+	ssrExternal: ["..."],
+	excludeFromOptimize: ["..."],
+	cjsInteropDeps: ["..."],
 });
 ```
 
@@ -110,8 +182,8 @@ payloadPlugin({
 
 - Node.js `>=24`
 - Vite `^8.0.0`
-- vinext `0.0.50` (exact — vinext is pre-1.0; every patch can break things)
 - Payload CMS `^3.82.0`
+- vinext `0.0.50` (exact — vinext is pre-1.0; every patch can break things). Optional — only needed when using `payloadPlugin()`. Not required for `payloadWorkerPlugin()`.
 
 ## Known Compatibility Issues
 

@@ -41,6 +41,28 @@ function getNextAliasSpecifiers(
 	return specifiers;
 }
 
+export interface PayloadOptimizeDepsOptions {
+	/** Additional packages to exclude from optimizeDeps. */
+	extraExcludes?: string[];
+
+	/**
+	 * Explicit list of environments to patch. When undefined, every env in
+	 * `config.environments` that already declares `optimizeDeps` is patched
+	 * (vinext default). For headless payload workers, pass the worker's
+	 * env name so the excludes apply even if that env didn't pre-declare
+	 * `optimizeDeps`.
+	 */
+	envs?: string[];
+
+	/**
+	 * Name of the client-consumer environment that should additionally
+	 * receive `CLIENT_OPTIMIZE_DEPS_EXCLUDE`/`CLIENT_OPTIMIZE_DEPS_INCLUDE`
+	 * and the auto-discovered `next/*` alias specifiers. Defaults to
+	 * `"client"`. Pass `false` for workers with no browser environment.
+	 */
+	clientEnv?: string | false;
+}
+
 /**
  * Returns per-environment optimizeDeps config to exclude problematic
  * packages and force-include CJS transitive deps in the client environment.
@@ -56,7 +78,17 @@ function getNextAliasSpecifiers(
  *
  * See: cloudflare/vinext#538
  */
-export function payloadOptimizeDeps(extraExcludes: string[] = []): Plugin {
+export function payloadOptimizeDeps(
+	options: PayloadOptimizeDepsOptions | string[] = {},
+): Plugin {
+	const normalized: PayloadOptimizeDepsOptions = Array.isArray(options)
+		? { extraExcludes: options }
+		: options;
+	const {
+		extraExcludes = [],
+		envs: explicitEnvs,
+		clientEnv = "client",
+	} = normalized;
 	const excludes = [...OPTIMIZE_DEPS_EXCLUDE, ...extraExcludes];
 
 	return {
@@ -67,24 +99,29 @@ export function payloadOptimizeDeps(extraExcludes: string[] = []): Plugin {
 				return;
 			}
 
+			const targetEnvs = explicitEnvs
+				? explicitEnvs
+				: Object.entries(config.environments)
+						.filter(([_, env]) => env?.optimizeDeps)
+						.map(([name]) => name);
+
 			const environments: UserConfig["environments"] = {};
 
-			for (const [name, env] of Object.entries(config.environments)) {
-				if (!env?.optimizeDeps) {
-					continue;
-				}
+			for (const name of targetEnvs) {
+				const env = config.environments[name];
+				const existingOptimizeDeps = env?.optimizeDeps ?? {};
 
 				const envExcludes = [
 					...excludes,
-					...(name === "client" ? CLIENT_OPTIMIZE_DEPS_EXCLUDE : []),
+					...(name === clientEnv ? CLIENT_OPTIMIZE_DEPS_EXCLUDE : []),
 				];
 
 				environments[name] = {
 					optimizeDeps: {
-						exclude: [...(env.optimizeDeps.exclude ?? []), ...envExcludes],
-						...(name === "client" && {
+						exclude: [...(existingOptimizeDeps.exclude ?? []), ...envExcludes],
+						...(name === clientEnv && {
 							include: [
-								...(env.optimizeDeps.include ?? []),
+								...(existingOptimizeDeps.include ?? []),
 								...CLIENT_OPTIMIZE_DEPS_INCLUDE,
 							],
 						}),
@@ -96,19 +133,21 @@ export function payloadOptimizeDeps(extraExcludes: string[] = []): Plugin {
 		},
 
 		configResolved(config) {
+			if (clientEnv === false) {
+				return;
+			}
 			const nextAliases = getNextAliasSpecifiers(config.resolve.alias);
 			if (nextAliases.length === 0) {
 				return;
 			}
 
-			// Add all next/* alias specifiers to client optimizeDeps.include
-			const clientEnv = config.environments?.["client"];
-			if (!clientEnv) {
+			const resolvedClient = config.environments?.[clientEnv];
+			if (!resolvedClient) {
 				return;
 			}
 
-			const include = clientEnv.optimizeDeps.include ?? [];
-			clientEnv.optimizeDeps.include = include;
+			const include = resolvedClient.optimizeDeps.include ?? [];
+			resolvedClient.optimizeDeps.include = include;
 			const existing = new Set(include);
 			for (const specifier of nextAliases) {
 				if (!existing.has(specifier)) {

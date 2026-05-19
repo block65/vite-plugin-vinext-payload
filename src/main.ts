@@ -79,3 +79,84 @@ export function payloadPlugin(options: PayloadPluginOptions = {}): Plugin[] {
 		}),
 	];
 }
+
+export interface PayloadWorkerPluginOptions {
+	/**
+	 * The Vite environment name for the auxiliary worker. Must match the
+	 * `name` of the worker in `@cloudflare/vite-plugin`'s `auxiliaryWorkers`
+	 * (or the top-level `viteEnvironment.name`).
+	 */
+	env: string;
+
+	/** Additional packages to externalize from the worker bundle. */
+	ssrExternal?: string[];
+
+	/** Additional packages to exclude from optimizeDeps. */
+	excludeFromOptimize?: string[];
+
+	/** Additional CJS packages needing default export interop. */
+	cjsInteropDeps?: string[];
+}
+
+/**
+ * Payload CMS compatibility for a headless Cloudflare auxiliary worker.
+ *
+ * Use this when running Payload only to expose its local API over RPC
+ * (`WorkerEntrypoint`) — no admin UI, no vinext, no RSC pipeline. The
+ * parent worker calls into this one via a Cloudflare service binding.
+ *
+ * Subset of `payloadPlugin`: workerd polyfills, server externals,
+ * optimizeDeps excludes, CJS transforms, CLI stubs, and CJS interop.
+ * The admin-UI / RSC / next-nav fixes are intentionally excluded.
+ *
+ * The user's worker entry typically looks like:
+ *
+ * ```ts
+ * import { WorkerEntrypoint } from "cloudflare:workers";
+ * import { getPayload } from "payload";
+ * import config from "./payload.config";
+ *
+ * export class CmsEntrypoint extends WorkerEntrypoint {
+ *   async find(args) {
+ *     const payload = await getPayload({ config });
+ *     return payload.find(args);
+ *   }
+ * }
+ * export default {
+ *   fetch: () => new Response("cms worker", { status: 404 }),
+ * };
+ * ```
+ */
+export function payloadWorkerPlugin(
+	options: PayloadWorkerPluginOptions,
+): Plugin[] {
+	const {
+		env,
+		ssrExternal,
+		excludeFromOptimize = [],
+		cjsInteropDeps: extraCjsInterop = [],
+	} = options;
+
+	const serverEnvs = [env];
+
+	return [
+		payloadServerExternals({ ssrExternal, serverEnvs }),
+		// Enable the createTask polyfill against the worker's own env:
+		// payload.config.ts commonly imports admin components at module
+		// scope, dragging React in even when the worker only ever calls
+		// the local API. Without the polyfill, workerd's console.createTask
+		// throws on module init.
+		payloadWorkerdCompat({ serverEnvs, reactEnv: env }),
+		payloadOptimizeDeps({
+			extraExcludes: excludeFromOptimize,
+			envs: serverEnvs,
+			clientEnv: false,
+		}),
+		payloadRscRuntime({ serverEnvs, rscEnv: false }),
+		payloadCjsTransform(),
+		payloadCliStubs(),
+		cjsInterop({
+			dependencies: [...payloadCjsInteropDeps, ...extraCjsInterop],
+		}),
+	];
+}

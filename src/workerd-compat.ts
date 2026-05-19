@@ -16,12 +16,33 @@ function needsCreateTaskPolyfill(code: string, id: string): boolean {
 	return id.includes("react") && code.includes("console.createTask");
 }
 
-export function payloadWorkerdCompat(): Plugin {
+export interface PayloadWorkerdCompatOptions {
+	/**
+	 * Names of Vite environments running on workerd. These receive
+	 * `node:*` → `unenv` resolution, undici runtime-feature shims, and
+	 * `import.meta.url` guards. Defaults to `["ssr", "rsc"]`.
+	 */
+	serverEnvs?: string[];
+
+	/**
+	 * Name of the environment that loads React (used for the
+	 * `console.createTask` polyfill). Pass `false` to disable the
+	 * polyfill (workers that don't bundle React). Defaults to `"rsc"`.
+	 */
+	reactEnv?: string | false;
+}
+
+export function payloadWorkerdCompat(
+	options: PayloadWorkerdCompatOptions = {},
+): Plugin {
+	const { serverEnvs = ["ssr", "rsc"], reactEnv = "rsc" } = options;
+	const serverEnvSet = new Set(serverEnvs);
+
 	return {
 		name: "vite-plugin-payload:workerd-compat",
 
 		configEnvironment(name) {
-			if (name !== "rsc") {
+			if (reactEnv === false || name !== reactEnv) {
 				return;
 			}
 
@@ -51,7 +72,7 @@ export function payloadWorkerdCompat(): Plugin {
 		resolveId: {
 			async handler(id, importer) {
 				const envName = this.environment?.name;
-				if (envName !== "ssr" && envName !== "rsc") {
+				if (!envName || !serverEnvSet.has(envName)) {
 					return null;
 				}
 				if (!id.startsWith("node:")) {
@@ -71,12 +92,12 @@ export function payloadWorkerdCompat(): Plugin {
 		transform: {
 			handler(code, id) {
 				const envName = this.environment?.name;
-				if (envName !== "ssr" && envName !== "rsc") {
+				if (!envName || !serverEnvSet.has(envName)) {
 					return null;
 				}
 
 				const needsCreateTask =
-					envName === "rsc" && needsCreateTaskPolyfill(code, id);
+					envName === reactEnv && needsCreateTaskPolyfill(code, id);
 				const needsUndici =
 					id.includes("node_modules") &&
 					id.includes("undici") &&

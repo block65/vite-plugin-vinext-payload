@@ -47,10 +47,12 @@
 		"lint": "oxlint src bin",
 		"prepublishOnly": "npm run build",
 		"preversion": "npm run lint && npm run fmt:check",
-		"test": "vitest run test/init.test.ts test/server-action-fix.test.ts",
+		"test": "vitest run test/init.test.ts test/server-action-fix.test.ts test/workerd-compat.test.ts",
 		"test:e2e": "vitest run test/e2e.test.ts",
 		"test:e2e-d1": "vitest run test/e2e-d1.test.ts",
-		"test:e2e-admin": "vitest run test/e2e-admin.test.ts"
+		"test:e2e-admin": "vitest run test/e2e-admin.test.ts",
+		"test:e2e-rpc": "vitest run test/e2e-rpc-worker.test.ts",
+		"test:e2e-rpc-runtime": "vitest run test/e2e-rpc-runtime.test.ts"
 	},
 	"dependencies": {
 		"@ast-grep/napi": "^0.42.2",
@@ -70,6 +72,11 @@
 		"payload": "^3.82.0",
 		"vinext": "0.0.50",
 		"vite": "^8.0.0"
+	},
+	"peerDependenciesMeta": {
+		"vinext": {
+			"optional": true
+		}
 	},
 	"engines": {
 		"node": ">=24"

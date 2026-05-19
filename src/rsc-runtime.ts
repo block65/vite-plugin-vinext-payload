@@ -35,33 +35,55 @@ const stubPaths: Record<string, string> = Object.fromEntries(
 		.map((pkg) => [pkg, STUB_FILES[pkg]]),
 );
 
+export interface PayloadRscRuntimeOptions {
+	/**
+	 * Names of server environments running on workerd that need
+	 * `file-type` and `drizzle-kit/api` stubbed. Both are pulled in
+	 * transitively by `@payloadcms/db-d1-sqlite` but never invoked in
+	 * production; without stubs the pre-bundled chunk contains a bare
+	 * `import 'file-type'` that the workerd module runner can't resolve.
+	 * Defaults to `["rsc"]`.
+	 */
+	serverEnvs?: string[];
+
+	/**
+	 * Name of the environment that needs the RSC serializer patch
+	 * (`react-server-dom-webpack` "Client Component" throw → return
+	 * undefined). Pass `false` for workers that don't render RSC.
+	 * Defaults to `"rsc"`.
+	 */
+	rscEnv?: string | false;
+}
+
 /**
- * RSC environment runtime patches for workerd.
+ * Server-side workerd runtime patches.
  *
- * Two things in one plugin — both only apply to the `rsc` environment:
+ * Two concerns:
  *
- * - **Stubs** for `file-type` and `drizzle-kit/api`. Both are transitively
- *   imported by `@payloadcms/db-d1-sqlite` but never invoked during RSC
- *   rendering. Without stubs, the pre-bundled chunk contains a bare
- *   `import 'file-type'` that the workerd module runner can't resolve;
- *   `drizzle-kit/api` is unresolvable under pnpm strict isolation.
+ * - **Stubs** for `file-type` and `drizzle-kit/api` in any server env
+ *   running on workerd (default `rsc`, extended for headless payload
+ *   workers). Both are transitively imported by
+ *   `@payloadcms/db-d1-sqlite` but never invoked at runtime.
  *
  * - **RSC serializer patch** that converts the "Client Component" throw
- *   in `react-server-dom-webpack` into `return undefined`. Next.js
- *   silently drops non-serializable values (functions, RegExps, etc.) at
- *   the server/client boundary in production. vinext doesn't replicate
- *   that behavior, so every Payload page with field configs (access
- *   functions, hooks, RegExps) would fail without this patch.
+ *   in `react-server-dom-webpack` into `return undefined`. Applies only
+ *   to the configured RSC env (default `rsc`), skipped entirely when
+ *   `rscEnv` is `false`.
  */
-export function payloadRscRuntime(): Plugin {
+export function payloadRscRuntime(
+	options: PayloadRscRuntimeOptions = {},
+): Plugin {
+	const { serverEnvs = ["rsc"], rscEnv = "rsc" } = options;
+	const serverEnvSet = new Set(serverEnvs);
+
 	return {
 		name: "vite-plugin-payload:rsc-runtime",
 
-		// Redirect stubs during RSC optimizeDeps pre-bundling so they're
+		// Redirect stubs during optimizeDeps pre-bundling so they're
 		// inlined rather than left as bare external imports that workerd
 		// can't resolve.
 		configEnvironment(name) {
-			if (name !== "rsc") {
+			if (!serverEnvSet.has(name)) {
 				return;
 			}
 
@@ -102,7 +124,13 @@ export function payloadRscRuntime(): Plugin {
 
 		transform: {
 			handler(code, id) {
-				if (this.environment?.name !== "rsc") {
+				const envName = this.environment?.name;
+				if (!envName) {
+					return;
+				}
+				const isServerEnv = serverEnvSet.has(envName);
+				const isRscEnv = rscEnv !== false && envName === rscEnv;
+				if (!isServerEnv && !isRscEnv) {
 					return;
 				}
 
@@ -110,7 +138,7 @@ export function payloadRscRuntime(): Plugin {
 
 				// createRequire-based requires bypass resolveId — catch at
 				// transform time for non-pre-bundled modules.
-				if (result.includes("drizzle-kit/api")) {
+				if (isServerEnv && result.includes("drizzle-kit/api")) {
 					result = result.replace(
 						/require\s*\(\s*['"]drizzle-kit\/api['"]\s*\)/g,
 						DRIZZLE_KIT_API_INLINE_STUB,
@@ -126,6 +154,7 @@ export function payloadRscRuntime(): Plugin {
 				// replicate that behavior, so every Payload page with field
 				// configs (access functions, hooks, RegExps) would fail.
 				if (
+					isRscEnv &&
 					id.includes("react-server-dom-webpack") &&
 					result.includes("Client Component")
 				) {
@@ -147,10 +176,11 @@ export function payloadRscRuntime(): Plugin {
 			},
 		},
 
-		// Intercept at runtime for non-pre-bundled RSC imports.
+		// Intercept at runtime for non-pre-bundled imports.
 		resolveId: {
 			handler(source) {
-				if (this.environment?.name !== "rsc") {
+				const envName = this.environment?.name;
+				if (!envName || !serverEnvSet.has(envName)) {
 					return;
 				}
 				return stubPaths[source] ?? undefined;

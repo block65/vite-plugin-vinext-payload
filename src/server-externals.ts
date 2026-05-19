@@ -3,39 +3,50 @@ import { SSR_EXTERNAL } from "./payload-packages.ts";
 
 export interface PayloadServerExternalsOptions {
 	/**
-	 * Additional packages to externalize from server (SSR + RSC) bundling.
+	 * Additional packages to externalize from server bundling.
 	 * Merged with the built-in list (esbuild, wrangler, miniflare, sharp).
 	 */
 	ssrExternal?: string[];
+
+	/**
+	 * Names of Vite environments that should receive the server externals
+	 * list via `build.rolldownOptions.external`. Defaults to `["ssr", "rsc"]`
+	 * to match vinext's environment layout. For payload running as an
+	 * auxiliary Cloudflare worker, pass the worker's environment name(s).
+	 */
+	serverEnvs?: string[];
 }
 
 /**
- * Externalizes packages from both the SSR and RSC environments.
+ * Externalizes packages from server-side environments via
+ * `build.rolldownOptions.external` (per-environment, set in
+ * `configEnvironment`).
  *
- * Why not just `ssr.external`? Two reasons:
+ * We deliberately do NOT set `ssr.external` (or any
+ * `environments.<name>.resolve.external`): `@cloudflare/vite-plugin`
+ * rejects user-set `resolve.external` on every environment it manages
+ * and throws `validateWorkerEnvironmentOptions`. The cloudflare plugin
+ * supplies its own workerd-aware externals; our list only needs to
+ * survive the production bundle, which `build.rolldownOptions.external`
+ * accomplishes.
  *
- * 1. `ssr.external` only applies to Vite's "ssr" named environment — it
- *    does NOT propagate to RSC. We use `configEnvironment` to apply the
- *    same list to both `ssr` and `rsc`.
- *
- * 2. `@cloudflare/vite-plugin` rejects `resolve.external` on every
- *    environment it manages. We write to `build.rolldownOptions.external`
- *    instead, which the cloudflare plugin leaves alone.
+ * `cloudflare:workers` is also added to the top-level
+ * `build.rolldownOptions.external` so the client environment doesn't
+ * try to bundle this workerd-only specifier when transitively reached.
  */
 export function payloadServerExternals(
 	options: PayloadServerExternalsOptions = {},
 ): Plugin {
-	const { ssrExternal: extraSsrExternal = [] } = options;
+	const { ssrExternal: extraSsrExternal = [], serverEnvs = ["ssr", "rsc"] } =
+		options;
 
 	const ssrExternals = [...SSR_EXTERNAL, ...extraSsrExternal];
+	const serverEnvSet = new Set(serverEnvs);
 
 	return {
 		name: "vite-plugin-payload:server-externals",
 		config() {
 			return {
-				ssr: {
-					external: [...ssrExternals, "cloudflare:workers"],
-				},
 				build: {
 					rolldownOptions: {
 						external: ["cloudflare:workers"],
@@ -44,11 +55,11 @@ export function payloadServerExternals(
 			} satisfies UserConfig;
 		},
 		configEnvironment(name, _config) {
-			if (name === "ssr" || name === "rsc") {
+			if (serverEnvSet.has(name)) {
 				return {
 					build: {
 						rolldownOptions: {
-							external: ssrExternals,
+							external: [...ssrExternals, "cloudflare:workers"],
 						},
 					},
 				} satisfies EnvironmentOptions;

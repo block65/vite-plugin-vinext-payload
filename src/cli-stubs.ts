@@ -44,16 +44,34 @@ const stubs: Record<string, string> = {
   `,
 };
 
+export interface PayloadCliStubsOptions {
+	/**
+	 * Names of Vite environments this stub resolver applies to. When
+	 * undefined (the default used by `payloadPlugin`), stubs apply to
+	 * every environment. For `payloadWorkerPlugin`, pass the worker env
+	 * name so stubs don't intercept these specifiers in the parent app's
+	 * `client` build — e.g. a website that legitimately imports
+	 * `console-table-printer` from a non-Payload code path.
+	 */
+	envs?: string[];
+}
+
 /**
  * Resolves CLI-only packages to no-op stubs.
  *
  * These packages are only used by `payload migrate` and
  * `payload generate:types` CLI commands, not at web runtime.
  */
-export function payloadCliStubs(): Plugin {
+export function payloadCliStubs(options: PayloadCliStubsOptions = {}): Plugin {
+	const { envs } = options;
 	return {
 		name: "vite-plugin-payload:cli-stubs",
 		enforce: "pre",
+		...(envs && {
+			applyToEnvironment(env) {
+				return envs.includes(env.name);
+			},
+		}),
 		resolveId(id) {
 			// Match bare specifier or any subpath import
 			const pkg = Object.keys(stubs).find(

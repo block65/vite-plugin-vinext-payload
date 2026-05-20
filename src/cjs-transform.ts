@@ -5,6 +5,18 @@ const REACT_EXCLUDE_RE =
 	/node_modules\/(react|react-dom|react-server-dom-webpack|scheduler)(\/|$)/;
 const TS_CJS_HELPER_RE = /\(this && this\.(__\w+)\)/g;
 
+export interface PayloadCjsTransformOptions {
+	/**
+	 * Names of Vite environments this transform applies to. When undefined
+	 * (the default used by `payloadPlugin`), the transform runs in every
+	 * environment because Payload's admin UI lives in `client`. For headless
+	 * worker setups via `payloadWorkerPlugin`, pass the worker env name so
+	 * the transform doesn't bleed into the parent app's `client` build and
+	 * clobber named exports of unrelated CJS deps.
+	 */
+	envs?: string[];
+}
+
 /**
  * Single-pass CJS/UMD compatibility transform for node_modules.
  *
@@ -22,9 +34,18 @@ const TS_CJS_HELPER_RE = /\(this && this\.(__\w+)\)/g;
  * 3. **TS CJS helpers** — `(this && this.__importDefault)` also breaks
  *    with `undefined` `this`. Replaced with `globalThis`.
  */
-export function payloadCjsTransform(): Plugin {
+export function payloadCjsTransform(
+	options: PayloadCjsTransformOptions = {},
+): Plugin {
+	const { envs } = options;
 	return {
 		name: "vite-plugin-payload:cjs-transform",
+
+		...(envs && {
+			applyToEnvironment(env) {
+				return envs.includes(env.name);
+			},
+		}),
 
 		transform: {
 			handler(code, id) {

@@ -51,10 +51,24 @@ const wranglerJsonc = JSON.stringify(
 );
 
 const workerEntry = `import { WorkerEntrypoint } from "cloudflare:workers";
+// file-type is a Node-only CJS-condition trap: real-payload setups import it
+// transitively through @payloadcms/db-d1-sqlite, and Vite's default resolver
+// points the bare specifier at file-type/core.js which has no named exports —
+// causing MISSING_EXPORT in production builds unless payloadRscRuntime's
+// resolveId wins ordering. We import it here so this e2e exercises that
+// ordering path against a real published file-type, not just the plugin's
+// internal mocks.
+import { fileTypeFromFile } from "file-type";
 
 export class CmsEntrypoint extends WorkerEntrypoint {
-	ping() {
-		return "pong";
+	// Class field referencing fileTypeFromFile keeps Rolldown from
+	// tree-shaking it — \`void X\` was getting elided. The stub returns
+	// undefined; the real function would never run inside workerd anyway.
+	fileType = fileTypeFromFile;
+
+	async ping() {
+		const t = await this.fileType("/dev/null");
+		return t ? "pong" : "pong";
 	}
 }
 
@@ -108,6 +122,7 @@ async function scaffoldRpcWorker() {
 		"vite@^8",
 		"@cloudflare/vite-plugin@^1.37",
 		"@cloudflare/workers-types",
+		"file-type@^21",
 		"--legacy-peer-deps",
 		"--ignore-scripts",
 	]);
@@ -148,5 +163,29 @@ describe("e2e: rpc worker", () => {
 			join("dist", WORKER_ENV, jsEntry as string),
 		);
 		expect(bundled).toContain("CmsEntrypoint");
+	});
+
+	it("intercepts `file-type` with the stub before Vite's default resolver", async () => {
+		// Regression: payloadRscRuntime's resolveId hook needs `enforce: "pre"`.
+		// Without it, Vite resolves the bare specifier `file-type` to the real
+		// package's `core.js`, which doesn't export `fileTypeFromFile` — and
+		// Rolldown then fails the build with a MISSING_EXPORT error. The
+		// `vite build` succeeding in the previous test is the primary signal
+		// that the stub won; here we additionally assert the real package's
+		// parser dependency is absent, ruling out the "build passed but real
+		// impl leaked in" case.
+		const files = await import("node:fs/promises").then((m) =>
+			m.readdir(join(TEST_DIR, "dist", WORKER_ENV)),
+		);
+		const jsEntry = files.find((f: string) => f.endsWith(".js"));
+		const bundled = await helpers.read(
+			join("dist", WORKER_ENV, jsEntry as string),
+		);
+		// `fileTypeFromFile` is only available in our stub — the real
+		// `file-type/core.js` exposes the buffer/stream variants but NOT
+		// `fileTypeFromFile` (Node-condition only).
+		expect(bundled).toContain("fileTypeFromFile");
+		// Real `file-type` parses via `strtok3`. The stub doesn't import it.
+		expect(bundled).not.toContain("strtok3");
 	});
 });

@@ -153,10 +153,15 @@ export function payloadWorkerPlugin(
 			clientEnv: false,
 		}),
 		payloadRscRuntime({ serverEnvs, rscEnv: false }),
-		payloadCjsTransform(),
-		payloadCliStubs(),
-		cjsInterop({
-			dependencies: [...payloadCjsInteropDeps, ...extraCjsInterop],
-		}),
+		payloadCjsTransform({ envs: serverEnvs }),
+		payloadCliStubs({ envs: serverEnvs }),
+		{
+			...cjsInterop({
+				dependencies: [...payloadCjsInteropDeps, ...extraCjsInterop],
+			}),
+			applyToEnvironment(viteEnv) {
+				return serverEnvs.includes(viteEnv.name);
+			},
+		},
 	];
 }

@@ -78,6 +78,14 @@ export function payloadRscRuntime(
 
 	return {
 		name: "vite-plugin-payload:rsc-runtime",
+		// `enforce: "pre"` is load-bearing for the stub `resolveId` hook below.
+		// Without it, Vite's default Node resolver claims bare specifiers like
+		// `file-type` first and points them at the real package's `core.js` —
+		// which doesn't export `fileTypeFromFile`, so Rolldown then errors
+		// with MISSING_EXPORT before our stub redirect ever runs. This only
+		// surfaces under `payloadWorkerPlugin` with a real payload import
+		// (which the original e2e didn't exercise).
+		enforce: "pre",
 
 		// Redirect stubs during optimizeDeps pre-bundling so they're
 		// inlined rather than left as bare external imports that workerd

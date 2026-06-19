@@ -18,9 +18,15 @@ import type { Plugin } from "vite";
  *      `app-browser-navigation-controller` and called
  *      `dispatchApprovedVisibleCommit` unconditionally before returning the
  *      action's data.
- *    - vinext ≥0.0.50: same site, but the call was renamed to
+ *    - vinext 0.0.50–0.0.55: same site, but the call was renamed to
  *      `dispatchSynchronousVisibleCommit` (a thinner sync wrapper around the
- *      approved-commit applier). Fix: gate the dispatch on `!returnValue`.
+ *      approved-commit applier), still a one-line `if ($COND) dispatch(…)`.
+ *      Fix: gate the dispatch on `!returnValue`.
+ *    - vinext ≥0.1.0: the dispatch moved into a block body
+ *      (`if (latestApproval.approvedCommit) { dispatch(…); syncHistory(…); }`
+ *      with an `else` branch), so the one-line gate no longer matches. Gating
+ *      the outer `if` would wrongly trip the `else`, so wrap just the bare
+ *      dispatch call as `if (!returnValue) dispatch(…)`.
  *
  * 2. **Optimizer reload on cold start** — the browser entry imports vinext's
  *    navigation shim via a relative path (`../shims/navigation.js`), bypassing
@@ -138,22 +144,29 @@ function moveRenderAfterReturnValue(code: string): string | null {
 // (which would reset Payload's form). vinext 0.0.47–0.0.49 called
 // `dispatchApprovedVisibleCommit`; 0.0.50 renamed it to
 // `dispatchSynchronousVisibleCommit`. Match either.
-const DISPATCH_PATTERNS = [
-	"if ($COND) dispatchSynchronousVisibleCommit($$$ARGS);",
-	"if ($COND) dispatchApprovedVisibleCommit($$$ARGS);",
+const DISPATCH_NAMES = [
+	"dispatchSynchronousVisibleCommit",
+	"dispatchApprovedVisibleCommit",
 ];
+
+const INSIDE_COMMIT = {
+	kind: "function_declaration",
+	has: { kind: "identifier", regex: "^commitSameUrlNavigatePayload$" },
+	stopBy: "end",
+} as const;
 
 function gateDispatchOnReturnValue(code: string): string | null {
 	const root = parse(Lang.JavaScript, code).root();
-	for (const pattern of DISPATCH_PATTERNS) {
+
+	// vinext 0.0.47–0.0.55: a one-line `if ($COND) dispatchX(...)`. AND
+	// `!returnValue` onto $COND. This branch also serves as the idempotency
+	// guard for the block form below, whose output `if (!returnValue) dispatchX`
+	// matches here with $COND === "!returnValue".
+	for (const name of DISPATCH_NAMES) {
 		const ifStmt = root.find({
 			rule: {
-				pattern,
-				inside: {
-					kind: "function_declaration",
-					has: { kind: "identifier", regex: "^commitSameUrlNavigatePayload$" },
-					stopBy: "end",
-				},
+				pattern: `if ($COND) ${name}($$$ARGS);`,
+				inside: INSIDE_COMMIT,
 			},
 		});
 		if (!ifStmt) {
@@ -168,6 +181,24 @@ function gateDispatchOnReturnValue(code: string): string | null {
 			return null;
 		}
 		return root.commitEdits([cond.replace(`${condText} && !returnValue`)]);
+	}
+
+	// vinext ≥0.1.0 moved the dispatch into a block body
+	// (`if (latestApproval.approvedCommit) { dispatchX(...); syncHistory(...); }`
+	// with an `else` branch), so the one-line gate no longer matches. Gating the
+	// outer `if` would wrongly trip the `else` (a "discarded" revalidation
+	// notice), so wrap just the bare dispatch call in `if (!returnValue) …`.
+	for (const name of DISPATCH_NAMES) {
+		const call = root.find({
+			rule: {
+				pattern: `${name}($$$ARGS)`,
+				inside: INSIDE_COMMIT,
+			},
+		});
+		if (!call) {
+			continue;
+		}
+		return root.commitEdits([call.replace(`if (!returnValue) ${call.text()}`)]);
 	}
 	return null;
 }

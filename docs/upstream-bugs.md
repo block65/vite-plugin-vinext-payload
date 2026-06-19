@@ -32,8 +32,8 @@ plugin-rsc's `output.move()` path.
 **Repo:** https://github.com/vitejs/vite-plugin-react (packages/plugin-rsc)
 **Upstream:** not filed yet
 
-**What breaks:** On current Payload templates (`payload@3.84.1`) with
-vinext `0.0.50`, RSC build can fail with:
+**What breaks:** On current Payload templates (`payload@3.82.1`) with
+vinext `0.1.3`, RSC build can fail with:
 `"getHTMLDiffComponents" is not exported by @payloadcms/ui/dist/elements/HTMLDiff/index.js`.
 The source module exports it, but the RSC build graph sees it as missing.
 
@@ -52,7 +52,7 @@ replace the brittle re-export with a stable fallback export for
 **Responsibility:** vinext
 **Repo:** https://github.com/cloudflare/vinext
 **Upstream:** https://github.com/cloudflare/vinext/issues/237
-**Status:** OPEN (updated 2026-03-07)
+**Status:** OPEN (re-checked 2026-06-15; still open against vinext `0.1.3`. PR #250 only makes the throw clearer, it doesn't drop the value — workaround still required).
 
 **What breaks:** React's RSC serializer throws when functions, RegExps,
 or class instances cross the server/client boundary. Payload field configs
@@ -231,7 +231,7 @@ is for upload detection, `drizzle-kit/api` is for migrations.
 **Responsibility:** vinext
 **Repo:** https://github.com/cloudflare/vinext
 **Upstream:** https://github.com/cloudflare/vinext/issues/666
-**Status:** OPEN (updated 2026-05-10)
+**Status:** OPEN (re-checked 2026-06-15; still open against vinext `0.1.3`. PR #665 fixes Pages Router only; App Router CJS-through-plugin-rsc is unaddressed — workaround still required).
 
 **What breaks:** App Router forces `noExternal: true` for RSC/SSR
 environments, so raw CommonJS packages from `node_modules` are pushed
@@ -316,8 +316,12 @@ The bug has moved across vinext versions:
 - 0.0.47–0.0.49: refactored — `commitSameUrlNavigatePayload` in
   `app-browser-navigation-controller` unconditionally calls
   `dispatchApprovedVisibleCommit` before returning the action's data.
-- ≥0.0.50: same site as 0.0.47–0.0.49, but the call was renamed to
-  `dispatchSynchronousVisibleCommit` (a thinner sync wrapper).
+- 0.0.50–0.0.55: same site as 0.0.47–0.0.49, but the call was renamed to
+  `dispatchSynchronousVisibleCommit` (a thinner sync wrapper), still a
+  one-line `if ($COND) dispatch(…)`.
+- ≥0.1.0: the dispatch moved into a block body
+  (`if (latestApproval.approvedCommit) { dispatch(…); syncHistory(…); }`,
+  with an `else` branch), so the one-line gate no longer matches.
 
 **Why Next.js works:** Next.js's server action handler (`app-router.js`)
 checks `returnValue` first and only re-renders for void mutations. Data-
@@ -325,10 +329,13 @@ returning actions pass the value back to the caller without touching
 the React tree.
 
 **Our workaround:** `payloadServerActionFix` uses ast-grep. On ≤0.0.46 it
-moves the render call after the `returnValue` check. On ≥0.0.47 it gates
-the visible-commit dispatch on `!returnValue` (matching either dispatcher
-name). A drift detector unit test transforms the real installed vinext
-file so a future shape change fails loudly.
+moves the render call after the `returnValue` check. On 0.0.47–0.0.55 it ANDs
+`!returnValue` onto the one-line dispatch's condition (matching either
+dispatcher name). On ≥0.1.0, where the dispatch is a bare statement inside a
+block, it wraps the call as `if (!returnValue) dispatch(…)` (gating the outer
+`if` would wrongly trip the `else` branch). A drift detector unit test
+transforms the real installed vinext file so a future shape change fails
+loudly.
 
 ---
 
@@ -352,27 +359,32 @@ become `"link"`, `pathname === href` becomes `false`, etc.
 
 ---
 
-## `NEXT_REDIRECT` errors leak through RSC stream
+## `NEXT_REDIRECT` errors leak through RSC stream — RESOLVED in vinext 0.1.x
 
 **Responsibility:** vinext
 **Repo:** https://github.com/cloudflare/vinext
 **Upstream:** https://github.com/cloudflare/vinext/issues/654
-**Status:** OPEN (updated 2026-03-25)
+**Status:** RESOLVED — workaround removed at the vinext `0.1.3` bump.
 
-**What breaks:** Payload uses `redirect()` for auth checks. When thrown
-during async rendering inside `renderToReadableStream`, vinext doesn't
-intercept it. The error enters the RSC stream and surfaces on the client.
+**What used to break:** Payload uses `redirect()` for auth checks. On
+vinext `0.0.x`, a `redirect()` thrown during async rendering inside
+`renderToReadableStream` wasn't intercepted — the error entered the RSC
+stream and surfaced as an uncaught `NEXT_REDIRECT` on the client. The
+former `payloadRedirectFix` injected a client-side script that caught the
+leaked error and performed `location.replace()`.
 
-**Why Next.js works:** Next.js catches `NEXT_REDIRECT` sentinel errors
-at multiple levels: in `renderToReadableStream`'s error handler, in the
-RSC flight response writer, and in the app router's request handler. All
-are converted to proper HTTP 302 responses.
+**What fixed it:** vinext `0.1.x` handles page-level redirects natively.
+`dist/server/app-page-execution.js` (verified in `0.1.3`) converts a
+thrown `redirect()` into a proper response — `new Response(null, { Location,
+status })` (HTTP 302/307) for document requests, a meta-refresh HTML
+fallback, and an RSC-encoded redirect (`buildRscRedirectFlightStream` +
+client `RedirectErrorBoundary`) for flight navigations. Release note #1742
+("hard navigate streamed redirects", `0.1.0`) covers the streaming case the
+workaround targeted; #2000 and #1878 round out fallback/console handling.
 
-**Our workaround:** `payloadRedirectFix` injects a client-side script
-that intercepts the leaked error and performs `location.replace()`.
-
-**Remove when:** vinext fixes #654 to handle page-level redirects
-(not just server action redirects).
+Verified empirically: the admin e2e auth redirect (`/admin` →
+`create-first-user`) passes with the plugin removed and no leaked
+`NEXT_REDIRECT` / hydration errors.
 
 ---
 
@@ -385,7 +397,7 @@ that intercepts the leaked error and performs `location.replace()`.
 - https://github.com/cloudflare/workers-sdk/pull/10544 (fix: `preserveEntrySignatures: "strict"`)
 - https://github.com/rolldown/rolldown/issues/3500 (`preserveEntrySignatures` feature request)
 - https://github.com/rolldown/rolldown/issues/6449 (strict mode validation)
-**Status:** workers-sdk #10213 CLOSED, workers-sdk #10544 MERGED, rolldown #3500 CLOSED, rolldown #6449 CLOSED (checked 2026-05-18)
+**Status:** workers-sdk #10213 CLOSED, workers-sdk #10544 MERGED, rolldown #3500 CLOSED, rolldown #6449 CLOSED (re-checked 2026-06-15 against rolldown `1.0.3` / Vite `8.0.16`). Still needed: `preserveEntrySignatures: "strict"` governs *named* exports (it stops extra exports being hoisted onto the entry — the #10213 case), not the *shape of the default-export value*. vinext `0.1.3` still emits the `{ fetch }` object entry (`dist/server/app-router-entry.js`), and Rolldown can still collapse that object on large bundles. No upstream issue covers default-export-object inlining.
 
 **What breaks:** vinext's `app-router-entry.js` exports
 `{ async fetch(request, _env, ctx) { ... rscHandler(request, ctx) ... } }`
@@ -397,10 +409,11 @@ default export to be an object with a `fetch` method; a bare function
 produces error 10068: "no registered event handlers".
 
 The @cloudflare/vite-plugin sets `preserveEntrySignatures: "strict"`
-(PR #10544, fixing #10213) to prevent this. On Vite 8, this goes into
-`rolldownOptions`, but Rolldown doesn't fully enforce it — the wrapper
-object still gets inlined away on large bundles. Small apps aren't
-affected because Rolldown doesn't need to inline their entry modules.
+(PR #10544, fixing #10213). On Vite 8 this goes into `rolldownOptions`, but
+`strict` only preserves the entry's *named exports* — it does not pin the
+*shape* of the default-export value, so the `{ fetch }` wrapper object still
+gets inlined away on large bundles. Small apps aren't affected because
+Rolldown doesn't need to inline their entry modules.
 
 **Why Next.js works:** Next.js doesn't target Cloudflare Workers
 directly. Its server entry runs in Node.js or Edge Runtime, neither of

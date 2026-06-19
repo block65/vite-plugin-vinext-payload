@@ -55,22 +55,22 @@
 		"test:e2e-rpc-runtime": "vitest run test/e2e-rpc-runtime.test.ts"
 	},
 	"dependencies": {
-		"@ast-grep/napi": "^0.42.2",
-		"type-fest": "^5.6.0",
-		"vite-plugin-cjs-interop": "^4.0.0"
+		"@ast-grep/napi": "^0.43.0",
+		"type-fest": "^5.7.0",
+		"vite-plugin-cjs-interop": "^4.0.3"
 	},
 	"devDependencies": {
-		"@types/node": "^25.8.0",
-		"oxfmt": "^0.50.0",
-		"oxlint": "^1.65.0",
+		"@types/node": "^25.9.3",
+		"oxfmt": "^0.54.0",
+		"oxlint": "^1.69.0",
 		"playwright": "^1.60.0",
-		"typescript": "^6.0.2",
-		"vite": "^8.0.13",
-		"vitest": "^4.1.6"
+		"typescript": "^6.0.3",
+		"vite": "^8.0.16",
+		"vitest": "^4.1.9"
 	},
 	"peerDependencies": {
 		"payload": "^3.82.0",
-		"vinext": "0.0.50",
+		"vinext": "0.1.3",
 		"vite": "^8.0.0"
 	},
 	"peerDependenciesMeta": {

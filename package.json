@@ -3,6 +3,7 @@
 	"version": "0.0.19",
 	"description": "Vite plugin for running Payload CMS with vinext",
 	"license": "MIT",
+	"packageManager": "pnpm@11.5.2",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/block65/vite-plugin-vinext-payload.git"

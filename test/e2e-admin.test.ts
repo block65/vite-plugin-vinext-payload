@@ -152,9 +152,13 @@ describe("e2e: admin ui", () => {
 	});
 
 	it("can log out and log back in", async () => {
-		// Navigate to account page and log out
+		// Navigate to the logout route. Use waitUntil "commit" rather than
+		// "networkidle": logout immediately redirects to /login, and vinext's
+		// code-split chunk requests on that transition keep the network busy,
+		// so "networkidle" (500ms quiet) frequently never settles within the
+		// timeout. The real assertion is the waitForURL below.
 		await page.goto(`http://localhost:${server.port}/admin/logout`, {
-			waitUntil: "networkidle",
+			waitUntil: "commit",
 			timeout: 60_000,
 		});
 

@@ -22,7 +22,6 @@ import { payloadHtmlDiffExportFix } from "./html-diff-export-fix.ts";
 import { payloadNavComponentFix } from "./nav-component-fix.ts";
 import { payloadNextNavigationFix } from "./next-navigation-fix.ts";
 import { payloadOptimizeDeps } from "./optimize-deps.ts";
-import { payloadRedirectFix } from "./redirect-fix.ts";
 import { payloadRscExportFix } from "./rsc-export-fix.ts";
 import { payloadRscRuntime } from "./rsc-runtime.ts";
 import { payloadServerActionFix } from "./server-action-fix.ts";
@@ -70,7 +69,6 @@ export function payloadPlugin(options: PayloadPluginOptions = {}): Plugin[] {
 		payloadCliStubs(),
 		payloadNavComponentFix(),
 		payloadNextNavigationFix(),
-		payloadRedirectFix(),
 		payloadRscExportFix(),
 		payloadRscRuntime(),
 		payloadServerActionFix(),

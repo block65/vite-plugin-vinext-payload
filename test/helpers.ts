@@ -5,18 +5,32 @@ import { promisify } from "node:util";
 
 /** Known-good version pins for testing. */
 export const VERSIONS = {
-  payload: "3.84.1",
-  vinext: "0.0.45",
+  payload: "3.85.1",
+  vinext: "0.1.3",
 } as const;
 
 const execFile = promisify(execFileCb);
+
+/**
+ * Env for scaffolding child processes, with vitest's own markers stripped.
+ *
+ * vitest sets `VITEST=true` (and `VITEST_*`) in the runner's `process.env`,
+ * which child processes would otherwise inherit. Recent `degit` releases
+ * short-circuit their CLI when `process.env.VITEST` is set
+ * (`process.env.VITEST || main(argv)`), so `npx degit` silently does nothing —
+ * scaffolding produces no files. Strip these so spawned tools behave as they
+ * would outside the test runner.
+ */
+export const childEnv: NodeJS.ProcessEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !key.startsWith("VITEST")),
+);
 
 export function createProjectHelpers(testDir: string) {
   async function run(cmd: string, args: string[], cwd = testDir) {
     const { stdout } = await execFile(cmd, args, {
       cwd,
       timeout: 300_000,
-      env: process.env,
+      env: childEnv,
     });
     return stdout;
   }
@@ -57,7 +71,7 @@ export async function startDevServer(
     cwd: testDir,
     stdio: "pipe",
     env: {
-      ...process.env,
+      ...childEnv,
       NODE_ENV: "development",
       NO_COLOR: "1",
       FORCE_COLOR: "0",
@@ -297,6 +311,13 @@ export async function installVinextStack(
   helpers: ReturnType<typeof createProjectHelpers>,
   pluginRoot: string,
 ) {
+  // `vinext init` runs `npm install` internally (for @vitejs/plugin-react,
+  // @vitejs/plugin-rsc, react-server-dom-webpack) without --legacy-peer-deps.
+  // vinext 0.1.3 pulls react-server-dom-webpack@19.2.7, which peer-pins
+  // react@19.2.7 exactly, while the Payload template pins react@19.2.6 →
+  // ERESOLVE. A project .npmrc makes that internal install lenient too,
+  // matching the --legacy-peer-deps we already pass to every other install.
+  await helpers.write(".npmrc", "legacy-peer-deps=true\n");
   await helpers.npm(["install", "--ignore-scripts"]);
   await helpers.npm(["rebuild", "esbuild"]);
   await helpers.npm(["install", "-D", "vinext", "vite", "--legacy-peer-deps"]);

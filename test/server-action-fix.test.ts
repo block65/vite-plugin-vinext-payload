@@ -120,11 +120,13 @@ describe("payloadServerActionFix: navigation controller (vinext ≥0.0.47)", () 
 		const result = callTransform(plugin, real, realPath);
 		expect(result).toBeTruthy();
 		const code = (result as { code: string }).code;
-		// vinext 0.0.50 renamed the call to dispatchSynchronousVisibleCommit;
-		// older versions used dispatchApprovedVisibleCommit. Either is fine —
-		// what matters is the `&& !returnValue` gate landing in front of it.
+		// The gate can land in one of two shapes depending on vinext's emit:
+		//  - 0.0.47–0.0.55 one-line form: `if ($COND && !returnValue) dispatchX(…)`
+		//  - ≥0.1.0 block form: the bare dispatch wrapped as `if (!returnValue) dispatchX(…)`
+		// vinext 0.0.50 renamed the dispatcher from dispatchApprovedVisibleCommit
+		// to dispatchSynchronousVisibleCommit; either name is fine.
 		expect(code).toMatch(
-			/if \(latestApproval\.approvedCommit && !returnValue\) dispatch(Approved|Synchronous)VisibleCommit/,
+			/if \((latestApproval\.approvedCommit && )?!returnValue\) dispatch(Approved|Synchronous)VisibleCommit/,
 		);
 	});
 });

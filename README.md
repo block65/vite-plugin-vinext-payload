@@ -7,7 +7,7 @@ Vite plugin for running [Payload CMS](https://payloadcms.com/) on Cloudflare Wor
 
 > **Experimental.** Both vinext and this plugin are experimental.
 >
-> **Validated against:** Payload `3.84.1`, vinext `0.0.50` (optional — only needed for `payloadPlugin`), Vite `^8.0.13` (Rolldown), Node `>=24`.
+> **Validated against:** Payload `3.82.1`–`3.85.1`, vinext `0.1.3` (optional — only needed for `payloadPlugin`), Vite `^8.0.16` (Rolldown), Node `>=24`.
 >
 > Peer dependency ranges are pinned to the validated stack — see [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for known regressions.
 
@@ -172,10 +172,9 @@ payloadWorkerPlugin({
 | `payloadCliStubs` | Payload | Stubs packages not needed at web runtime (`console-table-printer`, `json-schema-to-typescript`, `esbuild-register`, `ws`) |
 | `payloadNavComponentFix` | Payload | Patches `DefaultNavClient` and `DocumentTabLink` to not switch element types (`<a>` vs `<div>`) based on `usePathname()`/`useParams()` — prevents React 19 tree-destroying hydration mismatches (AST-based via ast-grep) |
 | `payloadNextNavigationFix` | vinext | Patches vinext's `next/navigation` shim on disk so `usePathname`/`useParams`/`useSearchParams` use client snapshots during hydration instead of the server context (which is `null` on the client) |
-| `payloadRedirectFix` | vinext | Catches `NEXT_REDIRECT` errors that leak through the RSC stream during async rendering and converts them to client-side `location.replace()` redirects |
 | `payloadRscExportFix` | @vitejs/plugin-rsc | Fixes `@vitejs/plugin-rsc`'s CSS export transform dropping exports after sourcemap comments |
 | `payloadRscRuntime` | vinext / workerd / pnpm | RSC environment patches: stubs `file-type` and `drizzle-kit/api`, and patches the RSC serializer to silently drop non-serializable values (functions, RegExps) at the server/client boundary (matching Next.js prod behavior) |
-| `payloadServerActionFix` | vinext | Prevents data-returning server actions (like `getFormState`) from triggering a re-render that resets Payload's form state. Two shapes depending on vinext version: on ≤0.0.46, moves `getReactRoot().render()` after the `returnValue` check in `app-browser-entry`; on ≥0.0.47, gates the unconditional visible-commit dispatch (`dispatchApprovedVisibleCommit` in 0.0.47–0.0.49, renamed to `dispatchSynchronousVisibleCommit` in 0.0.50) in `app-browser-navigation-controller` on `!returnValue`. Also rewrites the browser entry's relative shim import to use the pre-bundled alias (AST-based via ast-grep) |
+| `payloadServerActionFix` | vinext | Prevents data-returning server actions (like `getFormState`) from triggering a re-render that resets Payload's form state. Shape depends on vinext version: on ≤0.0.46, moves `getReactRoot().render()` after the `returnValue` check in `app-browser-entry`; on 0.0.47–0.0.55, gates the one-line visible-commit dispatch (`dispatchApprovedVisibleCommit` in 0.0.47–0.0.49, renamed to `dispatchSynchronousVisibleCommit` in 0.0.50) in `app-browser-navigation-controller` on `!returnValue`; on ≥0.1.0, where that dispatch moved into a block body, wraps the bare dispatch call as `if (!returnValue) …`. Also rewrites the browser entry's relative shim import to use the pre-bundled alias (AST-based via ast-grep) |
 | `cjsInterop` | Vite | Fixes CJS default export interop for packages like `bson-objectid` (via [vite-plugin-cjs-interop](https://github.com/nicolo-ribaudo/vite-plugin-cjs-interop)) |
 
 ## Requirements
@@ -183,7 +182,7 @@ payloadWorkerPlugin({
 - Node.js `>=24`
 - Vite `^8.0.0`
 - Payload CMS `^3.82.0`
-- vinext `0.0.50` (exact — vinext is pre-1.0; every patch can break things). Optional — only needed when using `payloadPlugin()`. Not required for `payloadWorkerPlugin()`.
+- vinext `0.1.3` (exact — vinext is pre-1.0; every patch can break things). Optional — only needed when using `payloadPlugin()`. Not required for `payloadWorkerPlugin()`.
 
 ## Known Compatibility Issues
 
@@ -205,7 +204,6 @@ These all work fine on Next.js — they exist because vinext reimplements Next.j
 | `render()` called before `returnValue` check → form state reset | vinext | AST transform to reorder render after returnValue |
 | Components switch element types based on pathname/params → tree-destroying hydration mismatch | Payload | AST transform to force consistent element types |
 | Non-serializable values (functions, RegExps) not silently dropped at RSC boundary | vinext | Patch serializer throws to `return undefined` |
-| `NEXT_REDIRECT` errors leak through RSC stream during async rendering | vinext | Client-side redirect interception |
 | Rolldown inlines Workers entry wrapper into bare function | Rolldown / @cloudflare/vite-plugin | `generateBundle` hook re-wraps default export in `{ fetch }` ([workers-sdk#10213](https://github.com/cloudflare/workers-sdk/issues/10213)) |
 | CJS default export interop (e.g. `bson-objectid`) breaks named-import desugaring | Vite | `vite-plugin-cjs-interop` for the curated package list |
 

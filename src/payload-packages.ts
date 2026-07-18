@@ -55,6 +55,15 @@ export const OPTIMIZE_DEPS_EXCLUDE = [
 	// Remove: when Rolldown supports Node.js directory resolution fallback.
 	"blake3-wasm",
 
+	// Reached from payload.config via wrangler's `getPlatformProxy` on the
+	// Cloudflare target. Excluding `blake3-wasm` alone is not enough: it is
+	// imported *inside* wrangler's own bundle
+	// (`wrangler/wrangler-dist/cli.js` → `blake3-wasm/esm/index.js`), so the
+	// optimizer only stops tripping over it once wrangler itself is left
+	// unbundled. wrangler is a CLI, never evaluated at request time.
+	// Remove: never (deploy tool) — see SSR_EXTERNAL above.
+	"wrangler",
+
 	// No root "." export — only subpath exports (./layouts, ./routes).
 	// Vite's dedup wrapper generates `export * from "@payloadcms/next"` which
 	// fails because there's no root export to re-export.

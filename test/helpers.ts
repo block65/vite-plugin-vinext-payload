@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 /** Known-good version pins for testing. */
 export const VERSIONS = {
   payload: "3.85.1",
-  vinext: "0.1.3",
+  vinext: "1.0.0-beta.2",
 } as const;
 
 const execFile = promisify(execFileCb);
@@ -126,7 +126,7 @@ export async function startDevServer(
   return { port, kill, [Symbol.asyncDispose]: kill };
 }
 
-/** Wait for a spawned process stdout to match a pattern. */
+/** Wait for a spawned process's stdout *or* stderr to match a pattern. */
 export function waitForOutput(proc: ChildProcess, pattern: RegExp, timeoutMs = 60_000) {
   proc.stdout?.setEncoding("utf8");
   proc.stderr?.setEncoding("utf8");
@@ -317,6 +317,7 @@ export async function scaffoldMockProject(
 export async function installVinextStack(
   helpers: ReturnType<typeof createProjectHelpers>,
   pluginRoot: string,
+  platform: "cloudflare" | "node" = "node",
 ) {
   // `vinext init` runs `npm install` internally (for @vitejs/plugin-react,
   // @vitejs/plugin-rsc, react-server-dom-webpack) without --legacy-peer-deps.
@@ -328,11 +329,25 @@ export async function installVinextStack(
   await helpers.npm(["install", "--ignore-scripts"]);
   await helpers.npm(["rebuild", "esbuild"]);
   // Pin vinext to the exact version we peer-pin. Installing it unpinned
-  // resolves to the `latest` dist-tag (currently a 1.0.0-beta), which is
-  // not the version this plugin supports — the e2e suite would then be
-  // testing a stack we make no claims about.
+  // resolves to whatever the `latest` dist-tag points at, which may not be
+  // the version this plugin supports — the e2e suite would then be testing
+  // a stack we make no claims about.
   await helpers.npm(["install", "-D", `vinext@${VERSIONS.vinext}`, "vite", "--legacy-peer-deps"]);
-  await helpers.npx(["vinext", "init"]);
+  // vinext 1.0 requires an explicit deployment target; it used to infer one.
+  // The cloudflare target additionally demands cache/image choices. These are
+  // the minimal options — the suite exercises Payload, not vinext's CDN cache.
+  await helpers.npx([
+    "vinext",
+    "init",
+    `--platform=${platform}`,
+    ...(platform === "cloudflare"
+      ? [
+          "--cdn-cache=workers-cache",
+          "--data-cache=none",
+          "--image-optimization=none",
+        ]
+      : []),
+  ]);
   const pkg = JSON.parse(await helpers.read("package.json"));
   if (pkg.devDependencies?.["@cloudflare/vite-plugin"]) {
     await helpers.npm(["install", "-D", "@cloudflare/vite-plugin", "--legacy-peer-deps"]);

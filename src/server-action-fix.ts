@@ -50,7 +50,14 @@ function rewriteNavigationImport(code: string): string {
 	const navSource = root.find({
 		rule: {
 			kind: "string",
-			regex: "shims/navigation",
+			// Anchored to the exact module. vinext 1.0 split the shim into
+			// siblings — `navigation-context-state.js`, `navigation-errors.js`,
+			// `navigation.js` — and an unanchored "shims/navigation" matches
+			// all three. `root.find` returns the first in pre-order, so the
+			// unanchored form rewrote `navigation-context-state.js` and left
+			// the real target untouched. 0.1.3 had only the one module, which
+			// is why this held until the 1.0 bump.
+			regex: "shims/navigation\\.js",
 			inside: { kind: "import_statement" },
 		},
 	});

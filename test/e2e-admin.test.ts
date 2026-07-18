@@ -111,12 +111,14 @@ describe("e2e: admin ui", () => {
 	});
 
 	it("redirects to create-first-user", async () => {
+		// Slowest step in the suite (~20s): the first request to /admin pays
+		// for on-demand compilation of the whole admin route. Everything after
+		// it lands in ~1.5s. Still inside Playwright's 30s default.
 		await page.goto(`http://localhost:${server.port}/admin`, {
 			waitUntil: "networkidle",
-			timeout: 60_000,
 		});
 
-		await page.waitForURL("**/create-first-user", { timeout: 15_000 });
+		await page.waitForURL("**/create-first-user");
 		expect(page.url()).toContain("create-first-user");
 	});
 
@@ -128,12 +130,13 @@ describe("e2e: admin ui", () => {
 		await page.click('button[type="submit"]');
 
 		// Should redirect to dashboard after registration
-		await page.waitForURL("**/admin", { timeout: 30_000 });
+		await page.waitForURL("**/admin");
 		expect(page.url()).toMatch(/\/admin\/?$/);
 	});
 
 	it("dashboard loads without Vite error overlay", async () => {
-		// Verify we're on the dashboard and there's no Vite error overlay
+		// Inherits `page` from the previous test, which left it on /admin —
+		// this asserts the overlay only, and never navigates itself.
 		const hasOverlay = await page.evaluate(
 			() => !!document.querySelector("vite-error-overlay"),
 		);
@@ -143,7 +146,7 @@ describe("e2e: admin ui", () => {
 	it("navigates to users collection", async () => {
 		await page.goto(
 			`http://localhost:${server.port}/admin/collections/users`,
-			{ waitUntil: "networkidle", timeout: 60_000 },
+			{ waitUntil: "networkidle" },
 		);
 
 		// The created user should appear in the list
@@ -159,11 +162,10 @@ describe("e2e: admin ui", () => {
 		// timeout. The real assertion is the waitForURL below.
 		await page.goto(`http://localhost:${server.port}/admin/logout`, {
 			waitUntil: "commit",
-			timeout: 60_000,
 		});
 
 		// Should be on login page
-		await page.waitForURL("**/login**", { timeout: 15_000 });
+		await page.waitForURL("**/login**");
 
 		// Log back in
 		await page.fill('input[name="email"]', TEST_EMAIL);
@@ -171,7 +173,7 @@ describe("e2e: admin ui", () => {
 		await page.click('button[type="submit"]');
 
 		// Should redirect back to admin
-		await page.waitForURL("**/admin", { timeout: 30_000 });
+		await page.waitForURL("**/admin");
 		expect(page.url()).toMatch(/\/admin\/?$/);
 	});
 

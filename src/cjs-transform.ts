@@ -64,12 +64,10 @@ export function payloadCjsTransform(
 
 				// --- this → globalThis replacements (all environments) ---
 
-				// UMD wrapper: `})(this, function` → `})(globalThis, function`
 				if (result.includes("})(this,")) {
 					result = result.replaceAll("})(this,", "})(globalThis,");
 				}
 
-				// TypeScript CJS helpers: `(this && this.__importX)` → globalThis
 				if (result.includes("(this && this.")) {
 					result = result.replace(
 						TS_CJS_HELPER_RE,

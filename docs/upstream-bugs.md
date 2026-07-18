@@ -33,7 +33,8 @@ plugin-rsc's `output.move()` path.
 **Upstream:** not filed yet
 
 **What breaks:** On current Payload templates (`payload@3.82.1`) with
-vinext `0.1.3`, RSC build can fail with:
+vinext `0.1.3` (not re-verified in isolation on `1.0.0-beta.2`; the suites
+pass with the workaround active), RSC build can fail with:
 `"getHTMLDiffComponents" is not exported by @payloadcms/ui/dist/elements/HTMLDiff/index.js`.
 The source module exports it, but the RSC build graph sees it as missing.
 
@@ -52,7 +53,7 @@ replace the brittle re-export with a stable fallback export for
 **Responsibility:** vinext
 **Repo:** https://github.com/cloudflare/vinext
 **Upstream:** https://github.com/cloudflare/vinext/issues/237
-**Status:** OPEN (re-checked 2026-06-15; still open against vinext `0.1.3`. PR #250 only makes the throw clearer, it doesn't drop the value — workaround still required).
+**Status:** OPEN (re-checked 2026-06-15; still open against vinext `0.1.3`. PR #250 only makes the throw clearer, it doesn't drop the value — workaround still required). Issue status not re-checked against `1.0.0-beta.2`; the suites pass with the workaround active.
 
 **What breaks:** React's RSC serializer throws when functions, RegExps,
 or class instances cross the server/client boundary. Payload field configs
@@ -65,9 +66,9 @@ values — they become `undefined` on the client. This is intentional
 production behavior, not a bug suppression.
 
 **Our workaround:** `payloadRscRuntime` patches the throw statements in
-`react-server-dom-webpack` to `return undefined`, matching Next.js prod
-behavior. vinext's `rscOnError` only controls the error digest, not
-whether rendering aborts — our transform prevents the throw entirely.
+`react-server-dom-webpack` to `return undefined`, so rendering never
+aborts. (Note: unlike Next.js, which catches the throw in its integration
+layer, we prevent it at the source — the observable behavior matches.)
 
 ---
 
@@ -205,9 +206,10 @@ plugin's `resolve.external` validation.
 
 **Responsibility:** workerd / Payload packaging
 
-**What breaks:** `file-type` and `drizzle-kit/api` are transitive deps
-of `@payloadcms/db-d1-sqlite`. They use Node.js fs/streams APIs that
-don't exist in workerd. pnpm's strict isolation also prevents the
+**What breaks:** `file-type` (a direct dependency of `payload` itself —
+`dist/uploads/getFileByPath.js` — so every Payload project pulls it in)
+and `drizzle-kit/api` (via `@payloadcms/db-d1-sqlite`) use Node.js
+fs/streams APIs that don't exist in workerd. pnpm's strict isolation also prevents the
 optimizer from finding them during pre-bundling.
 
 **Why Next.js works:** Next.js runs in Node.js where fs/streams exist.
@@ -226,12 +228,48 @@ is for upload detection, `drizzle-kit/api` is for migrations.
 
 ---
 
+## payload.config's wrangler fallback drags `blake3-wasm` into every bundle
+
+**Responsibility:** Payload cloudflare template pattern / Rolldown resolution
+**Repo:** https://github.com/payloadcms/payload (templates/with-cloudflare-d1), https://github.com/rolldown/rolldown
+
+**What breaks:** the cloudflare templates' `payload.config.ts` (and our
+`init` rewrite of it) reads bindings via
+`import('cloudflare:workers')` with a `catch` fallback to
+`import('wrangler')` → `getPlatformProxy()`. The fallback only *executes*
+under plain Node (payload CLI), but it must *resolve* in every Vite
+environment that processes the config. Anywhere it gets bundled or
+optimizer-scanned, wrangler's entire CLI comes with it — including
+`blake3-wasm`, whose `export * from './node.js'` Rolldown cannot resolve.
+Dev died during dependency optimization
+(`[UNRESOLVED_IMPORT] Could not resolve './node.js'`) and `vinext build`
+failed on the same chain
+(`payload.config.ts → wrangler/wrangler-dist/cli.js → blake3-wasm`).
+`wrangler` in `SSR_EXTERNAL` / `OPTIMIZE_DEPS_EXCLUDE` does not help: the
+cloudflare worker build reads neither.
+
+**Why Next.js works:** the equivalent template uses `@opennextjs/cloudflare`,
+whose build pipeline never feeds `payload.config.ts` through a bundler
+environment that tries to resolve the wrangler fallback.
+
+**Our workaround:** `payloadCliStubs` stubs `wrangler` with a
+`getPlatformProxy` that throws on *call*, not on import — inside workerd
+`cloudflare:workers` always resolves so the stub is dead code, and a genuine
+Node-side use fails loudly instead of silently.
+
+Resolved 2026-07-18; see
+[`d1-dev-boot-investigation.md`](d1-dev-boot-investigation.md) for the full
+story (a second, stacked cause — the init matcher missing vinext 1.0's
+config shape — masked this one).
+
+---
+
 ## CJS packages fail in App Router dev
 
 **Responsibility:** vinext
 **Repo:** https://github.com/cloudflare/vinext
 **Upstream:** https://github.com/cloudflare/vinext/issues/666
-**Status:** OPEN (re-checked 2026-06-15; still open against vinext `0.1.3`. PR #665 fixes Pages Router only; App Router CJS-through-plugin-rsc is unaddressed — workaround still required).
+**Status:** OPEN (re-checked 2026-06-15; still open against vinext `0.1.3`. PR #665 fixes Pages Router only; App Router CJS-through-plugin-rsc is unaddressed — workaround still required). Issue status not re-checked against `1.0.0-beta.2`; the suites pass with the workaround active.
 
 **What breaks:** App Router forces `noExternal: true` for RSC/SSR
 environments, so raw CommonJS packages from `node_modules` are pushed
@@ -252,26 +290,23 @@ only; App Router needs separate work.
 
 ---
 
-## Navigation shim returns wrong values during hydration
+## ~~Navigation shim returns wrong values during hydration~~ (retracted 2026-07-18)
 
-**Responsibility:** vinext
-**Repo:** https://github.com/cloudflare/vinext
+We previously claimed vinext's `next/navigation` shim served fallback
+values (`"/"`, `{}`, empty search) during hydration because its
+`getServerSnapshot` reads a server context that is `null` on the
+client, and shipped `payloadNextNavigationFix` to patch the shim on
+disk.
 
-**What breaks:** vinext's `next/navigation` shim implements
-`usePathname`, `useParams`, and `useSearchParams` via
-`useSyncExternalStore`. The `getServerSnapshot` reads from a server
-context that is `null` on the client, so during hydration React gets
-fallback values (`"/"`, `{}`, empty search) instead of the real URL.
-
-**Why Next.js works:** Next.js uses React context (`PathnameContext`,
-`SearchParamsContext`) for these hooks. The context provider wraps the
-entire tree, so server and client values are always consistent during
-hydration.
-
-**Our workaround:** `payloadNextNavigationFix` patches the shim on
-disk so `getServerSnapshot` uses the client snapshot function. The
-browser entry calls `setClientParams()` before `hydrateRoot()`, so
-the client store has correct values at hydration time.
+Retracted: the patch had **never applied**. vinext deliberately keeps
+`next/navigation` out of `resolve.alias` (shims marked
+`reactServer: true` resolve through a `resolveId` hook instead), so
+the plugin's alias lookup found nothing and it was a silent no-op —
+on 0.1.3 as well as 1.0.0-beta.2. With the patch inert, the admin e2e
+suite passes including an explicit no-hydration-errors assertion:
+the browser entry calls `setClientParams()` before `hydrateRoot()`,
+so the client store is already correct at hydration time. The plugin
+was removed; no workaround is needed.
 
 ---
 
@@ -406,10 +441,10 @@ Verified empirically: the admin e2e auth redirect (`/admin` →
 - https://github.com/cloudflare/workers-sdk/pull/10544 (fix: `preserveEntrySignatures: "strict"`)
 - https://github.com/rolldown/rolldown/issues/3500 (`preserveEntrySignatures` feature request)
 - https://github.com/rolldown/rolldown/issues/6449 (strict mode validation)
-**Status:** workers-sdk #10213 CLOSED, workers-sdk #10544 MERGED, rolldown #3500 CLOSED, rolldown #6449 CLOSED (re-checked 2026-06-15 against rolldown `1.0.3` / Vite `8.0.16`). Still needed: `preserveEntrySignatures: "strict"` governs *named* exports (it stops extra exports being hoisted onto the entry — the #10213 case), not the *shape of the default-export value*. vinext `0.1.3` still emits the `{ fetch }` object entry (`dist/server/app-router-entry.js`), and Rolldown can still collapse that object on large bundles. No upstream issue covers default-export-object inlining.
+**Status:** workers-sdk #10213 CLOSED, workers-sdk #10544 MERGED, rolldown #3500 CLOSED, rolldown #6449 CLOSED (re-checked 2026-06-15 against rolldown `1.0.3` / Vite `8.0.16`). Still needed: `preserveEntrySignatures: "strict"` governs *named* exports (it stops extra exports being hoisted onto the entry — the #10213 case), not the *shape of the default-export value*. vinext `0.1.3` still emits the `{ fetch }` object entry (`dist/server/app-router-entry.js`), and Rolldown can still collapse that object on large bundles. No upstream issue covers default-export-object inlining. On `1.0.0-beta.2` (verified against a real cloudflare-target build, 2026-07-18) the entry chunk's default export survives as a `{ fetch }` object — the workaround's rewrite applies but its runtime wrapper passes the object through untouched, so it is currently defensive rather than load-bearing.
 
 **What breaks:** vinext's `app-router-entry.js` exports
-`{ async fetch(request, _env, ctx) { ... rscHandler(request, ctx) ... } }`
+`{ async fetch(request, env, ctx) { return handleRequest(request, env, ctx) } }`
 — the Workers module handler format. When Payload's large dependency
 graph (500KB+ RSC bundle) is bundled with Rolldown on Vite 8, Rolldown
 inlines the wrapper and exports the RSC handler as a bare

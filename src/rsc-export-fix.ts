@@ -13,7 +13,7 @@ import type { Plugin } from "vite";
  * Fix: run after the RSC transform and insert a newline before any
  * `export` keyword that appears after a `//` comment on the same line.
  *
- * Upstream: https://github.com/nicolo-ribaudo/vite-plugin-rsc
+ * Upstream: https://github.com/vitejs/vite-plugin-react (packages/plugin-rsc)
  * (transformWrapExport in server-action chunk, `output.move` to `input.length`)
  */
 export function payloadRscExportFix(): Plugin {
@@ -22,7 +22,6 @@ export function payloadRscExportFix(): Plugin {
 		enforce: "post",
 		transform: {
 			handler(code, _id) {
-				// Only fix in RSC environment
 				if (this.environment?.name !== "rsc") {
 					return;
 				}

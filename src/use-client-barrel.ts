@@ -52,10 +52,6 @@ export function payloadUseClientBarrel(): Plugin {
 	};
 }
 
-/**
- * Scan node_modules for packages whose subpath exports are barrels
- * that re-export from `'use client'` modules.
- */
 async function* findBarrelClientPackagesIter(
 	prefixes: string[],
 	root: string,
@@ -152,7 +148,6 @@ function resolveExportEntry(entry: unknown): string | null {
 	return null;
 }
 
-// Pre-compiled regexes for barrel detection
 const RE_EXPORT_PATTERN = /^export\s+\{[^}]*\}\s+from\s+['"][^'"]+['"];?\s*$/;
 const STAR_RE_EXPORT_PATTERN = /^export\s+\*\s+from\s+['"][^'"]+['"];?\s*$/;
 const EXPORT_SOURCE_RE = /from\s+['"]([^'"]+)['"]/g;
@@ -173,7 +168,6 @@ async function isBarrelReExportingUseClient(
 		return false;
 	}
 
-	// Strip comments and blank lines
 	const stripped = code
 		.replace(/\/\/.*$/gm, "")
 		.replace(/\/\*[\s\S]*?\*\//g, "")
@@ -184,7 +178,6 @@ async function isBarrelReExportingUseClient(
 		return false;
 	}
 
-	// Check all lines are re-exports
 	const lines = stripped.split("\n").map((l) => l.trim());
 
 	const isBarrel = lines.every(
@@ -197,7 +190,6 @@ async function isBarrelReExportingUseClient(
 		return false;
 	}
 
-	// Check re-export targets for 'use client'
 	const sources = [...code.matchAll(EXPORT_SOURCE_RE)].map((m) =>
 		resolve(dirname(filePath), m[1]),
 	);

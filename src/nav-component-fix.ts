@@ -35,7 +35,6 @@ export function payloadNavComponentFix(): Plugin {
 				return;
 			}
 
-			// Dispatch to the right patcher based on file
 			if (
 				id.includes("Nav") &&
 				id.includes("client") &&
@@ -57,7 +56,6 @@ function patchDefaultNavClient(
 	const root = parse(Lang.JavaScript, code).root();
 	const edits = [];
 
-	// Fix 1: `pathname === href` → `false`
 	const condition = root.find("pathname === href");
 	if (condition) {
 		edits.push(condition.replace("false /* patched: always render <Link> */"));
@@ -92,7 +90,6 @@ function patchDocumentTabLink(
 	const root = parse(Lang.JavaScript, code).root();
 	const edits = [];
 
-	// Fix 1: Any ternary with "link"/"div" alternatives → always "link"
 	const elTernary = root.find('$_ ? "link" : "div"');
 	if (elTernary) {
 		edits.push(
@@ -100,7 +97,6 @@ function patchDocumentTabLink(
 		);
 	}
 
-	// Fix 2: disabled: isActive → disabled: false
 	const disabledProp = root.find({
 		rule: {
 			kind: "pair",
@@ -119,7 +115,6 @@ function patchDocumentTabLink(
 		}
 	}
 
-	// Fix 3: Any ternary with hrefWithLocale/undefined → always hrefWithLocale
 	const toTernary = root.find("$_ ? hrefWithLocale : undefined");
 	if (toTernary) {
 		edits.push(

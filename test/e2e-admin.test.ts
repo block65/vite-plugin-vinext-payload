@@ -33,7 +33,6 @@ const helpers = createProjectHelpers(TEST_DIR);
 const TEST_EMAIL = "admin@test.local";
 const TEST_PASSWORD = "Test-password-123!";
 
-// Collected console errors across all tests
 const consoleErrors: string[] = [];
 
 async function scaffoldAdminProject() {
@@ -94,7 +93,6 @@ describe("e2e: admin ui", () => {
 		context = await browser.newContext({ ignoreHTTPSErrors: true });
 		page = await context.newPage();
 
-		// Capture console errors and uncaught exceptions
 		page.on("console", (msg) => {
 			if (msg.type() === "error") {
 				consoleErrors.push(msg.text());
@@ -129,7 +127,6 @@ describe("e2e: admin ui", () => {
 		await page.fill('input[name="confirm-password"]', TEST_PASSWORD);
 		await page.click('button[type="submit"]');
 
-		// Should redirect to dashboard after registration
 		await page.waitForURL("**/admin");
 		expect(page.url()).toMatch(/\/admin\/?$/);
 	});
@@ -149,7 +146,6 @@ describe("e2e: admin ui", () => {
 			{ waitUntil: "networkidle" },
 		);
 
-		// The created user should appear in the list
 		const pageContent = await page.textContent("body");
 		expect(pageContent).toContain(TEST_EMAIL);
 	});
@@ -164,15 +160,12 @@ describe("e2e: admin ui", () => {
 			waitUntil: "commit",
 		});
 
-		// Should be on login page
 		await page.waitForURL("**/login**");
 
-		// Log back in
 		await page.fill('input[name="email"]', TEST_EMAIL);
 		await page.fill('input[name="password"]', TEST_PASSWORD);
 		await page.click('button[type="submit"]');
 
-		// Should redirect back to admin
 		await page.waitForURL("**/admin");
 		expect(page.url()).toMatch(/\/admin\/?$/);
 	});

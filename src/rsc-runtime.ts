@@ -28,7 +28,6 @@ const DRIZZLE_KIT_API_INLINE_STUB = [
 	"})",
 ].join(" ");
 
-// Build the stub path map from the curated list + static files
 const stubPaths: Record<string, string> = Object.fromEntries(
 	Object.keys(RSC_STUBS)
 		.filter((pkg) => pkg in STUB_FILES)
@@ -38,9 +37,10 @@ const stubPaths: Record<string, string> = Object.fromEntries(
 export interface PayloadRscRuntimeOptions {
 	/**
 	 * Names of server environments running on workerd that need
-	 * `file-type` and `drizzle-kit/api` stubbed. Both are pulled in
-	 * transitively by `@payloadcms/db-d1-sqlite` but never invoked in
-	 * production; without stubs the pre-bundled chunk contains a bare
+	 * `file-type` and `drizzle-kit/api` stubbed. `file-type` is a direct
+	 * dependency of `payload` itself (uploads); `drizzle-kit/api` comes in
+	 * via `@payloadcms/db-d1-sqlite`. Neither is invoked in production;
+	 * without stubs the pre-bundled chunk contains a bare
 	 * `import 'file-type'` that the workerd module runner can't resolve.
 	 * Defaults to `["rsc"]`.
 	 */
@@ -62,8 +62,9 @@ export interface PayloadRscRuntimeOptions {
  *
  * - **Stubs** for `file-type` and `drizzle-kit/api` in any server env
  *   running on workerd (default `rsc`, extended for headless payload
- *   workers). Both are transitively imported by
- *   `@payloadcms/db-d1-sqlite` but never invoked at runtime.
+ *   workers). `file-type` is a direct dependency of `payload` (uploads);
+ *   `drizzle-kit/api` is imported via `@payloadcms/db-d1-sqlite`.
+ *   Neither is invoked at runtime.
  *
  * - **RSC serializer patch** that converts the "Client Component" throw
  *   in `react-server-dom-webpack` into `return undefined`. Applies only

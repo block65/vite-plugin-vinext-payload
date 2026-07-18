@@ -77,7 +77,6 @@ describe("e2e: sqlite", () => {
 	});
 
 	it("admin API responds", async () => {
-		// The REST API should be accessible
 		const res = await fetch(`http://localhost:${server.port}/api/users`, {
 			redirect: "manual",
 		});

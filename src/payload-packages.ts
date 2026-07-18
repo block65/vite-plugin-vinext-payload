@@ -127,8 +127,10 @@ export const CLIENT_OPTIMIZE_DEPS_INCLUDE = [
 // ---------------------------------------------------------------------------
 
 export const RSC_STUBS: Record<string, "empty"> = {
-	// Uses Node.js fs/streams. Transitively imported by @payloadcms/db-d1-sqlite
-	// but file-type detection is never called during RSC rendering.
+	// Uses Node.js fs/streams. Direct dependency of payload itself
+	// (dist/uploads/getFileByPath.js) — not of the D1 adapter — so every
+	// Payload project pulls it in; detection is never called during RSC
+	// rendering.
 	// Also in OPTIMIZE_DEPS_EXCLUDE for the export condition mismatch.
 	// Remove: when workerd supports Node.js fs APIs, or payload drops the dep.
 	"file-type": "empty",

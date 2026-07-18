@@ -25,6 +25,12 @@ import type { Plugin } from "vite";
  * emit a runtime check that wraps only when the original default is a
  * function value.
  *
+ * Verified against a real cloudflare-target build on vinext 1.0.0-beta.2
+ * (2026-07-18): the rewrite applies, and the default there is already a
+ * `{ fetch }` object (`var Zl = Yl ?? {}`), so the wrapper passes it
+ * through untouched — this plugin is defensive on that version, not
+ * load-bearing.
+ *
  * References:
  *   - https://github.com/cloudflare/workers-sdk/issues/10213
  *   - https://github.com/cloudflare/workers-sdk/pull/10544
@@ -46,20 +52,29 @@ export function payloadWorkerdEntry(): Plugin {
 					continue;
 				}
 
-				// Match: export { handler as default ... }
-				const exportMatch = chunk.code.match(
-					/export\s*\{\s*(\w+)\s+as\s+default\b([^}]*)\}/,
-				);
+				// `as default` need not be the first specifier (builds have
+				// emitted `export{Gc as __assetPrefix,...,al as default,...}`),
+				// so scan the whole list rather than anchoring to the brace.
+				const exportMatch = chunk.code.match(/export\s*\{([^}]*)\}/);
 				if (!exportMatch) {
 					continue;
 				}
 
-				const handlerName = exportMatch[1];
-				const oldExport = exportMatch[0];
-				const otherExports = exportMatch[2]; // e.g. ", generateStaticParamsMap"
+				const specifiers = exportMatch[1].split(",");
+				const defaultIndex = specifiers.findIndex((specifier) =>
+					/^\s*\w+\s+as\s+default\s*$/.test(specifier),
+				);
+				if (defaultIndex === -1) {
+					continue;
+				}
+
+				const handlerName = specifiers[defaultIndex]
+					.trim()
+					.split(/\s+as\s+/)[0];
+				specifiers[defaultIndex] = "__payload_worker_handler as default";
 
 				chunk.code = chunk.code.replace(
-					oldExport,
+					exportMatch[0],
 					[
 						`var __payload_worker_handler_orig = ${handlerName};`,
 						`var __payload_worker_handler = typeof __payload_worker_handler_orig === "function"`,
@@ -68,7 +83,7 @@ export function payloadWorkerdEntry(): Plugin {
 						`      catch (e) { console.error("[payload-worker]", e?.stack ?? e?.message ?? e); throw e; }`,
 						`    } }`,
 						`  : __payload_worker_handler_orig;`,
-						`export { __payload_worker_handler as default${otherExports} }`,
+						`export {${specifiers.join(",")}}`,
 					].join("\n"),
 				);
 			}

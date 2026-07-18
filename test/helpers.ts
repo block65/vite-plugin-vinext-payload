@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 export const VERSIONS = {
   payload: "3.85.1",
   vinext: "1.0.0-beta.2",
+  vite: "8.1.5",
 } as const;
 
 const execFile = promisify(execFileCb);
@@ -52,7 +53,6 @@ export function createProjectHelpers(testDir: string) {
   };
 }
 
-/** Run a production build (vite build) and return stdout. */
 export async function runBuild(helpers: ReturnType<typeof createProjectHelpers>) {
   const pkg = JSON.parse(await helpers.read("package.json"));
   const script = pkg.scripts["build:vinext"] ? "build:vinext" : "build";
@@ -182,7 +182,9 @@ export const FIXTURES = {
     {
       name: "test-project",
       dependencies: { payload: `^${VERSIONS.payload}` },
-      devDependencies: { vinext: `^${VERSIONS.vinext}` },
+      // Exact, not `^`: the plugin peer-pins vinext exactly, and
+      // `^1.0.0-beta.2` would float across all of 1.x.
+      devDependencies: { vinext: VERSIONS.vinext },
     },
     null,
     2,
@@ -202,6 +204,29 @@ import vinext from "vinext";
 export default defineConfig({
   plugins: [
     vinext(),
+  ],
+});
+`,
+
+  // The exact shape `vinext init --platform=cloudflare` writes on 1.0:
+  // vinext() takes an options object and spans multiple lines. The init
+  // matcher missing this shape is how the D1 e2e ran without the plugin.
+  viteConfigVinextArgs: `import { defineConfig } from "vite";
+import vinext from "vinext";
+import { cloudflare } from "@cloudflare/vite-plugin";
+import { cdnAdapter } from "@vinext/cloudflare/cache/cdn-adapter";
+
+export default defineConfig({
+  plugins: [
+    vinext({
+      cache: { cdn: cdnAdapter() },
+    }),
+    cloudflare({
+      viteEnvironment: {
+        name: "rsc",
+        childEnvironments: ["ssr"],
+      },
+    }),
   ],
 });
 `,
@@ -332,7 +357,13 @@ export async function installVinextStack(
   // resolves to whatever the `latest` dist-tag points at, which may not be
   // the version this plugin supports — the e2e suite would then be testing
   // a stack we make no claims about.
-  await helpers.npm(["install", "-D", `vinext@${VERSIONS.vinext}`, "vite", "--legacy-peer-deps"]);
+  await helpers.npm([
+    "install",
+    "-D",
+    `vinext@${VERSIONS.vinext}`,
+    `vite@${VERSIONS.vite}`,
+    "--legacy-peer-deps",
+  ]);
   // vinext 1.0 requires an explicit deployment target; it used to infer one.
   // The cloudflare target additionally demands cache/image choices. These are
   // the minimal options — the suite exercises Payload, not vinext's CDN cache.
@@ -460,7 +491,6 @@ export async function rewritePayloadConfigForVinext(
     result = result.slice(0, edit.start) + edit.replacement + result.slice(edit.end);
   }
 
-  // Add getCloudflareEnv function before export default
   if (!result.includes("function getCloudflareEnv")) {
     const fn = `\nasync function getCloudflareEnv() {
   try {

@@ -77,6 +77,15 @@ describe("init: vite.config.ts styles", () => {
 		expect(config).toContain("    vinext(),\n    payloadPlugin(),");
 	});
 
+	it("handles vinext() with an options argument (1.0 cloudflare shape)", async () => {
+		await scaffold(FIXTURES.viteConfigVinextArgs);
+		await runInit();
+
+		const config = await read("vite.config.ts");
+		expect(config).toContain("from \"vite-plugin-vinext-payload\"");
+		expect(config).toContain("    }),\n    payloadPlugin(),");
+	});
+
 	it("handles tabs and single quotes", async () => {
 		await scaffold(FIXTURES.viteConfigTabs);
 		await runInit();

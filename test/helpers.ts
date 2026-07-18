@@ -59,10 +59,16 @@ export async function runBuild(helpers: ReturnType<typeof createProjectHelpers>)
   return helpers.npm(["run", script]);
 }
 
-/** Start a dev server, wait for it to print a port, return port + kill function. */
+/**
+ * Start a dev server, wait for it to print a port, return port + kill function.
+ *
+ * 60s is deliberate. A dev server that needs longer than this to become usable
+ * is broken, not slow — do not raise the ceiling to make a boot fit under it.
+ */
 export async function startDevServer(
   testDir: string,
   helpers: ReturnType<typeof createProjectHelpers>,
+  readyTimeoutMs = 60_000,
 ) {
   const pkg = JSON.parse(await helpers.read("package.json"));
   const script = pkg.scripts["dev:vinext"] ? "dev:vinext" : "dev";
@@ -84,6 +90,7 @@ export async function startDevServer(
     match = await waitForOutput(
       proc,
       /Local:\s+https?:\/\/[^:\s]+:(\d+)\/?/,
+      readyTimeoutMs,
     );
   } catch (error) {
     proc.kill("SIGTERM");
@@ -320,7 +327,11 @@ export async function installVinextStack(
   await helpers.write(".npmrc", "legacy-peer-deps=true\n");
   await helpers.npm(["install", "--ignore-scripts"]);
   await helpers.npm(["rebuild", "esbuild"]);
-  await helpers.npm(["install", "-D", "vinext", "vite", "--legacy-peer-deps"]);
+  // Pin vinext to the exact version we peer-pin. Installing it unpinned
+  // resolves to the `latest` dist-tag (currently a 1.0.0-beta), which is
+  // not the version this plugin supports — the e2e suite would then be
+  // testing a stack we make no claims about.
+  await helpers.npm(["install", "-D", `vinext@${VERSIONS.vinext}`, "vite", "--legacy-peer-deps"]);
   await helpers.npx(["vinext", "init"]);
   const pkg = JSON.parse(await helpers.read("package.json"));
   if (pkg.devDependencies?.["@cloudflare/vite-plugin"]) {

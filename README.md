@@ -1,44 +1,12 @@
 # vite-plugin-vinext-payload
 
-Vite plugin for running [Payload CMS](https://payloadcms.com/) on Cloudflare Workers. Two modes:
-
-- **`payloadPlugin()`** — full Payload (admin UI + REST/GraphQL) with [vinext](https://github.com/cloudflare/vinext), Cloudflare's Vite-based re-implementation of Next.js.
-- **`payloadWorkerPlugin()`** — headless Payload exposing only its [Local API](https://payloadcms.com/docs/local-api/overview) via `WorkerEntrypoint` RPC, no admin UI. Pair with any Vite-based frontend framework (TanStack Start, SvelteKit, Remix, Nuxt) running as the parent worker.
-
-> **Experimental.** Both vinext and this plugin are experimental.
->
-> **Validated against:** Payload `3.82.1`–`3.85.1`, vinext `0.1.3` (optional — only needed for `payloadPlugin`), Vite `^8.0.16` (Rolldown), Node `>=24`.
->
-> Peer dependency ranges are pinned to the validated stack — see [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for known regressions.
-
-## Migrating from Next.js
-
-If you have an existing Payload CMS project on Next.js:
-
-```sh
-npm install -D vinext vite             # Install vinext
-npx vinext init                        # Convert Next.js → vinext
-npm install -D vite-plugin-vinext-payload
-npx vite-plugin-vinext-payload init    # Apply Payload-specific fixes
-npm run dev
-```
-
-> **Note:** `vinext init` runs `npm install` internally. If you hit peer dependency conflicts (common with `@vitejs/plugin-react`), run `npm install -D vinext vite --legacy-peer-deps` before `npx vinext init`.
-
-The plugin's `init` command is idempotent — safe to run multiple times. It:
-
-- Adds `payloadPlugin()` to your `vite.config.ts`
-- Extracts the inline server function from `layout.tsx` into a separate `'use server'` module (required for Vite's RSC transform)
-- Adds `normalizeParams` to the admin page
-- If a `wrangler.{jsonc,json,toml}` is present, also adds `cloudflare()` to `vite.config.ts` and `@cloudflare/vite-plugin` to `devDependencies`
-
-Use `--dry-run` to preview changes without writing files.
-
-For Cloudflare D1 projects, see **[Cloudflare D1 guide](docs/cloudflare-d1.md)** for additional configuration.
+Run [Payload CMS](https://payloadcms.com/) on Cloudflare Workers with Vite.
 
 ## Quick Start
 
-If you've already run `init`, or are setting up manually:
+```sh
+npm install -D vite-plugin-vinext-payload
+```
 
 ```ts
 // vite.config.ts
@@ -51,7 +19,11 @@ export default defineConfig({
 });
 ```
 
-For Cloudflare Workers with RSC:
+```sh
+npm run dev
+```
+
+That's it. For Cloudflare Workers with RSC, add the Cloudflare plugin:
 
 ```ts
 import { cloudflare } from "@cloudflare/vite-plugin";
@@ -72,9 +44,37 @@ export default defineConfig({
 
 `cloudflare:workers` is externalized automatically — no need to pass it via `ssrExternal`.
 
-## Headless RPC Worker (no admin UI)
+For Cloudflare D1 projects, see the **[Cloudflare D1 guide](docs/cloudflare-d1.md)**.
 
-Run Payload as a separate Cloudflare auxiliary worker that exposes its Local API over `WorkerEntrypoint` RPC. The parent worker (TanStack Start, SvelteKit, Remix, Nuxt, etc.) talks to it via a service binding — no HTTP, no admin UI, no vinext.
+## Migrating from Next.js
+
+Already have a Payload CMS project on Next.js? The `init` command converts it:
+
+```sh
+npm install -D vinext vite             # Install vinext
+npx vinext init                        # Convert Next.js → vinext
+npm install -D vite-plugin-vinext-payload
+npx vite-plugin-vinext-payload init    # Apply Payload-specific fixes
+npm run dev
+```
+
+`init` is idempotent — safe to run multiple times. Use `--dry-run` to preview changes. It:
+
+- Adds `payloadPlugin()` to your `vite.config.ts`
+- Extracts the inline server function from `layout.tsx` into a separate `'use server'` module (required for Vite's RSC transform)
+- Adds `normalizeParams` to the admin page
+- If a `wrangler.{jsonc,json,toml}` is present, also adds `cloudflare()` to `vite.config.ts` and `@cloudflare/vite-plugin` to `devDependencies`
+
+> **Note:** `vinext init` runs `npm install` internally. If you hit peer dependency conflicts (common with `@vitejs/plugin-react`), run `npm install -D vinext vite --legacy-peer-deps` before `npx vinext init`.
+
+## Two Modes
+
+- **`payloadPlugin()`** — full Payload (admin UI + REST/GraphQL) with [vinext](https://github.com/cloudflare/vinext), Cloudflare's Vite-based re-implementation of Next.js. This is what the Quick Start above uses.
+- **`payloadWorkerPlugin()`** — headless Payload exposing only its [Local API](https://payloadcms.com/docs/local-api/overview) via `WorkerEntrypoint` RPC, no admin UI. Pair with any Vite-based frontend framework (TanStack Start, SvelteKit, Remix, Nuxt) running as the parent worker.
+
+### Headless RPC Worker (no admin UI)
+
+Run Payload as a separate Cloudflare auxiliary worker that exposes its Local API over `WorkerEntrypoint` RPC. The parent worker talks to it via a service binding — no HTTP, no admin UI, no vinext.
 
 ```ts
 // services/website/vite.config.ts (parent worker)
@@ -156,9 +156,23 @@ payloadWorkerPlugin({
 });
 ```
 
+## Requirements
+
+- Node.js `>=24`
+- Vite `^8.0.0`
+- Payload CMS `^3.82.0`
+- vinext `0.1.3` (exact — vinext is pre-1.0; every patch can break things). Optional — only needed when using `payloadPlugin()`. Not required for `payloadWorkerPlugin()`.
+
+> **Experimental.** Both vinext and this plugin are experimental.
+>
+> **Validated against:** Payload `3.82.1`–`3.85.1`, vinext `0.1.3`, Vite `^8.0.16` (Rolldown), Node `>=24`. Peer dependency ranges are pinned to the validated stack — see [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for known regressions.
+
 ## What It Does
 
-`payloadPlugin()` composes these sub-plugins. They are not exported individually — splits exist purely for readability and maintenance:
+<details>
+<summary>The plugin composes a set of sub-plugins, each working around a specific upstream bug. Expand for the full list.</summary>
+
+These are not exported individually — splits exist purely for readability and maintenance.
 
 | Plugin | Owner bug | What it does |
 | --- | --- | --- |
@@ -177,16 +191,14 @@ payloadWorkerPlugin({
 | `payloadServerActionFix` | vinext | Prevents data-returning server actions (like `getFormState`) from triggering a re-render that resets Payload's form state. Shape depends on vinext version: on ≤0.0.46, moves `getReactRoot().render()` after the `returnValue` check in `app-browser-entry`; on 0.0.47–0.0.55, gates the one-line visible-commit dispatch (`dispatchApprovedVisibleCommit` in 0.0.47–0.0.49, renamed to `dispatchSynchronousVisibleCommit` in 0.0.50) in `app-browser-navigation-controller` on `!returnValue`; on ≥0.1.0, where that dispatch moved into a block body, wraps the bare dispatch call as `if (!returnValue) …`. Also rewrites the browser entry's relative shim import to use the pre-bundled alias (AST-based via ast-grep) |
 | `cjsInterop` | Vite | Fixes CJS default export interop for packages like `bson-objectid` (via [vite-plugin-cjs-interop](https://github.com/nicolo-ribaudo/vite-plugin-cjs-interop)) |
 
-## Requirements
-
-- Node.js `>=24`
-- Vite `^8.0.0`
-- Payload CMS `^3.82.0`
-- vinext `0.1.3` (exact — vinext is pre-1.0; every patch can break things). Optional — only needed when using `payloadPlugin()`. Not required for `payloadWorkerPlugin()`.
+</details>
 
 ## Known Compatibility Issues
 
-These all work fine on Next.js — they exist because vinext reimplements Next.js's framework layer on Vite. See [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for details on what Next.js does differently.
+<details>
+<summary>These all work fine on Next.js — they exist because vinext reimplements Next.js's framework layer on Vite. Expand for the full list.</summary>
+
+See [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for details on what Next.js does differently.
 
 | Issue | Owner | Our workaround |
 | --- | --- | --- |
@@ -206,6 +218,8 @@ These all work fine on Next.js — they exist because vinext reimplements Next.j
 | Non-serializable values (functions, RegExps) not silently dropped at RSC boundary | vinext | Patch serializer throws to `return undefined` |
 | Rolldown inlines Workers entry wrapper into bare function | Rolldown / @cloudflare/vite-plugin | `generateBundle` hook re-wraps default export in `{ fetch }` ([workers-sdk#10213](https://github.com/cloudflare/workers-sdk/issues/10213)) |
 | CJS default export interop (e.g. `bson-objectid`) breaks named-import desugaring | Vite | `vite-plugin-cjs-interop` for the curated package list |
+
+</details>
 
 ## License
 

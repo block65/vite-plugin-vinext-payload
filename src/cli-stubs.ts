@@ -39,6 +39,21 @@ const stubs: Record<string, string> = {
     }
     export default WebSocket;
   `,
+	// wrangler — payload.config's getCloudflareEnv falls back to
+	// `import('wrangler')` → `getPlatformProxy` when `cloudflare:workers`
+	// is unavailable, i.e. only under plain Node (payload CLI). Inside any
+	// Vite environment the import must still *resolve*, and bundling it
+	// drags wrangler's entire CLI into the graph — including blake3-wasm,
+	// whose `./node.js` import Rolldown cannot resolve — killing both dev
+	// dependency optimization and `vinext build` on the cloudflare target.
+	// Throws on call, not import, so a genuine Node-side use stays loud.
+	wrangler: dedent`
+    export function getPlatformProxy() {
+      throw new Error(
+        "wrangler is stubbed at web runtime; getPlatformProxy is only available under plain Node (payload CLI)",
+      );
+    }
+  `,
 	pnpapi: dedent`
     export default undefined;
   `,
@@ -73,7 +88,6 @@ export function payloadCliStubs(options: PayloadCliStubsOptions = {}): Plugin {
 			},
 		}),
 		resolveId(id) {
-			// Match bare specifier or any subpath import
 			const pkg = Object.keys(stubs).find(
 				(name) => id === name || id.startsWith(name + "/"),
 			);

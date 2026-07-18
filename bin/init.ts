@@ -200,9 +200,11 @@ async function addPayloadPluginToViteConfig({
 	if (!updated.includes("payloadPlugin")) {
 		const root = parse(Lang.TypeScript, updated).root();
 
+		// $$$ARGS: vinext 1.0's own init writes `vinext({ cache: ... })`;
+		// a bare `vinext()` pattern only matches the zero-argument call.
 		const vinextCall = root.find({
 			rule: {
-				pattern: "vinext()",
+				pattern: "vinext($$$ARGS)",
 				inside: { kind: "array", stopBy: "end" },
 			},
 		});
@@ -293,7 +295,7 @@ async function addPayloadPluginToViteConfig({
 
 		const vinextCall = root.find({
 			rule: {
-				pattern: "vinext()",
+				pattern: "vinext($$$ARGS)",
 				inside: { kind: "array", stopBy: "end" },
 			},
 		});
@@ -370,7 +372,6 @@ async function fixServerFunction({
 	const serverFnFile = join(cwd, PAYLOAD_DIR, "serverFunction.ts");
 	const layoutFile = join(cwd, PAYLOAD_DIR, "layout.tsx");
 
-	// Check if serverFunction.ts already exists
 	const serverFnContent = await tryRead(serverFnFile);
 	if (serverFnContent) {
 		const layoutContent = await tryRead(layoutFile);
@@ -484,7 +485,6 @@ export async function init(options: InitOptions) {
 
 	const results = [...viteConfigResults, ...serverFnResults, pageResult];
 
-	// Add @cloudflare/vite-plugin to devDependencies if cloudflare() was added
 	const addedCloudflare = viteConfigResults.some((r) =>
 		r.reason?.includes("cloudflare"),
 	);

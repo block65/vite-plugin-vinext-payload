@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 
 /** Known-good version pins for testing. */
 export const VERSIONS = {
-  payload: "3.85.1",
+  payload: "3.86.0",
   vinext: "1.0.0-beta.2",
   vite: "8.1.5",
 } as const;

@@ -54,7 +54,8 @@
 		"test:e2e-d1": "vitest run test/e2e-d1.test.ts",
 		"test:e2e-admin": "vitest run test/e2e-admin.test.ts",
 		"test:e2e-rpc": "vitest run test/e2e-rpc-worker.test.ts",
-		"test:e2e-rpc-runtime": "vitest run test/e2e-rpc-runtime.test.ts"
+		"test:e2e-rpc-runtime": "vitest run test/e2e-rpc-runtime.test.ts",
+		"test:e2e-rpc-payload": "vitest run test/e2e-rpc-payload.test.ts"
 	},
 	"dependencies": {
 		"@ast-grep/napi": "^0.44.1",

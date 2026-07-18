@@ -161,11 +161,11 @@ payloadWorkerPlugin({
 - Node.js `>=24`
 - Vite `^8.0.0`
 - Payload CMS `^3.82.0`
-- vinext `0.1.3` (exact — vinext is pre-1.0; every patch can break things). Optional — only needed when using `payloadPlugin()`. Not required for `payloadWorkerPlugin()`.
+- vinext `1.0.0-beta.2` (exact — vinext is still pre-release; every bump can break things). Optional — only needed when using `payloadPlugin()`. Not required for `payloadWorkerPlugin()`.
 
 > **Experimental.** Both vinext and this plugin are experimental.
 >
-> **Validated against:** Payload `3.82.1`–`3.85.1`, vinext `0.1.3`, Vite `^8.0.16` (Rolldown), Node `>=24`. Peer dependency ranges are pinned to the validated stack — see [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for known regressions.
+> **Validated against:** Payload `3.85.1`, vinext `1.0.0-beta.2`, Vite `^8.1.5` (Rolldown), Node `>=24`. Peer dependency ranges are pinned to the validated stack — see [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for known regressions.
 
 ## What It Does
 

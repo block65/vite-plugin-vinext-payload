@@ -1,4 +1,4 @@
-import type { Alias, Plugin, ResolvedConfig, UserConfig } from "vite";
+import type { Alias, EnvironmentOptions, Plugin, ResolvedConfig } from "vite";
 import {
 	CLIENT_OPTIMIZE_DEPS_EXCLUDE,
 	CLIENT_OPTIMIZE_DEPS_INCLUDE,
@@ -47,10 +47,19 @@ export interface PayloadOptimizeDepsOptions {
 
 	/**
 	 * Explicit list of environments to patch. When undefined, every env in
-	 * `config.environments` that already declares `optimizeDeps` is patched
-	 * (vinext default). For headless payload workers, pass the worker's
-	 * env name so the excludes apply even if that env didn't pre-declare
-	 * `optimizeDeps`.
+	 * `config.environments` is patched.
+	 *
+	 * This used to patch only environments that already declared
+	 * `optimizeDeps`, inferring "this environment optimizes" from the
+	 * framework's config shape. Both vinext 0.1.3 (`dist/index.js`: rsc 862,
+	 * ssr 879, client 890) and 1.0.0-beta.2 (rsc 1307, ssr 1330, client 1342,
+	 * inside `if (hasAppDir)`) do declare them — but the coupling is fragile:
+	 * the line numbers moved across one minor, the declarations are
+	 * conditional, and an environment created after our `enforce: "pre"`
+	 * `config` hook (as `@cloudflare/vite-plugin` does) is invisible to it.
+	 *
+	 * Excludes are cheap on an environment that never optimizes, so patch
+	 * unconditionally rather than inferring intent from the config shape.
 	 */
 	envs?: string[];
 
@@ -94,42 +103,36 @@ export function payloadOptimizeDeps(
 	return {
 		name: "vite-plugin-payload:optimize-deps",
 		enforce: "pre",
-		config(config) {
-			if (!config.environments) {
+		// `configEnvironment` rather than `config`, for the same reason
+		// payloadServerExternals uses it: it fires once per environment, after
+		// every plugin has declared its own, including environments created
+		// later than our `enforce: "pre"` `config` hook runs.
+		//
+		// NB: this did NOT fix the `blake3-wasm` failure that motivated it —
+		// see docs/d1-dev-boot-investigation.md. That cause is still open.
+		configEnvironment(name, envConfig) {
+			if (explicitEnvs && !explicitEnvs.includes(name)) {
 				return;
 			}
 
-			const targetEnvs = explicitEnvs
-				? explicitEnvs
-				: Object.entries(config.environments)
-						.filter(([_, env]) => env?.optimizeDeps)
-						.map(([name]) => name);
+			const existingOptimizeDeps = envConfig.optimizeDeps ?? {};
 
-			const environments: UserConfig["environments"] = {};
+			const envExcludes = [
+				...excludes,
+				...(name === clientEnv ? CLIENT_OPTIMIZE_DEPS_EXCLUDE : []),
+			];
 
-			for (const name of targetEnvs) {
-				const env = config.environments[name];
-				const existingOptimizeDeps = env?.optimizeDeps ?? {};
-
-				const envExcludes = [
-					...excludes,
-					...(name === clientEnv ? CLIENT_OPTIMIZE_DEPS_EXCLUDE : []),
-				];
-
-				environments[name] = {
-					optimizeDeps: {
-						exclude: [...(existingOptimizeDeps.exclude ?? []), ...envExcludes],
-						...(name === clientEnv && {
-							include: [
-								...(existingOptimizeDeps.include ?? []),
-								...CLIENT_OPTIMIZE_DEPS_INCLUDE,
-							],
-						}),
-					},
-				};
-			}
-
-			return { environments };
+			return {
+				optimizeDeps: {
+					exclude: [...(existingOptimizeDeps.exclude ?? []), ...envExcludes],
+					...(name === clientEnv && {
+						include: [
+							...(existingOptimizeDeps.include ?? []),
+							...CLIENT_OPTIMIZE_DEPS_INCLUDE,
+						],
+					}),
+				},
+			} satisfies EnvironmentOptions;
 		},
 
 		configResolved(config) {

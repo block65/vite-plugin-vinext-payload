@@ -363,8 +363,17 @@ become `"link"`, `pathname === href` becomes `false`, etc.
 
 **Responsibility:** vinext
 **Repo:** https://github.com/cloudflare/vinext
-**Upstream:** https://github.com/cloudflare/vinext/issues/654
-**Status:** RESOLVED — workaround removed at the vinext `0.1.3` bump.
+**Upstream:** fixed by https://github.com/cloudflare/vinext/pull/1742,
+https://github.com/cloudflare/vinext/pull/1878 and
+https://github.com/cloudflare/vinext/pull/2000 (all merged June 2026)
+**Status:** RESOLVED — workaround removed at the vinext `0.1.3` bump;
+still resolved on `1.0.0-beta.2` (re-checked 2026-07-18).
+
+> Earlier revisions of this section cited vinext #654 as the tracking
+> issue. That was wrong: #654 is "RSC parity gap: action redirects use
+> hard navigation instead of soft RSC navigation", a *separate* concern
+> that is **still open**. It never tracked the `NEXT_REDIRECT` leak
+> described here.
 
 **What used to break:** Payload uses `redirect()` for auth checks. On
 vinext `0.0.x`, a `redirect()` thrown during async rendering inside

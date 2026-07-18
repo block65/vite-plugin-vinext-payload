@@ -468,7 +468,8 @@ export async function init(options: InitOptions) {
 
 	console.log("Initializing vite-plugin-vinext-payload...\n");
 
-	// Run independent transforms concurrently, sequential ones together
+	// Safe to run concurrently: each transform owns a different file
+	// (vite.config, the server function module, admin page.tsx).
 	const [viteConfigResults, serverFnResults, pageResult] = await Promise.all([
 		addPayloadPluginToViteConfig(options),
 		fixServerFunction(options),

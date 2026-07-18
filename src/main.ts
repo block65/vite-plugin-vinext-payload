@@ -20,7 +20,6 @@ import { payloadCjsTransform } from "./cjs-transform.ts";
 import { payloadCliStubs } from "./cli-stubs.ts";
 import { payloadHtmlDiffExportFix } from "./html-diff-export-fix.ts";
 import { payloadNavComponentFix } from "./nav-component-fix.ts";
-import { payloadNextNavigationFix } from "./next-navigation-fix.ts";
 import { payloadOptimizeDeps } from "./optimize-deps.ts";
 import { payloadRscExportFix } from "./rsc-export-fix.ts";
 import { payloadRscRuntime } from "./rsc-runtime.ts";
@@ -68,7 +67,6 @@ export function payloadPlugin(options: PayloadPluginOptions = {}): Plugin[] {
 		payloadCjsTransform(),
 		payloadCliStubs(),
 		payloadNavComponentFix(),
-		payloadNextNavigationFix(),
 		payloadRscExportFix(),
 		payloadRscRuntime(),
 		payloadServerActionFix(),
@@ -105,7 +103,7 @@ export interface PayloadWorkerPluginOptions {
  *
  * Subset of `payloadPlugin`: workerd polyfills, server externals,
  * optimizeDeps excludes, CJS transforms, CLI stubs, and CJS interop.
- * The admin-UI / RSC / next-nav fixes are intentionally excluded.
+ * The admin-UI / RSC fixes are intentionally excluded.
  *
  * The user's worker entry typically looks like:
  *

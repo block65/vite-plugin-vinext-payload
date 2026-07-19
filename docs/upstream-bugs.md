@@ -236,8 +236,8 @@ is for upload detection, `drizzle-kit/api` is for migrations.
 **What breaks:** the cloudflare templates' `payload.config.ts` (and our
 `init` rewrite of it) reads bindings via
 `import('cloudflare:workers')` with a `catch` fallback to
-`import('wrangler')` → `getPlatformProxy()`. The fallback only *executes*
-under plain Node (payload CLI), but it must *resolve* in every Vite
+`import('wrangler')` → `getPlatformProxy()`. The fallback only _executes_
+under plain Node (payload CLI), but it must _resolve_ in every Vite
 environment that processes the config. Anywhere it gets bundled or
 optimizer-scanned, wrangler's entire CLI comes with it — including
 `blake3-wasm`, whose `export * from './node.js'` Rolldown cannot resolve.
@@ -253,7 +253,7 @@ whose build pipeline never feeds `payload.config.ts` through a bundler
 environment that tries to resolve the wrangler fallback.
 
 **Our workaround:** `payloadCliStubs` stubs `wrangler` with a
-`getPlatformProxy` that throws on *call*, not on import — inside workerd
+`getPlatformProxy` that throws on _call_, not on import — inside workerd
 `cloudflare:workers` always resolves so the stub is dead code, and a genuine
 Node-side use fails loudly instead of silently.
 
@@ -346,6 +346,7 @@ like `getFormState` — triggers a full re-render. For Payload, this resets
 form state: array field rows flash and disappear.
 
 The bug has moved across vinext versions:
+
 - ≤0.0.46: `getReactRoot().render(result.root)` runs in `app-browser-entry`
   before the `returnValue` check.
 - 0.0.47–0.0.49: refactored — `commitSameUrlNavigatePayload` in
@@ -406,7 +407,7 @@ still resolved on `1.0.0-beta.2` (re-checked 2026-07-18).
 
 > Earlier revisions of this section cited vinext #654 as the tracking
 > issue. That was wrong: #654 is "RSC parity gap: action redirects use
-> hard navigation instead of soft RSC navigation", a *separate* concern
+> hard navigation instead of soft RSC navigation", a _separate_ concern
 > that is **still open**. It never tracked the `NEXT_REDIRECT` leak
 > described here.
 
@@ -437,11 +438,12 @@ Verified empirically: the admin e2e auth redirect (`/admin` →
 **Responsibility:** Rolldown / @cloudflare/vite-plugin
 **Repo:** https://github.com/rolldown/rolldown, https://github.com/cloudflare/workers-sdk
 **Upstream:**
+
 - https://github.com/cloudflare/workers-sdk/issues/10213 (original report, closed)
 - https://github.com/cloudflare/workers-sdk/pull/10544 (fix: `preserveEntrySignatures: "strict"`)
 - https://github.com/rolldown/rolldown/issues/3500 (`preserveEntrySignatures` feature request)
 - https://github.com/rolldown/rolldown/issues/6449 (strict mode validation)
-**Status:** workers-sdk #10213 CLOSED, workers-sdk #10544 MERGED, rolldown #3500 CLOSED, rolldown #6449 CLOSED (re-checked 2026-06-15 against rolldown `1.0.3` / Vite `8.0.16`). Still needed: `preserveEntrySignatures: "strict"` governs *named* exports (it stops extra exports being hoisted onto the entry — the #10213 case), not the *shape of the default-export value*. vinext `0.1.3` still emits the `{ fetch }` object entry (`dist/server/app-router-entry.js`), and Rolldown can still collapse that object on large bundles. No upstream issue covers default-export-object inlining. On `1.0.0-beta.2` (verified against a real cloudflare-target build, 2026-07-18) the entry chunk's default export survives as a `{ fetch }` object — the workaround's rewrite applies but its runtime wrapper passes the object through untouched, so it is currently defensive rather than load-bearing.
+  **Status:** workers-sdk #10213 CLOSED, workers-sdk #10544 MERGED, rolldown #3500 CLOSED, rolldown #6449 CLOSED (re-checked 2026-06-15 against rolldown `1.0.3` / Vite `8.0.16`). Still needed: `preserveEntrySignatures: "strict"` governs _named_ exports (it stops extra exports being hoisted onto the entry — the #10213 case), not the _shape of the default-export value_. vinext `0.1.3` still emits the `{ fetch }` object entry (`dist/server/app-router-entry.js`), and Rolldown can still collapse that object on large bundles. No upstream issue covers default-export-object inlining. On `1.0.0-beta.2` (verified against a real cloudflare-target build, 2026-07-18) the entry chunk's default export survives as a `{ fetch }` object — the workaround's rewrite applies but its runtime wrapper passes the object through untouched, so it is currently defensive rather than load-bearing.
 
 **What breaks:** vinext's `app-router-entry.js` exports
 `{ async fetch(request, env, ctx) { return handleRequest(request, env, ctx) } }`
@@ -454,8 +456,8 @@ produces error 10068: "no registered event handlers".
 
 The @cloudflare/vite-plugin sets `preserveEntrySignatures: "strict"`
 (PR #10544, fixing #10213). On Vite 8 this goes into `rolldownOptions`, but
-`strict` only preserves the entry's *named exports* — it does not pin the
-*shape* of the default-export value, so the `{ fetch }` wrapper object still
+`strict` only preserves the entry's _named exports_ — it does not pin the
+_shape_ of the default-export value, so the `{ fetch }` wrapper object still
 gets inlined away on large bundles. Small apps aren't affected because
 Rolldown doesn't need to inline their entry modules.
 

@@ -45,9 +45,10 @@ describe("payloadWorkerdCompat: console.createTask polyfill", () => {
 		const result = callTransform(plugin, "rsc", REACT_FIXTURE, REACT_FILE_ID);
 		expect(result).not.toBeNull();
 		expect(result).not.toBeUndefined();
-		const out = typeof result === "object" && result !== null && "code" in result
-			? (result as { code: string }).code
-			: (result as string);
+		const out =
+			typeof result === "object" && result !== null && "code" in result
+				? (result as { code: string }).code
+				: (result as string);
 		expect(out.startsWith(POLYFILL_PREFIX)).toBe(true);
 	});
 
@@ -63,9 +64,10 @@ describe("payloadWorkerdCompat: console.createTask polyfill", () => {
 			REACT_FIXTURE,
 			REACT_FILE_ID,
 		);
-		const out = typeof result === "object" && result !== null && "code" in result
-			? (result as { code: string }).code
-			: (result as string);
+		const out =
+			typeof result === "object" && result !== null && "code" in result
+				? (result as { code: string }).code
+				: (result as string);
 		expect(out.startsWith(POLYFILL_PREFIX)).toBe(true);
 	});
 
@@ -89,9 +91,10 @@ describe("payloadWorkerdCompat: console.createTask polyfill", () => {
 		if (result == null) {
 			return;
 		}
-		const out = typeof result === "object" && "code" in result
-			? (result as { code: string }).code
-			: (result as string);
+		const out =
+			typeof result === "object" && "code" in result
+				? (result as { code: string }).code
+				: (result as string);
 		expect(out.startsWith(POLYFILL_PREFIX)).toBe(false);
 	});
 
@@ -120,9 +123,10 @@ describe("payloadWorkerdCompat: console.createTask polyfill", () => {
 		if (result == null) {
 			return;
 		}
-		const out = typeof result === "object" && "code" in result
-			? (result as { code: string }).code
-			: (result as string);
+		const out =
+			typeof result === "object" && "code" in result
+				? (result as { code: string }).code
+				: (result as string);
 		expect(out.startsWith(POLYFILL_PREFIX)).toBe(false);
 	});
 });
@@ -151,9 +155,10 @@ describe("payloadWorkerPlugin: composition wires createTask polyfill", () => {
 		);
 		expect(result).not.toBeNull();
 		expect(result).not.toBeUndefined();
-		const out = typeof result === "object" && result !== null && "code" in result
-			? (result as { code: string }).code
-			: (result as string);
+		const out =
+			typeof result === "object" && result !== null && "code" in result
+				? (result as { code: string }).code
+				: (result as string);
 		expect(out.startsWith(POLYFILL_PREFIX)).toBe(true);
 	});
 });

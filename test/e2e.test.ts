@@ -23,14 +23,23 @@ const helpers = createProjectHelpers(TEST_DIR);
 async function scaffoldSqliteProject() {
 	await helpers.cleanup();
 	await mkdir(TEST_DIR, { recursive: true });
-	await helpers.npx(["--yes", "degit", "--force", "payloadcms/payload/templates/with-postgres", TEST_DIR]);
+	await helpers.npx([
+		"--yes",
+		"degit",
+		"--force",
+		"payloadcms/payload/templates/with-postgres",
+		TEST_DIR,
+	]);
 
 	const pkg = JSON.parse(await helpers.read("package.json"));
 	const payloadVersion = pkg.dependencies.payload || VERSIONS.payload;
 	delete pkg.dependencies["@payloadcms/db-postgres"];
 	pkg.dependencies["@payloadcms/db-sqlite"] = payloadVersion;
 	delete pkg.devDependencies?.["@vitejs/plugin-react"];
-	await writeFile(join(TEST_DIR, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
+	await writeFile(
+		join(TEST_DIR, "package.json"),
+		JSON.stringify(pkg, null, 2) + "\n",
+	);
 
 	const config = (await helpers.read("src/payload.config.ts"))
 		.replace(
@@ -43,7 +52,10 @@ async function scaffoldSqliteProject() {
 		);
 	await writeFile(join(TEST_DIR, "src/payload.config.ts"), config);
 	await mkdir(join(TEST_DIR, "data"), { recursive: true });
-	await writeFile(join(TEST_DIR, ".env"), `PAYLOAD_SECRET=${crypto.randomUUID()}\n`);
+	await writeFile(
+		join(TEST_DIR, ".env"),
+		`PAYLOAD_SECRET=${crypto.randomUUID()}\n`,
+	);
 
 	await installVinextStack(helpers, PLUGIN_ROOT);
 }

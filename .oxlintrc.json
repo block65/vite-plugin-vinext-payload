@@ -29,5 +29,16 @@
 				"css": "always"
 			}
 		]
-	}
+	},
+	"overrides": [
+		{
+			// e2e helpers poll a booting dev server: each iteration must observe
+			// the previous attempt's result before retrying, so the awaits are
+			// sequential by design. Promise.all would defeat the retry.
+			"files": ["test/**"],
+			"rules": {
+				"no-await-in-loop": "off"
+			}
+		}
+	]
 }

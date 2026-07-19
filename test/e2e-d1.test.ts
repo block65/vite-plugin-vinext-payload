@@ -36,7 +36,10 @@ async function scaffoldD1Project() {
 		TEST_DIR,
 	]);
 
-	await writeFile(join(TEST_DIR, ".env"), `PAYLOAD_SECRET=${crypto.randomUUID()}\n`);
+	await writeFile(
+		join(TEST_DIR, ".env"),
+		`PAYLOAD_SECRET=${crypto.randomUUID()}\n`,
+	);
 
 	await installVinextStack(helpers, PLUGIN_ROOT, "cloudflare");
 

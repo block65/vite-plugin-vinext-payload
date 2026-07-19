@@ -2,7 +2,7 @@ name: Lint (PR)
 
 on:
   pull_request:
-    branches: ['main']
+    branches: ["main"]
 
 permissions:
   contents: read
@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: 'pnpm'
+          cache: "pnpm"
 
       - run: pnpm install --frozen-lockfile
 

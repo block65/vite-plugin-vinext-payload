@@ -26,10 +26,7 @@ function callApplyToEnvironment(plugin: Plugin, envName: string) {
 	if (typeof fn !== "function") {
 		return null;
 	}
-	return fn.call(
-		undefined as never,
-		{ name: envName } as never,
-	);
+	return fn.call(undefined as never, { name: envName } as never);
 }
 
 describe("payloadCjsTransform: envs scoping", () => {

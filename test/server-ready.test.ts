@@ -16,7 +16,7 @@ import { EventEmitter } from "node:events";
 import { createServer, type Server } from "node:http";
 import type { Socket } from "node:net";
 import { afterEach, expect, it } from "vitest";
-import { waitForServerReady } from "./helpers.ts";
+import { respondsAtAll, waitForServerReady } from "./helpers.ts";
 
 /**
  * A process the test can drive. `waitForServerReady` only subscribes to
@@ -96,13 +96,28 @@ it("keeps waiting while the connection is reset mid-restart", async () => {
 	expect(status).toBe(200);
 });
 
+// The RPC payload suite asserts on an error body, so a persistent 500 there is
+// the result under test rather than a server that never started.
+it("reports ready on a persistent 500 when told any response counts", async () => {
+	const port = await listen((socket) => {
+		socket.on("data", () => respond(socket, 500));
+	});
+
+	const status = await waitForServerReady(fakeProc(), port, "/", {
+		timeoutMs: 2_000,
+		ready: respondsAtAll,
+	});
+
+	expect(status).toBe(500);
+});
+
 it("reports the last status seen when the route never recovers", async () => {
 	const port = await listen((socket) => {
 		socket.on("data", () => respond(socket, 503));
 	});
 
 	await expect(
-		waitForServerReady(fakeProc(), port, "/admin", 1_000),
+		waitForServerReady(fakeProc(), port, "/admin", { timeoutMs: 1_000 }),
 	).rejects.toThrow(/never became ready at \/admin.*HTTP 503/s);
 });
 
@@ -110,7 +125,7 @@ it("fails immediately when the server process dies", async () => {
 	const port = await listen((socket) => socket.destroy());
 	const proc = fakeProc();
 
-	const ready = waitForServerReady(proc, port, "/", 60_000);
+	const ready = waitForServerReady(proc, port, "/", { timeoutMs: 60_000 });
 	proc.emit("exit", 1, null);
 
 	// The 60s timeout would still be running; this resolves on the exit signal.

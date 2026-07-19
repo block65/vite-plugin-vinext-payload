@@ -25,8 +25,10 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	createProjectHelpers,
+	packPlugin,
 	VERSIONS,
 	waitForOutput,
+	respondsAtAll,
 	waitForServerReady,
 } from "./helpers.ts";
 
@@ -161,7 +163,12 @@ async function scaffold() {
 		"react-dom@^19",
 		"--ignore-scripts",
 	]);
-	await helpers.npm(["install", "-D", PLUGIN_ROOT, "--ignore-scripts"]);
+	await helpers.npm([
+		"install",
+		"-D",
+		await packPlugin(PLUGIN_ROOT),
+		"--ignore-scripts",
+	]);
 }
 
 interface DevServer {
@@ -241,8 +248,14 @@ describe("e2e: payload + D1 adapter in RPC worker", () => {
 
 	it("payload initializes through the D1 adapter and reaches a real query", async () => {
 		// The first request triggers on-demand optimization of the whole payload
-		// graph; wait for the optimizer to report done rather than sleeping.
-		await waitForServerReady(server.proc, server.port);
+		// graph, so the socket answering is not the same as the worker being
+		// able to run. A 500 is a passing outcome here: the assertion below accepts
+		// "payload-error:...Failed query" as proof payload initialized and D1
+		// issued a real query. Gating on a non-error status would wait out the
+		// timeout on the exact response under test.
+		await waitForServerReady(server.proc, server.port, "/", {
+			ready: respondsAtAll,
+		});
 
 		const res = await fetch(`http://localhost:${server.port}/`);
 		const body = await res.text();

@@ -15,7 +15,7 @@
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, assert, beforeAll, describe, expect, it } from "vitest";
-import { createProjectHelpers } from "./helpers.ts";
+import { createProjectHelpers, packPlugin } from "./helpers.ts";
 
 const PLUGIN_ROOT = join(import.meta.dirname, "..");
 const TEST_DIR = join(import.meta.dirname, ".test-rpc-worker");
@@ -125,7 +125,12 @@ async function scaffoldRpcWorker() {
 		"file-type@^21",
 		"--ignore-scripts",
 	]);
-	await helpers.npm(["install", "-D", PLUGIN_ROOT, "--ignore-scripts"]);
+	await helpers.npm([
+		"install",
+		"-D",
+		await packPlugin(PLUGIN_ROOT),
+		"--ignore-scripts",
+	]);
 }
 
 describe("e2e: rpc worker", () => {

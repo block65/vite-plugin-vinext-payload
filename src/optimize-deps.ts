@@ -20,28 +20,6 @@ export const optimizeDepsPatch = {
 		"per-entry conditions in payload-packages.ts — the lists shrink entry by entry",
 } satisfies PatchDeclaration;
 
-/**
- * Collect all `next/*` alias specifiers from the resolved Vite config.
- *
- * vinext defines aliases like `next/link` → `vinext/dist/shims/link.js`
- * and `next/link.js` → same target. The optimizer treats each specifier
- * independently, so we must include every variant to avoid runtime
- * discovery → full page reload on cold start.
- */
-function getNextAliasSpecifiers(
-	aliases: ResolvedConfig["resolve"]["alias"],
-): string[] {
-	// RegExp `find` entries have no single specifier to pre-bundle, so only
-	// string finds contribute.
-	const candidates = Array.isArray(aliases)
-		? aliases.map((entry) => entry.find)
-		: Object.keys(aliases);
-
-	return candidates.flatMap((find) =>
-		typeof find === "string" && find.startsWith("next/") ? [find] : [],
-	);
-}
-
 export interface PayloadOptimizeDepsOptions {
 	/** Additional packages to exclude from optimizeDeps. */
 	extraExcludes?: string[];
@@ -71,6 +49,28 @@ export interface PayloadOptimizeDepsOptions {
 	 * `"client"`. Pass `false` for workers with no browser environment.
 	 */
 	clientEnv?: string | false;
+}
+
+/**
+ * Collect all `next/*` alias specifiers from the resolved Vite config.
+ *
+ * vinext defines aliases like `next/link` → `vinext/dist/shims/link.js`
+ * and `next/link.js` → same target. The optimizer treats each specifier
+ * independently, so we must include every variant to avoid runtime
+ * discovery → full page reload on cold start.
+ */
+function getNextAliasSpecifiers(
+	aliases: ResolvedConfig["resolve"]["alias"],
+): string[] {
+	// RegExp `find` entries have no single specifier to pre-bundle, so only
+	// string finds contribute.
+	const candidates = Array.isArray(aliases)
+		? aliases.map((entry) => entry.find)
+		: Object.keys(aliases);
+
+	return candidates.flatMap((find) =>
+		typeof find === "string" && find.startsWith("next/") ? [find] : [],
+	);
 }
 
 /**

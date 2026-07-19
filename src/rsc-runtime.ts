@@ -59,6 +59,27 @@ const stubPaths: Record<string, string> = Object.fromEntries(
 		.map((pkg) => [pkg, STUB_FILES[pkg]]),
 );
 
+export interface PayloadRscRuntimeOptions {
+	/**
+	 * Names of server environments running on workerd that need
+	 * `file-type` and `drizzle-kit/api` stubbed. `file-type` is a direct
+	 * dependency of `payload` itself (uploads); `drizzle-kit/api` comes in
+	 * via `@payloadcms/db-d1-sqlite`. Neither is invoked in production;
+	 * without stubs the pre-bundled chunk contains a bare
+	 * `import 'file-type'` that the workerd module runner can't resolve.
+	 * Defaults to `["rsc"]`.
+	 */
+	serverEnvs?: string[];
+
+	/**
+	 * Name of the environment that needs the RSC serializer patch
+	 * (`react-server-dom-webpack` "Client Component" throw → return
+	 * undefined). Pass `false` for workers that don't render RSC.
+	 * Defaults to `"rsc"`.
+	 */
+	rscEnv?: string | false;
+}
+
 function inlineDrizzleKitApi(code: string): string {
 	return code.replace(
 		/require\s*\(\s*['"]drizzle-kit\/api['"]\s*\)/g,
@@ -83,27 +104,6 @@ function dropClientComponentThrows(code: string): string {
 		.map((node) => node.replace("return undefined"));
 
 	return edits.length > 0 ? root.commitEdits(edits) : code;
-}
-
-export interface PayloadRscRuntimeOptions {
-	/**
-	 * Names of server environments running on workerd that need
-	 * `file-type` and `drizzle-kit/api` stubbed. `file-type` is a direct
-	 * dependency of `payload` itself (uploads); `drizzle-kit/api` comes in
-	 * via `@payloadcms/db-d1-sqlite`. Neither is invoked in production;
-	 * without stubs the pre-bundled chunk contains a bare
-	 * `import 'file-type'` that the workerd module runner can't resolve.
-	 * Defaults to `["rsc"]`.
-	 */
-	serverEnvs?: string[];
-
-	/**
-	 * Name of the environment that needs the RSC serializer patch
-	 * (`react-server-dom-webpack` "Client Component" throw → return
-	 * undefined). Pass `false` for workers that don't render RSC.
-	 * Defaults to `"rsc"`.
-	 */
-	rscEnv?: string | false;
 }
 
 /**

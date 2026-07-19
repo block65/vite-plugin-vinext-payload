@@ -1,34 +1,30 @@
 /**
  * Unit tests for `waitForServerReady`.
  *
- * The e2e suites call this before their first assertion, so when it returns
- * early every downstream failure looks like a product bug. `assertStatus`
- * deliberately does not retry, which makes an early return here surface as an
- * unexplainable 500 somewhere else entirely.
+ * The e2e suites call this before their first assertion, so when it reports
+ * ready too early every downstream failure looks like a product bug.
+ * `assertStatus` deliberately does not retry, which makes an early return here
+ * surface as an unexplainable 500 somewhere else entirely.
  *
- * The failure mode under test: on a cold dependency cache the priming request
- * is reset *because* the module runner is restarting mid-optimization. Treating
- * that reset as a ready signal returns a server that cannot yet serve.
+ * The failure modes under test are the ones a cold start actually produces: a
+ * connection reset while the module runner restarts, and a 500 served during
+ * dependency optimization. Neither means the server is up.
  */
 
 import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { createServer, type Server } from "node:http";
+import type { Socket } from "node:net";
 import { afterEach, expect, it } from "vitest";
 import { waitForServerReady } from "./helpers.ts";
 
-/** Vite's line when a re-optimization completes and the runner reloads. */
-const OPTIMIZER_LINE = "optimized dependencies changed. reloading\n";
-
 /**
- * A process whose stdout/stderr can be driven from the test. `waitForOutput`
- * only ever calls `setEncoding`/`on`/`off` on those two streams.
+ * A process the test can drive. `waitForServerReady` only subscribes to
+ * `exit`; the streams exist because `startDevServer` shares the type.
  */
 function fakeProc() {
-	const stdout = Object.assign(new EventEmitter(), { setEncoding() {} });
-	const stderr = Object.assign(new EventEmitter(), { setEncoding() {} });
-
-	return { stdout, stderr } as unknown as ChildProcess;
+	const proc = new EventEmitter() as unknown as ChildProcess;
+	return proc;
 }
 
 const openServers = new Set<Server>();
@@ -42,15 +38,13 @@ afterEach(async () => {
 	openServers.clear();
 });
 
-/** Listen on an ephemeral port and resolve once the port is known. */
-async function listen(
-	handler: (socket: import("node:net").Socket) => void,
-): Promise<number> {
+/** Listen on an ephemeral port, handling each connection with `handler`. */
+async function listen(handler: (socket: Socket) => void): Promise<number> {
 	const server = createServer();
 	openServers.add(server);
 	server.on("connection", handler);
 
-	const port = await new Promise<number>((resolve, reject) => {
+	return new Promise<number>((resolve, reject) => {
 		server.once("error", reject);
 		server.listen(0, "127.0.0.1", () => {
 			const address = server.address();
@@ -61,47 +55,64 @@ async function listen(
 			resolve(address.port);
 		});
 	});
-
-	return port;
 }
 
-it("does not report ready while a reset priming request leaves optimization in flight", async () => {
-	// Destroying the socket reproduces the runner tearing down mid-request.
-	const port = await listen((socket) => socket.destroy());
-	const proc = fakeProc();
+/** Reply with `status`, then close. */
+function respond(socket: Socket, status: number) {
+	socket.end(
+		`HTTP/1.1 ${status} X\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok`,
+	);
+}
 
-	let resolved = false;
-	const ready = waitForServerReady(proc, port, "/").then((outcome) => {
-		resolved = true;
-		return outcome;
-	});
-
-	// The reset lands well inside this window; the optimizer line has not.
-	await expect.poll(() => resolved, { timeout: 1_000 }).toBe(false);
-
-	proc.stdout?.emit("data", OPTIMIZER_LINE);
-
-	await expect(ready).resolves.toBe("optimized");
-});
-
-it("reports ready on the priming response when the cache is already warm", async () => {
+it("keeps waiting while the server answers with a 500", async () => {
+	// Optimization is still running: the route exists but cannot render yet.
+	let attempts = 0;
 	const port = await listen((socket) => {
 		socket.on("data", () => {
-			socket.end(
-				"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
-			);
+			attempts += 1;
+			respond(socket, attempts < 3 ? 500 : 307);
 		});
 	});
 
-	const outcome = await waitForServerReady(fakeProc(), port, "/");
+	const status = await waitForServerReady(fakeProc(), port, "/admin");
 
-	expect(outcome).toBe("served");
+	expect(status).toBe(307);
+	expect(attempts).toBe(3);
 });
 
-it("surfaces the timeout rather than reporting ready when nothing settles", async () => {
-	const port = await listen((socket) => socket.destroy());
+it("keeps waiting while the connection is reset mid-restart", async () => {
+	let attempts = 0;
+	const port = await listen((socket) => {
+		attempts += 1;
+		if (attempts < 3) {
+			socket.destroy();
+			return;
+		}
+		socket.on("data", () => respond(socket, 200));
+	});
 
-	await expect(waitForServerReady(fakeProc(), port, "/", 500)).rejects.toThrow(
-		/Timed out waiting for/,
-	);
+	const status = await waitForServerReady(fakeProc(), port, "/");
+
+	expect(status).toBe(200);
+});
+
+it("reports the last status seen when the route never recovers", async () => {
+	const port = await listen((socket) => {
+		socket.on("data", () => respond(socket, 503));
+	});
+
+	await expect(
+		waitForServerReady(fakeProc(), port, "/admin", 1_000),
+	).rejects.toThrow(/never became ready at \/admin.*HTTP 503/s);
+});
+
+it("fails immediately when the server process dies", async () => {
+	const port = await listen((socket) => socket.destroy());
+	const proc = fakeProc();
+
+	const ready = waitForServerReady(proc, port, "/", 60_000);
+	proc.emit("exit", 1, null);
+
+	// The 60s timeout would still be running; this resolves on the exit signal.
+	await expect(ready).rejects.toThrow(/died before becoming ready/);
 });

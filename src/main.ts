@@ -198,6 +198,7 @@ export function vinextPayloadWorker(
 			extraExcludes: excludeFromOptimize,
 			envs: serverEnvs,
 			clientEnv: false,
+			rscEnv: false,
 		}),
 		payloadRscRuntime({ serverEnvs, rscEnv: false }),
 		payloadCjsTransform({ envs: serverEnvs }),

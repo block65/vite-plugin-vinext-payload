@@ -116,6 +116,56 @@ export const CLIENT_OPTIMIZE_DEPS_INCLUDE = [
 ];
 
 // ---------------------------------------------------------------------------
+// RSC OPTIMIZE DEPS INCLUDE
+//
+// Deps pre-declared in the rsc environment's optimizeDeps so a cold start
+// doesn't discover them serially. Each runtime discovery forces a
+// re-optimize and a module-runner reload; the first /admin request of a
+// cold-cache D1 project (measured 2026-07-19, container run) walked
+// through eighteen of them one reload at a time and took 114s to answer.
+//
+// `parent > dep` entries resolve through the importing package, so they
+// stay resolvable under pnpm's strict layout where a transitive dep is
+// not visible from the project root.
+// ---------------------------------------------------------------------------
+
+export const RSC_OPTIMIZE_DEPS_INCLUDE = [
+	// Direct project deps and subpath exports, resolvable from the root.
+	// Remove: when vinext pre-declares its own RSC runtime deps.
+	"react-server-dom-webpack/static.edge",
+	"react-dom/server",
+	"payload/shared",
+	"payload/internal",
+
+	// payload's transitive deps reached during server rendering.
+	// Remove: when Vite seeds the optimizer from the full import graph
+	// instead of discovering lazily at request time.
+	"payload > bson-objectid",
+	"payload > uuid",
+	"payload > qs-esm",
+	"payload > path-to-regexp",
+	"payload > @payloadcms/translations",
+
+	// The default richtext editor's graph, reached from payload.config.
+	// Remove: with the payload entries above, or if the editor becomes
+	// an explicit consumer-installed peer of the rendering path.
+	"@payloadcms/richtext-lexical > lexical",
+	"@payloadcms/richtext-lexical > @lexical/headless",
+	"@payloadcms/richtext-lexical > @lexical/html",
+	"@payloadcms/richtext-lexical > @lexical/list",
+	"@payloadcms/richtext-lexical > @lexical/rich-text",
+	"@payloadcms/richtext-lexical > @lexical/table",
+	"@payloadcms/richtext-lexical > @lexical/utils",
+	"@payloadcms/richtext-lexical > escape-html",
+	"@payloadcms/richtext-lexical > jsox",
+	"@payloadcms/richtext-lexical > dequal/lite",
+
+	// Admin UI server exports.
+	// Remove: with the payload entries above.
+	"@payloadcms/ui > date-fns",
+];
+
+// ---------------------------------------------------------------------------
 // RSC STUBS
 //
 // Packages stubbed in the RSC environment because they use Node.js APIs

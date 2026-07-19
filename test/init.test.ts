@@ -4,7 +4,7 @@
  */
 
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, assert, describe, expect, it } from "vitest";
 import { init } from "../bin/init.ts";
 import {
 	createProjectHelpers,
@@ -64,6 +64,42 @@ describe("init: file transforms", () => {
 		// The empty-segments case drops the key rather than casting undefined.
 		expect(page).toContain("const { segments, ...rest } = resolved");
 		expect(page).not.toContain("as unknown as");
+	});
+
+	// Regression: the emitted normalizeParams once dereferenced
+	// `resolved.segments.length` unguarded. Next.js omits the key entirely, so
+	// every /admin request threw "Cannot read properties of undefined". The
+	// unit suite passed throughout — it only checked that the function existed.
+	// This runs the emitted logic instead of matching its text.
+	it("emits a normalizeParams that survives an absent segments key", async () => {
+		await scaffold();
+		await runInit();
+
+		const page = await read("src/app/(payload)/admin/[[...segments]]/page.tsx");
+		// Anchored on the declaration that follows, so the inner `}` of the
+		// if-block cannot terminate the capture early.
+		const body = page.match(
+			/const normalizeParams = async \([^)]*\) => \{\n([\s\S]*?)\n\s*\}\n\n\s*export const generateMetadata/,
+		);
+		assert(body?.[1], "could not locate the emitted normalizeParams body");
+
+		// Rebuild the emitted function without its type annotation and run it.
+		// ASI covers the un-semicoloned statements the template emits.
+		const normalizeParams = new Function(
+			"params",
+			`return (async () => {\n${body[1]}\n})()`,
+		) as (params: unknown) => Promise<Record<string, unknown>>;
+
+		// Next.js shape: no segments key at all. This threw before the fix.
+		await expect(normalizeParams({})).resolves.toEqual({});
+
+		// vinext shape: empty array means the dashboard root, so the key is dropped.
+		await expect(normalizeParams({ segments: [] })).resolves.toEqual({});
+
+		// A real route must keep its segments untouched.
+		await expect(
+			normalizeParams({ segments: ["collections", "users"] }),
+		).resolves.toEqual({ segments: ["collections", "users"] });
 	});
 });
 

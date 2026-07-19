@@ -1,13 +1,29 @@
 /**
- * E2E test: Admin UI with Playwright (SQLite).
+ * E2E test: Payload admin UI with Playwright (SQLite).
  *
- * Scaffolds a real Payload project, starts the dev server, then
- * uses Playwright to test actual admin workflows:
- *   1. Create first user (registration)
- *   2. Navigate the admin dashboard
- *   3. Create a document via the admin UI
- *   4. Verify the document appears in the collection list
- *   5. No hydration errors or uncaught exceptions throughout
+ * Scaffolds a real Payload project, starts the dev server, then drives the
+ * admin panel the way an administrator does — entering at the site root and
+ * clicking through:
+ *   1. First run: create the initial admin user, land on the dashboard
+ *   2. Sign in and find that account in the Users collection
+ *   3. Sign out and sign back in
+ * Every journey also proves the page rendered without a Vite error overlay
+ * and without hydration / NEXT_REDIRECT runtime errors.
+ *
+ * ── Deviations from agent-standards/engineering/playwright.md ──
+ *
+ * The standard assumes the `@playwright/test` runner. This suite runs under
+ * vitest (the runner owns the scaffold + dev-server lifecycle), so two of its
+ * APIs are unavailable and are replaced with the closest equivalent:
+ *
+ *   - `test.step()`      → the local `step()` helper below. Same purpose:
+ *                          name the arrange/act/assert phases so a failure
+ *                          says which phase broke. Never `console.log`.
+ *   - `expect(locator)`  → `locator.waitFor()` via `visible()` / `gone()`.
+ *                          These are Playwright's own auto-waiting, retrying
+ *                          primitives — vitest's `expect` has no web-first
+ *                          locator assertions, and a non-retrying
+ *                          `expect(await x.isVisible())` is banned.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -16,6 +32,7 @@ import {
 	chromium,
 	type Browser,
 	type BrowserContext,
+	type Locator,
 	type Page,
 } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -30,10 +47,54 @@ const PLUGIN_ROOT = join(import.meta.dirname, "..");
 const TEST_DIR = join(import.meta.dirname, ".test-project-admin");
 const helpers = createProjectHelpers(TEST_DIR);
 
-const TEST_EMAIL = "admin@test.local";
-const TEST_PASSWORD = "Test-password-123!";
+type Credentials = { email: string; password: string };
 
-const consoleErrors: string[] = [];
+/**
+ * Name a phase of a test so a failure reports which phase broke.
+ *
+ * Stand-in for `test.step()`, which only exists in the `@playwright/test`
+ * runner. See the deviations note at the top of this file.
+ */
+async function step<T>(name: string, body: () => Promise<T>): Promise<T> {
+	try {
+		return await body();
+	} catch (error) {
+		throw new Error(`step "${name}" failed`, { cause: error });
+	}
+}
+
+/** Web-first: retries until the element is visible, fails the test otherwise. */
+function visible(locator: Locator) {
+	return locator.waitFor({ state: "visible" });
+}
+
+/** Web-first: retries until the element is absent or hidden. */
+function gone(locator: Locator) {
+	return locator.waitFor({ state: "hidden" });
+}
+
+/**
+ * Fail the journey if the browser reported a hydration mismatch or an
+ * uncaught NEXT_REDIRECT — the two failure modes this plugin exists to
+ * prevent. The offending messages go in the assertion message so a failure
+ * is reproducible without re-running.
+ */
+function assertNoRuntimeErrors(runtimeErrors: readonly string[]) {
+	const hydration = runtimeErrors.filter((message) =>
+		/[Hh]ydration|mismatch/i.test(message),
+	);
+	expect(hydration, `hydration errors: ${JSON.stringify(hydration)}`).toEqual(
+		[],
+	);
+
+	const redirects = runtimeErrors.filter((message) =>
+		message.includes("NEXT_REDIRECT"),
+	);
+	expect(
+		redirects,
+		`uncaught NEXT_REDIRECT errors: ${JSON.stringify(redirects)}`,
+	).toEqual([]);
+}
 
 async function scaffoldAdminProject() {
 	await helpers.cleanup();
@@ -79,8 +140,104 @@ async function scaffoldAdminProject() {
 describe("e2e: admin ui", () => {
 	let server: Awaited<ReturnType<typeof startDevServer>>;
 	let browser: Browser;
-	let context: BrowserContext;
-	let page: Page;
+
+	/**
+	 * The initial admin, created lazily on first use.
+	 *
+	 * Payload's "create first user" screen is a property of an empty database,
+	 * not of a test: it can be exercised exactly once per scaffold. Memoising
+	 * it here means whichever test runs first performs the real registration
+	 * journey and the rest sign in — so every test below is runnable on its
+	 * own, in any subset, without depending on another test having run.
+	 */
+	let initialAdmin: Promise<Credentials> | undefined;
+
+	/**
+	 * A fresh browser context per journey: its own cookies, its own storage,
+	 * its own collected runtime errors. Nothing is shared between tests but
+	 * the (immutable) dev server and browser binary.
+	 */
+	async function newSession() {
+		const context = await browser.newContext({
+			baseURL: `http://localhost:${server.port}`,
+			ignoreHTTPSErrors: true,
+		});
+		const runtimeErrors: string[] = [];
+		context.on("page", (opened) => {
+			opened.on("console", (message) => {
+				if (message.type() === "error") {
+					runtimeErrors.push(message.text());
+				}
+			});
+			opened.on("pageerror", (error) => {
+				runtimeErrors.push(error.message);
+			});
+		});
+		return { context, runtimeErrors };
+	}
+
+	/**
+	 * Enter the app the way an administrator does: open the site, click
+	 * through to the admin panel. The template's link is `target="_blank"`,
+	 * so the panel genuinely opens in a new tab — that tab is what we drive.
+	 */
+	async function openAdminPanel(context: BrowserContext): Promise<Page> {
+		const home = await context.newPage();
+		await home.goto("/");
+
+		const adminTab = context.waitForEvent("page");
+		await home.getByRole("link", { name: "Go to admin panel" }).click();
+		return adminTab;
+	}
+
+	/** Sign in through the login form, the way an admin does. */
+	async function signIn(page: Page, credentials: Credentials) {
+		await page.getByLabel("Email").fill(credentials.email);
+		await page.getByLabel("Password").fill(credentials.password);
+		await page.getByRole("button", { name: "Login" }).click();
+	}
+
+	/**
+	 * Register the very first admin through the create-first-user screen.
+	 *
+	 * Deliberately a full journey with its own assertions rather than a silent
+	 * fixture: it is the body of the first test, factored out only so the
+	 * later tests can trigger it when they are run in isolation.
+	 */
+	async function createInitialAdmin(): Promise<Credentials> {
+		const credentials: Credentials = {
+			email: `qa-${crypto.randomUUID()}@example.test`,
+			password: `Qa-${crypto.randomUUID()}!`,
+		};
+
+		const { context, runtimeErrors } = await newSession();
+		const admin = await openAdminPanel(context);
+
+		// The first request to /admin compiles the whole admin route on
+		// demand (~20s). It stays inside Playwright's default budget; if it
+		// stops doing so that is a regression, not a timeout to raise.
+		await admin.getByLabel("Email").fill(credentials.email);
+		await admin.getByLabel("New Password").fill(credentials.password);
+		await admin.getByLabel("Confirm Password").fill(credentials.password);
+		await admin.getByRole("button", { name: "Create" }).click();
+
+		// Terminal: the sign-out control only exists for an authenticated
+		// admin, so its presence is the dashboard rendering *and* the
+		// registration succeeding.
+		await visible(admin.getByRole("link", { name: /log ?out/i }));
+		// `vite-error-overlay` is Vite's own dev-tooling custom element, not
+		// product markup — there is no role or testid to reach it by.
+		await gone(admin.locator("vite-error-overlay"));
+		assertNoRuntimeErrors(runtimeErrors);
+
+		await context.close();
+		return credentials;
+	}
+
+	function initialAdminCredentials() {
+		initialAdmin ??= createInitialAdmin();
+		return initialAdmin;
+	}
 
 	beforeAll(async () => {
 		await scaffoldAdminProject();
@@ -88,19 +245,7 @@ describe("e2e: admin ui", () => {
 		await helpers.npx(["payload", "generate:importmap"]);
 
 		server = await startDevServer(TEST_DIR, helpers);
-
 		browser = await chromium.launch({ headless: true });
-		context = await browser.newContext({ ignoreHTTPSErrors: true });
-		page = await context.newPage();
-
-		page.on("console", (msg) => {
-			if (msg.type() === "error") {
-				consoleErrors.push(msg.text());
-			}
-		});
-		page.on("pageerror", (err) => {
-			consoleErrors.push(err.message);
-		});
 	});
 
 	afterAll(async () => {
@@ -108,81 +253,69 @@ describe("e2e: admin ui", () => {
 		await server?.kill();
 	});
 
-	it("redirects to create-first-user", async () => {
-		// Slowest step in the suite (~20s): the first request to /admin pays
-		// for on-demand compilation of the whole admin route. Everything after
-		// it lands in ~1.5s. Still inside Playwright's 30s default.
-		await page.goto(`http://localhost:${server.port}/admin`, {
-			waitUntil: "networkidle",
+	it("a first-time visitor registers the initial admin and reaches the dashboard", async () => {
+		await step(
+			"register the first admin from the site's admin link",
+			async () => {
+				await initialAdminCredentials();
+			},
+		);
+	});
+
+	it("an admin can sign in and find their account in the users collection", async () => {
+		const credentials = await step("ensure an admin account exists", () =>
+			initialAdminCredentials(),
+		);
+
+		const { context, runtimeErrors } = await newSession();
+
+		await step("sign in from the site's admin link", async () => {
+			const admin = await openAdminPanel(context);
+			await signIn(admin, credentials);
+
+			// No page-identity assertion — the nav link click below cannot
+			// resolve unless the dashboard rendered for a signed-in admin.
+			await admin.getByRole("link", { name: "Users", exact: true }).click();
+
+			// Terminal: the admin came to see their own account listed.
+			await visible(
+				admin.getByRole("row").filter({ hasText: credentials.email }),
+			);
+			await gone(admin.locator("vite-error-overlay"));
 		});
 
-		await page.waitForURL("**/create-first-user");
-		expect(page.url()).toContain("create-first-user");
+		await step("the session produced no runtime errors", async () => {
+			assertNoRuntimeErrors(runtimeErrors);
+			await context.close();
+		});
 	});
 
-	it("creates first user via registration form", async () => {
-		// Should already be on create-first-user from previous test
-		await page.fill('input[name="email"]', TEST_EMAIL);
-		await page.fill('input[name="password"]', TEST_PASSWORD);
-		await page.fill('input[name="confirm-password"]', TEST_PASSWORD);
-		await page.click('button[type="submit"]');
-
-		await page.waitForURL("**/admin");
-		expect(page.url()).toMatch(/\/admin\/?$/);
-	});
-
-	it("dashboard loads without Vite error overlay", async () => {
-		// Inherits `page` from the previous test, which left it on /admin —
-		// this asserts the overlay only, and never navigates itself.
-		const hasOverlay = await page.evaluate(
-			() => !!document.querySelector("vite-error-overlay"),
+	it("an admin who signs out can sign back in", async () => {
+		const credentials = await step("ensure an admin account exists", () =>
+			initialAdminCredentials(),
 		);
-		expect(hasOverlay).toBe(false);
-	});
 
-	it("navigates to users collection", async () => {
-		await page.goto(`http://localhost:${server.port}/admin/collections/users`, {
-			waitUntil: "networkidle",
+		const { context, runtimeErrors } = await newSession();
+
+		await step("sign in, sign out, sign back in", async () => {
+			const admin = await openAdminPanel(context);
+			await signIn(admin, credentials);
+
+			await admin.getByRole("link", { name: /log ?out/i }).click();
+
+			// No assertion that we left — filling the login form below cannot
+			// happen unless sign-out landed the admin back on the login page.
+			await signIn(admin, credentials);
+
+			// Terminal: the sign-out control is back, so the second sign-in
+			// produced an authenticated dashboard.
+			await visible(admin.getByRole("link", { name: /log ?out/i }));
+			await gone(admin.locator("vite-error-overlay"));
 		});
 
-		const pageContent = await page.textContent("body");
-		expect(pageContent).toContain(TEST_EMAIL);
-	});
-
-	it("can log out and log back in", async () => {
-		// Navigate to the logout route. Use waitUntil "commit" rather than
-		// "networkidle": logout immediately redirects to /login, and vinext's
-		// code-split chunk requests on that transition keep the network busy,
-		// so "networkidle" (500ms quiet) frequently never settles within the
-		// timeout. The real assertion is the waitForURL below.
-		await page.goto(`http://localhost:${server.port}/admin/logout`, {
-			waitUntil: "commit",
+		await step("the session produced no runtime errors", async () => {
+			assertNoRuntimeErrors(runtimeErrors);
+			await context.close();
 		});
-
-		await page.waitForURL("**/login**");
-
-		await page.fill('input[name="email"]', TEST_EMAIL);
-		await page.fill('input[name="password"]', TEST_PASSWORD);
-		await page.click('button[type="submit"]');
-
-		await page.waitForURL("**/admin");
-		expect(page.url()).toMatch(/\/admin\/?$/);
-	});
-
-	it("no hydration errors throughout test run", () => {
-		const hydrationErrors = consoleErrors.filter((e) =>
-			/[Hh]ydration|mismatch/i.test(e),
-		);
-		if (hydrationErrors.length > 0) {
-			console.log("Hydration errors found:", hydrationErrors);
-		}
-		expect(hydrationErrors).toHaveLength(0);
-	});
-
-	it("no uncaught NEXT_REDIRECT errors", () => {
-		const redirectErrors = consoleErrors.filter((e) =>
-			e.includes("NEXT_REDIRECT"),
-		);
-		expect(redirectErrors).toHaveLength(0);
 	});
 });

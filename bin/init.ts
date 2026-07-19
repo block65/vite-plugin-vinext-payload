@@ -134,7 +134,9 @@ const PAGE_TSX = dedent`
   // so both frameworks land on the same route.
   const normalizeParams = async (params: Args['params']) => {
     const resolved = await params
-    if (resolved.segments.length === 0) {
+    // Array.isArray is the guard, not a style choice: Next.js omits the key
+    // entirely, so reading .length off it directly throws at request time.
+    if (Array.isArray(resolved.segments) && resolved.segments.length === 0) {
       const { segments, ...rest } = resolved
       return rest
     }

@@ -4,6 +4,7 @@ import {
 	CLIENT_OPTIMIZE_DEPS_EXCLUDE,
 	CLIENT_OPTIMIZE_DEPS_INCLUDE,
 	OPTIMIZE_DEPS_EXCLUDE,
+	RSC_OPTIMIZE_DEPS_INCLUDE,
 } from "./payload-packages.ts";
 
 export const optimizeDepsPatch = {
@@ -12,9 +13,10 @@ export const optimizeDepsPatch = {
 	targets: [
 		"file-type, blake3-wasm, wrangler, @payloadcms/next — excluded from optimizeDeps in every environment",
 		"payload > ajv, payload > bson-objectid, react/compiler-runtime, @payloadcms/ui and discovered next/* aliases — force-included in client optimizeDeps",
+		"payload, @payloadcms/richtext-lexical and @payloadcms/ui transitive deps — force-included in rsc optimizeDeps",
 	],
 	reason:
-		"these packages break during esbuild/Rolldown pre-bundling for structural reasons webpack handles natively, and excluded parents lose CJS auto-discovery for their children; per-entry notes live in payload-packages.ts",
+		"these packages break during esbuild/Rolldown pre-bundling for structural reasons webpack handles natively, excluded parents lose CJS auto-discovery for their children, and deps left to runtime discovery each force a serial re-optimize + module-runner reload on cold start; per-entry notes live in payload-packages.ts",
 	upstreamIssues: ["https://github.com/cloudflare/vinext/issues/538"],
 	removeWhen:
 		"per-entry conditions in payload-packages.ts — the lists shrink entry by entry",
@@ -49,6 +51,13 @@ export interface PayloadOptimizeDepsOptions {
 	 * `"client"`. Pass `false` for workers with no browser environment.
 	 */
 	clientEnv?: string | false;
+
+	/**
+	 * Name of the RSC environment that should additionally receive
+	 * `RSC_OPTIMIZE_DEPS_INCLUDE`. Defaults to `"rsc"`. Pass `false` for
+	 * workers with no RSC pipeline.
+	 */
+	rscEnv?: string | false;
 }
 
 /**
@@ -98,6 +107,7 @@ export function payloadOptimizeDeps(
 		extraExcludes = [],
 		envs: explicitEnvs,
 		clientEnv = "client",
+		rscEnv = "rsc",
 	} = normalized;
 	const excludes = [...OPTIMIZE_DEPS_EXCLUDE, ...extraExcludes];
 
@@ -123,14 +133,16 @@ export function payloadOptimizeDeps(
 				...(name === clientEnv ? CLIENT_OPTIMIZE_DEPS_EXCLUDE : []),
 			];
 
+			const envIncludes = [
+				...(name === clientEnv ? CLIENT_OPTIMIZE_DEPS_INCLUDE : []),
+				...(name === rscEnv ? RSC_OPTIMIZE_DEPS_INCLUDE : []),
+			];
+
 			return {
 				optimizeDeps: {
 					exclude: [...(existingOptimizeDeps.exclude ?? []), ...envExcludes],
-					...(name === clientEnv && {
-						include: [
-							...(existingOptimizeDeps.include ?? []),
-							...CLIENT_OPTIMIZE_DEPS_INCLUDE,
-						],
+					...(envIncludes.length > 0 && {
+						include: [...(existingOptimizeDeps.include ?? []), ...envIncludes],
 					}),
 				},
 			} satisfies EnvironmentOptions;

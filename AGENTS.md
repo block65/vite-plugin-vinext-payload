@@ -25,9 +25,9 @@ This repo uses **pnpm** (see `packageManager` in `package.json`). Never `npm ins
 
 Publishing is CI-only, via `.github/workflows/deploy.yml` on `release: published`:
 
-1. Move the Unreleased section of `CHANGELOG.md` under a new version heading; bump `version` in `package.json` (edit directly, not `npm version`) — one commit.
+1. Cut the Unreleased entries from `CHANGELOG.md` (leave the empty section); bump `version` in `package.json` (edit directly, not `npm version`) — one commit.
 2. `git push origin main`
-3. `gh release create vX.Y.Z --notes "..."` — the notes are that changelog section verbatim; the tag comes from the release.
+3. `gh release create vX.Y.Z --notes "..."` — the notes are the cut entries verbatim; the tag comes from the release. Released history lives in GitHub releases, not the file.
 
 Never `npm publish` by hand — CI publishes with provenance. CI gates `lint`, `fmt:check` and `typecheck` only, so run the tests locally first.
 

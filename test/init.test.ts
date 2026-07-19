@@ -17,14 +17,17 @@ const { read, write, exists, cleanup } = createProjectHelpers(TEST_DIR);
 
 async function runInit(dryRun = false) {
 	const logs: string[] = [];
-	const origLog = console.log;
-	console.log = (...args: unknown[]) => logs.push(args.join(" "));
+	const origWrite = process.stdout.write.bind(process.stdout);
+	process.stdout.write = (chunk: string | Uint8Array) => {
+		logs.push(chunk.toString());
+		return true;
+	};
 	try {
 		await init({ cwd: TEST_DIR, dryRun });
 	} finally {
-		console.log = origLog;
+		process.stdout.write = origWrite;
 	}
-	return logs.join("\n");
+	return logs.join("");
 }
 
 function scaffold(viteConfig?: string, options?: { wranglerConfig?: boolean }) {
@@ -58,7 +61,9 @@ describe("init: file transforms", () => {
 
 		const page = await read("src/app/(payload)/admin/[[...segments]]/page.tsx");
 		expect(page).toContain("normalizeParams");
-		expect(page).toContain("segments: undefined");
+		// The empty-segments case drops the key rather than casting undefined.
+		expect(page).toContain("const { segments, ...rest } = resolved");
+		expect(page).not.toContain("as unknown as");
 	});
 });
 

@@ -1,5 +1,7 @@
 {
 	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	// agent-standards is a git submodule — someone else's repo. Not ours to lint.
+	"ignorePatterns": ["agent-standards"],
 	"plugins": ["react", "typescript"],
 	"categories": {
 		"correctness": "error",
@@ -29,16 +31,5 @@
 				"css": "always"
 			}
 		]
-	},
-	"overrides": [
-		{
-			// e2e helpers poll a booting dev server: each iteration must observe
-			// the previous attempt's result before retrying, so the awaits are
-			// sequential by design. Promise.all would defeat the retry.
-			"files": ["test/**"],
-			"rules": {
-				"no-await-in-loop": "off"
-			}
-		}
-	]
+	}
 }

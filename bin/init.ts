@@ -13,9 +13,10 @@
 import { readFile, writeFile, access } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, Lang } from "@ast-grep/napi";
-import type { PackageJson } from "type-fest";
 import { dedent } from "../src/dedent.ts";
+import { iife, isTruthy } from "../src/iife.ts";
 import { tryRead } from "../src/try-read.ts";
+import { print } from "./output.ts";
 
 interface InitOptions {
 	cwd: string;
@@ -28,6 +29,18 @@ interface Result {
 	reason?: string;
 }
 
+/** The parts of a package.json this command reads. */
+interface Manifest {
+	dependencies?: Record<string, string>;
+	devDependencies?: Record<string, string>;
+}
+
+/** Result of one edit to a file's text, plus what to report about it. */
+interface Edit {
+	content: string;
+	result?: Result;
+}
+
 const PAYLOAD_DIR = "src/app/(payload)";
 const ADMIN_DIR = `${PAYLOAD_DIR}/admin/[[...segments]]`;
 
@@ -37,7 +50,7 @@ const WRANGLER_CONFIG_FILES = [
 	"wrangler.toml",
 ];
 
-async function findWranglerConfig(cwd: string): Promise<string | null> {
+async function findWranglerConfig(cwd: string): Promise<string | undefined> {
 	const exists = await Promise.all(
 		WRANGLER_CONFIG_FILES.map((file) =>
 			access(join(cwd, file)).then(
@@ -47,11 +60,11 @@ async function findWranglerConfig(cwd: string): Promise<string | null> {
 		),
 	);
 	const matchIndex = exists.findIndex(Boolean);
-	return matchIndex === -1 ? null : WRANGLER_CONFIG_FILES[matchIndex];
+	return matchIndex === -1 ? undefined : WRANGLER_CONFIG_FILES[matchIndex];
 }
 
 async function hasWranglerConfig(cwd: string): Promise<boolean> {
-	return (await findWranglerConfig(cwd)) !== null;
+	return (await findWranglerConfig(cwd)) !== undefined;
 }
 
 const SERVER_FUNCTION_TS = dedent`
@@ -116,37 +129,76 @@ const PAGE_TSX = dedent`
     }>
   }
 
-  // vinext passes segments=[] for /admin; Next.js passes undefined.
-  // Normalize so Payload's dashboard route resolves correctly.
-  const normalizeParams = async (params: Args['params']): Promise<Args['params']> => {
+  // vinext passes segments=[] for /admin, Next.js omits the key entirely, and
+  // Payload only resolves the dashboard route when it is absent. Drop the key
+  // so both frameworks land on the same route.
+  const normalizeParams = async (params: Args['params']) => {
     const resolved = await params
-    if (Array.isArray(resolved.segments) && resolved.segments.length === 0) {
-      return Promise.resolve({ ...resolved, segments: undefined as unknown as string[] })
+    if (resolved.segments.length === 0) {
+      const { segments, ...rest } = resolved
+      return rest
     }
-    return params
+    return resolved
   }
 
   export const generateMetadata = ({ params, searchParams }: Args): Promise<Metadata> =>
     generatePageMetadata({ config, params: normalizeParams(params), searchParams })
 
   const Page = ({ params, searchParams }: Args) =>
+    // RootPage types segments as required; its runtime reads a missing value as
+    // the dashboard root. Remove this directive if Payload widens the type.
+    // @ts-expect-error segments is optional at runtime
     RootPage({ config, params: normalizeParams(params), searchParams, importMap })
 
   export default Page
 `;
 
-async function readManifest(cwd: string): Promise<PackageJson> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** A dependency map: every value must be a version string. */
+function isDependencyMap(value: unknown): value is Record<string, string> {
+	return (
+		isRecord(value) &&
+		Object.values(value).every((version) => typeof version === "string")
+	);
+}
+
+function isManifest(value: unknown): value is Manifest {
+	return (
+		isRecord(value) &&
+		(value.dependencies === undefined || isDependencyMap(value.dependencies)) &&
+		(value.devDependencies === undefined ||
+			isDependencyMap(value.devDependencies))
+	);
+}
+
+function parseJson(content: string, file: string): unknown {
+	try {
+		return JSON.parse(content);
+	} catch {
+		throw new InitError(`${file} contains invalid JSON.`);
+	}
+}
+
+async function readManifest(cwd: string): Promise<Manifest> {
 	const content = await tryRead(join(cwd, "package.json"));
 	if (!content) {
 		throw new InitError(
 			"No package.json found. Run this from your project root.",
 		);
 	}
-	try {
-		return JSON.parse(content) as PackageJson;
-	} catch {
-		throw new InitError("package.json contains invalid JSON.");
+
+	const parsed = parseJson(content, "package.json");
+
+	if (!isManifest(parsed)) {
+		throw new InitError(
+			"package.json is not a valid manifest (dependencies must map names to version strings).",
+		);
 	}
+
+	return parsed;
 }
 
 async function maybeWrite(path: string, content: string, dryRun: boolean) {
@@ -182,6 +234,167 @@ async function applyTemplate(
 	return { file: relativePath, action: "modified" };
 }
 
+/**
+ * $$$ARGS: vinext 1.0's own init writes `vinext({ cache: ... })`; a bare
+ * `vinext()` pattern only matches the zero-argument call.
+ */
+function findVinextCall(source: string) {
+	return parse(Lang.TypeScript, source)
+		.root()
+		.find({
+			rule: {
+				pattern: "vinext($$$ARGS)",
+				inside: { kind: "array", stopBy: "end" },
+			},
+		});
+}
+
+function findLastImport(source: string) {
+	return parse(Lang.TypeScript, source)
+		.root()
+		.findAll({ rule: { kind: "import_statement" } })
+		.at(-1);
+}
+
+function addPayloadPlugin(source: string): Edit {
+	if (source.includes("payloadPlugin")) {
+		return {
+			content: source,
+			result: {
+				file: "vite.config.ts",
+				action: "skipped",
+				reason: "payloadPlugin already present",
+			},
+		};
+	}
+
+	const vinextCall = findVinextCall(source);
+	if (!vinextCall) {
+		return {
+			content: source,
+			result: {
+				file: "vite.config.ts",
+				action: "skipped",
+				reason: "could not find vinext() in plugins array",
+			},
+		};
+	}
+
+	const lastImport = findLastImport(source);
+	if (!lastImport) {
+		return {
+			content: source,
+			result: {
+				file: "vite.config.ts",
+				action: "skipped",
+				reason: "no import statements found",
+			},
+		};
+	}
+
+	const pluginsArray = vinextCall.parent();
+	if (!pluginsArray || pluginsArray.kind() !== "array") {
+		return {
+			content: source,
+			result: {
+				file: "vite.config.ts",
+				action: "skipped",
+				reason: "vinext() not inside an array",
+			},
+		};
+	}
+
+	const lastImportEnd = lastImport.range().end.index;
+	const quote = lastImport.text().includes("'") ? "'" : '"';
+	const importLine = `\nimport { payloadPlugin } from ${quote}vite-plugin-vinext-payload${quote};`;
+
+	const vinextRange = vinextCall.range();
+	const vinextLineStart = source.lastIndexOf("\n", vinextRange.start.index) + 1;
+	const isSingleLine = !pluginsArray.text().includes("\n");
+
+	const { pluginInsert, insertAt } = isSingleLine
+		? {
+				pluginInsert: ", payloadPlugin()",
+				insertAt:
+					source[vinextRange.end.index] === ","
+						? vinextRange.end.index + 1
+						: vinextRange.end.index,
+			}
+		: iife(() => {
+				const indent = source.slice(vinextLineStart, vinextRange.start.index);
+				const hasComma = source[vinextRange.end.index] === ",";
+				return {
+					pluginInsert:
+						(hasComma ? "" : ",") + "\n" + indent + "payloadPlugin(),",
+					insertAt: hasComma
+						? vinextRange.end.index + 1
+						: vinextRange.end.index,
+				};
+			});
+
+	return {
+		content:
+			source.slice(0, lastImportEnd) +
+			importLine +
+			source.slice(lastImportEnd, insertAt) +
+			pluginInsert +
+			source.slice(insertAt),
+		result: { file: "vite.config.ts", action: "modified" },
+	};
+}
+
+function addCloudflarePlugin(source: string): Edit {
+	const vinextCall = findVinextCall(source);
+	const lastImport = findLastImport(source);
+
+	if (!vinextCall || !lastImport) {
+		return { content: source };
+	}
+
+	const quote = lastImport.text().includes("'") ? "'" : '"';
+	const importLine = `\nimport { cloudflare } from ${quote}@cloudflare/vite-plugin${quote};`;
+	const lastImportEnd = lastImport.range().end.index;
+
+	const pluginsArray = vinextCall.parent();
+	const vinextRange = vinextCall.range();
+	const isSingleLine = pluginsArray && !pluginsArray.text().includes("\n");
+
+	const cfPlugin =
+		'cloudflare({ viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] } })';
+
+	const vinextLineStart = source.lastIndexOf("\n", vinextRange.start.index) + 1;
+
+	// cloudflare() goes before vinext()
+	const { cfInsert, cfInsertAt } = iife(() => {
+		if (isSingleLine) {
+			return {
+				cfInsert: `${cfPlugin}, `,
+				cfInsertAt: vinextRange.start.index,
+			};
+		}
+
+		const indent = source.slice(vinextLineStart, vinextRange.start.index);
+		return {
+			cfInsert: `${indent}${cfPlugin},\n`,
+			cfInsertAt: vinextLineStart,
+		};
+	});
+
+	return {
+		content:
+			source.slice(0, lastImportEnd) +
+			importLine +
+			source.slice(lastImportEnd, cfInsertAt) +
+			cfInsert +
+			source.slice(cfInsertAt),
+		result: {
+			file: "vite.config.ts",
+			action: "modified",
+			reason: "added cloudflare() for wrangler config",
+		},
+	};
+}
+
 async function addPayloadPluginToViteConfig({
 	cwd,
 	dryRun,
@@ -193,166 +406,18 @@ async function addPayloadPluginToViteConfig({
 		return [{ file: "vite.config.ts", action: "skipped", reason: "not found" }];
 	}
 
-	const results: Result[] = [];
-	let updated = content;
+	const pluginEdit = addPayloadPlugin(content);
 
-	// --- Add payloadPlugin() ---
-	if (!updated.includes("payloadPlugin")) {
-		const root = parse(Lang.TypeScript, updated).root();
-
-		// $$$ARGS: vinext 1.0's own init writes `vinext({ cache: ... })`;
-		// a bare `vinext()` pattern only matches the zero-argument call.
-		const vinextCall = root.find({
-			rule: {
-				pattern: "vinext($$$ARGS)",
-				inside: { kind: "array", stopBy: "end" },
-			},
-		});
-
-		if (!vinextCall) {
-			results.push({
-				file: "vite.config.ts",
-				action: "skipped",
-				reason: "could not find vinext() in plugins array",
-			});
-		} else {
-			const allImports = root.findAll({ rule: { kind: "import_statement" } });
-			const lastImport = allImports.at(-1);
-
-			if (!lastImport) {
-				results.push({
-					file: "vite.config.ts",
-					action: "skipped",
-					reason: "no import statements found",
-				});
-			} else {
-				const pluginsArray = vinextCall.parent();
-				if (!pluginsArray || pluginsArray.kind() !== "array") {
-					results.push({
-						file: "vite.config.ts",
-						action: "skipped",
-						reason: "vinext() not inside an array",
-					});
-				} else {
-					const lastImportEnd = lastImport.range().end.index;
-					const quote = lastImport.text().includes("'") ? "'" : '"';
-					const importLine = `\nimport { payloadPlugin } from ${quote}vite-plugin-vinext-payload${quote};`;
-
-					const vinextRange = vinextCall.range();
-					const vinextLineStart =
-						updated.lastIndexOf("\n", vinextRange.start.index) + 1;
-					const isSingleLine = !pluginsArray.text().includes("\n");
-
-					const { pluginInsert, insertAt } = isSingleLine
-						? {
-								pluginInsert: ", payloadPlugin()",
-								insertAt:
-									updated[vinextRange.end.index] === ","
-										? vinextRange.end.index + 1
-										: vinextRange.end.index,
-							}
-						: (() => {
-								const indent = updated.slice(
-									vinextLineStart,
-									vinextRange.start.index,
-								);
-								const hasComma = updated[vinextRange.end.index] === ",";
-								return {
-									pluginInsert:
-										(hasComma ? "" : ",") + "\n" + indent + "payloadPlugin(),",
-									insertAt: hasComma
-										? vinextRange.end.index + 1
-										: vinextRange.end.index,
-								};
-							})();
-
-					updated =
-						updated.slice(0, lastImportEnd) +
-						importLine +
-						updated.slice(lastImportEnd, insertAt) +
-						pluginInsert +
-						updated.slice(insertAt);
-
-					results.push({ file: "vite.config.ts", action: "modified" });
-				}
-			}
-		}
-	} else {
-		results.push({
-			file: "vite.config.ts",
-			action: "skipped",
-			reason: "payloadPlugin already present",
-		});
-	}
-
-	// --- Add cloudflare() for projects with wrangler config ---
 	const needsCloudflare =
 		(await hasWranglerConfig(cwd)) &&
-		!updated.includes("@cloudflare/vite-plugin");
+		!pluginEdit.content.includes("@cloudflare/vite-plugin");
 
-	if (needsCloudflare) {
-		const root = parse(Lang.TypeScript, updated).root();
+	const cloudflareEdit = needsCloudflare
+		? addCloudflarePlugin(pluginEdit.content)
+		: undefined;
 
-		const vinextCall = root.find({
-			rule: {
-				pattern: "vinext($$$ARGS)",
-				inside: { kind: "array", stopBy: "end" },
-			},
-		});
-
-		if (vinextCall) {
-			const allImports = root.findAll({
-				rule: { kind: "import_statement" },
-			});
-			const lastImport = allImports.at(-1);
-
-			if (lastImport) {
-				const quote = lastImport.text().includes("'") ? "'" : '"';
-				const importLine = `\nimport { cloudflare } from ${quote}@cloudflare/vite-plugin${quote};`;
-				const lastImportEnd = lastImport.range().end.index;
-
-				const pluginsArray = vinextCall.parent();
-				const vinextRange = vinextCall.range();
-				const isSingleLine =
-					pluginsArray && !pluginsArray.text().includes("\n");
-
-				const cfPlugin =
-					'cloudflare({ viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] } })';
-
-				// Insert cloudflare() before vinext()
-				const vinextLineStart =
-					updated.lastIndexOf("\n", vinextRange.start.index) + 1;
-
-				let cfInsert: string;
-				let cfInsertAt: number;
-
-				if (isSingleLine) {
-					cfInsert = `${cfPlugin}, `;
-					cfInsertAt = vinextRange.start.index;
-				} else {
-					const indent = updated.slice(
-						vinextLineStart,
-						vinextRange.start.index,
-					);
-					cfInsert = `${indent}${cfPlugin},\n`;
-					cfInsertAt = vinextLineStart;
-				}
-
-				updated =
-					updated.slice(0, lastImportEnd) +
-					importLine +
-					updated.slice(lastImportEnd, cfInsertAt) +
-					cfInsert +
-					updated.slice(cfInsertAt);
-
-				results.push({
-					file: "vite.config.ts",
-					action: "modified",
-					reason: "added cloudflare() for wrangler config",
-				});
-			}
-		}
-	}
+	const updated = cloudflareEdit?.content ?? pluginEdit.content;
+	const results = [pluginEdit.result, cloudflareEdit?.result].filter(isTruthy);
 
 	if (results.some((r) => r.action !== "skipped")) {
 		await maybeWrite(file, updated, dryRun);
@@ -443,6 +508,36 @@ async function fixServerFunction({
 	];
 }
 
+/** Rewrites package.json in place, preserving every field it does not touch. */
+async function addCloudflareDependency(
+	cwd: string,
+	dryRun: boolean,
+): Promise<Result> {
+	const pkgPath = join(cwd, "package.json");
+	const parsed = parseJson(await readFile(pkgPath, "utf8"), "package.json");
+
+	if (!isRecord(parsed)) {
+		throw new InitError("package.json is not a JSON object.");
+	}
+
+	const devDependencies = {
+		...(isRecord(parsed.devDependencies) ? parsed.devDependencies : undefined),
+		"@cloudflare/vite-plugin": "^1",
+	};
+
+	await maybeWrite(
+		pkgPath,
+		JSON.stringify({ ...parsed, devDependencies }, null, 2) + "\n",
+		dryRun,
+	);
+
+	return {
+		file: "package.json",
+		action: "modified",
+		reason: "added @cloudflare/vite-plugin",
+	};
+}
+
 export class InitError extends Error {}
 
 export async function init(options: InitOptions) {
@@ -464,10 +559,10 @@ export async function init(options: InitOptions) {
 	}
 
 	if (dryRun) {
-		console.log("Dry run — no files will be modified.\n");
+		print("Dry run — no files will be modified.\n");
 	}
 
-	console.log("Initializing vite-plugin-vinext-payload...\n");
+	print("Initializing vite-plugin-vinext-payload...\n");
 
 	// Safe to run concurrently: each transform owns a different file
 	// (vite.config, the server function module, admin page.tsx).
@@ -483,46 +578,44 @@ export async function init(options: InitOptions) {
 		),
 	]);
 
-	const results = [...viteConfigResults, ...serverFnResults, pageResult];
-
 	const addedCloudflare = viteConfigResults.some((r) =>
 		r.reason?.includes("cloudflare"),
 	);
-	if (addedCloudflare && !allDeps["@cloudflare/vite-plugin"]) {
-		const pkgPath = join(cwd, "package.json");
-		const pkgContent = JSON.parse(await readFile(pkgPath, "utf8"));
-		pkgContent.devDependencies = {
-			...pkgContent.devDependencies,
-			"@cloudflare/vite-plugin": "^1",
-		};
-		await maybeWrite(
-			pkgPath,
-			JSON.stringify(pkgContent, null, 2) + "\n",
-			dryRun,
-		);
-		results.push({
-			file: "package.json",
-			action: "modified",
-			reason: "added @cloudflare/vite-plugin",
-		});
-	}
+
+	const cloudflareDepResult =
+		addedCloudflare && !allDeps["@cloudflare/vite-plugin"]
+			? await addCloudflareDependency(cwd, dryRun)
+			: undefined;
+
+	const results = [
+		...viteConfigResults,
+		...serverFnResults,
+		pageResult,
+		cloudflareDepResult,
+	].filter(isTruthy);
 
 	for (const r of results) {
-		const icon =
-			r.action === "created" ? "+" : r.action === "modified" ? "~" : "-";
+		const icon = iife(() => {
+			switch (r.action) {
+				case "created":
+					return "+";
+				case "modified":
+					return "~";
+				default:
+					return "-";
+			}
+		});
 		const msg = r.reason ? ` (${r.reason})` : "";
-		console.log(`  ${icon} ${r.file}${msg}`);
+		print(`  ${icon} ${r.file}${msg}`);
 	}
 
 	const changed = results.filter((r) => r.action !== "skipped");
-	console.log(
-		`\n${changed.length} file(s) ${dryRun ? "would be " : ""}changed.`,
-	);
+	print(`\n${changed.length} file(s) ${dryRun ? "would be " : ""}changed.`);
 
 	if (changed.length > 0 && !dryRun) {
-		console.log("\nNext steps:");
-		console.log("  1. npm install");
-		console.log("  2. npx payload generate:importmap");
-		console.log("  3. npm run dev");
+		print("\nNext steps:");
+		print("  1. npm install");
+		print("  2. npx payload generate:importmap");
+		print("  3. npm run dev");
 	}
 }

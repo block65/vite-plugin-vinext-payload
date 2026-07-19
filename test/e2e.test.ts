@@ -14,6 +14,7 @@ import {
 	runBuild,
 	startDevServer,
 	VERSIONS,
+	waitForServerReady,
 } from "./helpers.ts";
 
 const PLUGIN_ROOT = join(import.meta.dirname, "..");
@@ -69,6 +70,7 @@ describe("e2e: sqlite", () => {
 		await helpers.npx(["payload", "generate:importmap"]);
 
 		server = await startDevServer(TEST_DIR, helpers);
+		await waitForServerReady(server.proc, server.port);
 	});
 
 	afterAll(async () => {
@@ -80,12 +82,11 @@ describe("e2e: sqlite", () => {
 	});
 
 	it("admin redirects to create-first-user", async () => {
-		const res = await assertStatus(server.port, "/admin", [200, 302, 307]);
-		// If redirect, it should point to the login/create-first-user page
-		if (res.status >= 300) {
-			const location = res.headers.get("location") ?? "";
-			expect(location).toMatch(/create-first-user|login/);
-		}
+		// 200 would mean the admin rendered without redirecting, which this
+		// project (no user yet) must never do — so only the redirect is valid.
+		const res = await assertStatus(server.port, "/admin", [302, 307]);
+		const location = res.headers.get("location") ?? "";
+		expect(location).toMatch(/create-first-user|login/);
 	});
 
 	it("admin API responds", async () => {

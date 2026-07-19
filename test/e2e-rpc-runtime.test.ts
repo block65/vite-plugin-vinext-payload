@@ -18,7 +18,11 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createProjectHelpers, waitForOutput } from "./helpers.ts";
+import {
+	createProjectHelpers,
+	waitForOutput,
+	waitForServerReady,
+} from "./helpers.ts";
 
 const PLUGIN_ROOT = join(import.meta.dirname, "..");
 const TEST_DIR = join(import.meta.dirname, ".test-rpc-runtime");
@@ -195,20 +199,14 @@ describe("e2e: rpc worker runtime under miniflare", () => {
 	});
 
 	it("worker module-inits and serves a fetch without createTask error", async () => {
-		// Retry briefly — miniflare's worker may still be warming after
-		// vite reports "Local: ...".
-		let res: Response | undefined;
-		let body = "";
-		for (let i = 0; i < 5; i++) {
-			res = await fetch(`http://127.0.0.1:${server.port}/`);
-			body = await res.text();
-			if (res.status === 200 && body.startsWith("ok:")) {
-				break;
-			}
-			await new Promise((r) => setTimeout(r, 1000));
-		}
+		// miniflare's worker is still warming when vite prints "Local: ..." —
+		// wait for the server's own readiness signal, not a fixed delay.
+		await waitForServerReady(server.proc, server.port);
 
-		expect(res?.status).toBe(200);
+		const res = await fetch(`http://127.0.0.1:${server.port}/`);
+		const body = await res.text();
+
+		expect(res.status).toBe(200);
 		expect(body).toMatch(/^ok:\d+\.\d+\.\d+:\d+$/); // ok:19.x.x:<html-length>
 		expect(body).not.toMatch(/createTask/i);
 		expect(body).not.toMatch(/not implemented/i);

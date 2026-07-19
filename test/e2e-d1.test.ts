@@ -18,6 +18,7 @@ import {
 	assertStatus,
 	runBuild,
 	startDevServer,
+	waitForServerReady,
 } from "./helpers.ts";
 
 const PLUGIN_ROOT = join(import.meta.dirname, "..");
@@ -57,20 +58,21 @@ describe("e2e: cloudflare d1", () => {
 		await helpers.npx(["payload", "generate:importmap"]);
 
 		server = await startDevServer(TEST_DIR, helpers);
+		await waitForServerReady(server.proc, server.port, "/admin");
 	});
 
 	afterAll(async () => {
 		await server?.kill();
 	});
 
+	// `assertStatus` throws on anything outside the allow-list, so it carries
+	// the assertion — a further `toBeLessThan(500)` could never fail.
 	it("admin UI loads in workerd without crashing", async () => {
-		const res = await assertStatus(server.port, "/admin", [200, 302, 307]);
-		expect(res.status).toBeLessThan(500);
+		await assertStatus(server.port, "/admin", [200, 302, 307]);
 	});
 
 	it("admin API responds in workerd", async () => {
-		const res = await assertStatus(server.port, "/api/users", [200, 401, 403]);
-		expect(res.status).toBeLessThan(500);
+		await assertStatus(server.port, "/api/users", [200, 401, 403]);
 	});
 
 	it("init added payloadPlugin to the vite config", async () => {

@@ -27,7 +27,7 @@ These crash under Vite's module runner:
 - );
 ```
 
-If you reference `isCLI` elsewhere (e.g. `isCLI || !isProduction`), replace with `!isProduction`.
+Where `isCLI` is referenced elsewhere (e.g. `isCLI || !isProduction`), replace it with `!isProduction`.
 
 ### Step 3: Replace the cloudflare context helper
 

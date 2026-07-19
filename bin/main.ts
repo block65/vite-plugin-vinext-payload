@@ -3,6 +3,7 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { dedent } from "../src/dedent.ts";
+import { print, printError } from "./output.ts";
 
 const { values, positionals } = parseArgs({
 	allowPositionals: true,
@@ -16,7 +17,7 @@ const { values, positionals } = parseArgs({
 const [command] = positionals;
 
 if (values.help || !command) {
-	console.log(
+	print(
 		dedent`
 			Usage: vite-plugin-vinext-payload <command> [options]
 
@@ -36,12 +37,13 @@ if (values.help || !command) {
 		await init({ cwd: resolve(values.cwd), dryRun: values["dry-run"] });
 	} catch (e) {
 		if (e instanceof InitError) {
-			console.error(e.message);
+			printError(e.message);
 			process.exitCode = 1;
+		} else {
+			throw e;
 		}
-		throw e;
 	}
 } else {
-	console.error(`Unknown command: ${command}`);
+	printError(`Unknown command: ${command}`);
 	process.exitCode = 1;
 }

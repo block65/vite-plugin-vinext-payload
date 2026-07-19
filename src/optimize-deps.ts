@@ -1,4 +1,4 @@
-import type { Alias, EnvironmentOptions, Plugin, ResolvedConfig } from "vite";
+import type { EnvironmentOptions, Plugin, ResolvedConfig } from "vite";
 import {
 	CLIENT_OPTIMIZE_DEPS_EXCLUDE,
 	CLIENT_OPTIMIZE_DEPS_INCLUDE,
@@ -16,29 +16,15 @@ import {
 function getNextAliasSpecifiers(
 	aliases: ResolvedConfig["resolve"]["alias"],
 ): string[] {
-	const specifiers: string[] = [];
+	// RegExp `find` entries have no single specifier to pre-bundle, so only
+	// string finds contribute.
+	const candidates = Array.isArray(aliases)
+		? aliases.map((entry) => entry.find)
+		: Object.keys(aliases);
 
-	if (Array.isArray(aliases)) {
-		for (const entry of aliases as Alias[]) {
-			const find =
-				typeof entry.find === "string"
-					? entry.find
-					: entry.find instanceof RegExp
-						? null
-						: null;
-			if (find?.startsWith("next/")) {
-				specifiers.push(find);
-			}
-		}
-	} else if (aliases && typeof aliases === "object") {
-		for (const key of Object.keys(aliases as Record<string, unknown>)) {
-			if (key.startsWith("next/")) {
-				specifiers.push(key);
-			}
-		}
-	}
-
-	return specifiers;
+	return candidates.flatMap((find) =>
+		typeof find === "string" && find.startsWith("next/") ? [find] : [],
+	);
 }
 
 export interface PayloadOptimizeDepsOptions {
@@ -150,13 +136,12 @@ export function payloadOptimizeDeps(
 			}
 
 			const include = resolvedClient.optimizeDeps.include ?? [];
-			resolvedClient.optimizeDeps.include = include;
 			const existing = new Set(include);
-			for (const specifier of nextAliases) {
-				if (!existing.has(specifier)) {
-					include.push(specifier);
-				}
-			}
+
+			resolvedClient.optimizeDeps.include = [
+				...include,
+				...nextAliases.filter((specifier) => !existing.has(specifier)),
+			];
 		},
 	};
 }

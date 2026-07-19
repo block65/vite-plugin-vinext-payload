@@ -1,6 +1,9 @@
 {
 	"compilerOptions": {
-		"target": "ES2022",
+		// Matches tsconfig.json — see the note there. This is the config that
+		// emits to dist/, so it governs what consumers on Node >=24 receive.
+		"target": "ES2024",
+		"lib": ["ES2024"],
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
 		"strict": true,

@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Plugin } from "vite";
 import { dedent } from "./dedent.ts";
+import { iife } from "./iife.ts";
 import { tryRead } from "./try-read.ts";
 
 const TARGET_RELATIVE = join(
@@ -73,20 +74,24 @@ export function payloadHtmlDiffExportFix(): Plugin {
 		async buildStart() {
 			const target = join(root, TARGET_RELATIVE);
 			const content = await tryRead(target);
-			if (!content) {
+			if (content === undefined) {
 				return;
 			}
-			let updated = content;
-			if (PATCHED_REGION_RE.test(updated)) {
-				updated = updated.replace(PATCHED_REGION_RE, PATCHED_EXPORT.trimEnd());
-			} else if (updated.includes(ORIGINAL_EXPORT)) {
-				updated = updated.replace(ORIGINAL_EXPORT, PATCHED_EXPORT.trimEnd());
-			} else {
+
+			const updated = iife(() => {
+				if (PATCHED_REGION_RE.test(content)) {
+					return content.replace(PATCHED_REGION_RE, PATCHED_EXPORT.trimEnd());
+				}
+				if (content.includes(ORIGINAL_EXPORT)) {
+					return content.replace(ORIGINAL_EXPORT, PATCHED_EXPORT.trimEnd());
+				}
+				return undefined;
+			});
+
+			if (updated === undefined || updated === content) {
 				return;
 			}
-			if (updated === content) {
-				return;
-			}
+
 			await writeFile(target, updated);
 		},
 	};

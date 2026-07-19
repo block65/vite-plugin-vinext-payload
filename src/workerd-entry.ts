@@ -28,8 +28,8 @@ import type { Plugin } from "vite";
  * Verified against a real cloudflare-target build on vinext 1.0.0-beta.2
  * (2026-07-18): the rewrite applies, and the default there is already a
  * `{ fetch }` object (`var Zl = Yl ?? {}`), so the wrapper passes it
- * through untouched — this plugin is defensive on that version, not
- * load-bearing.
+ * through untouched. On that version the plugin is purely defensive —
+ * removing it would not break the build.
  *
  * References:
  *   - https://github.com/cloudflare/workers-sdk/issues/10213

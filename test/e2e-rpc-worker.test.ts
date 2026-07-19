@@ -12,9 +12,9 @@
  * targets the plugin/cloudflare-plugin wiring, not Payload itself.
  */
 
-import { mkdir } from "node:fs/promises";
+import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, assert, beforeAll, describe, expect, it } from "vitest";
 import { createProjectHelpers } from "./helpers.ts";
 
 const PLUGIN_ROOT = join(import.meta.dirname, "..");
@@ -154,14 +154,10 @@ describe("e2e: rpc worker", () => {
 	}, 120_000);
 
 	it("emits a bundle containing the WorkerEntrypoint export", async () => {
-		const files = await import("node:fs/promises").then((m) =>
-			m.readdir(join(TEST_DIR, "dist", WORKER_ENV)),
-		);
+		const files = await readdir(join(TEST_DIR, "dist", WORKER_ENV));
 		const jsEntry = files.find((f: string) => f.endsWith(".js"));
-		expect(jsEntry).toBeDefined();
-		const bundled = await helpers.read(
-			join("dist", WORKER_ENV, jsEntry as string),
-		);
+		assert(jsEntry, "expected a .js entry in the worker bundle");
+		const bundled = await helpers.read(join("dist", WORKER_ENV, jsEntry));
 		expect(bundled).toContain("CmsEntrypoint");
 	});
 
@@ -174,13 +170,10 @@ describe("e2e: rpc worker", () => {
 		// that the stub won; here we additionally assert the real package's
 		// parser dependency is absent, ruling out the "build passed but real
 		// impl leaked in" case.
-		const files = await import("node:fs/promises").then((m) =>
-			m.readdir(join(TEST_DIR, "dist", WORKER_ENV)),
-		);
+		const files = await readdir(join(TEST_DIR, "dist", WORKER_ENV));
 		const jsEntry = files.find((f: string) => f.endsWith(".js"));
-		const bundled = await helpers.read(
-			join("dist", WORKER_ENV, jsEntry as string),
-		);
+		assert(jsEntry, "expected a .js entry in the worker bundle");
+		const bundled = await helpers.read(join("dist", WORKER_ENV, jsEntry));
 		// `fileTypeFromFile` is only available in our stub — the real
 		// `file-type/core.js` exposes the buffer/stream variants but NOT
 		// `fileTypeFromFile` (Node-condition only).

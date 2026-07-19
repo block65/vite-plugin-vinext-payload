@@ -4,7 +4,7 @@
 (304s), alongside `test:e2e` (SQLite, 4/4) and `test:e2e-admin` (7/7).
 
 Resolved against vinext `1.0.0-beta.2`, Vite `8.1.5`, rolldown `1.2.0`,
-Node `v26.3.1`, payload `3.82.1`.
+Node `v26.3.1`, payload `3.85.1`.
 
 ## What it was — two stacked causes
 
@@ -37,7 +37,7 @@ The fallback only ever _executes_ under plain Node (payload CLI), but the
 import must still _resolve_ in every Vite environment that processes the
 config. Bundling or optimizer-scanning `wrangler` pulls in its entire CLI —
 including `blake3-wasm`, whose `export * from './node.js'` Rolldown cannot
-resolve. In dev that killed dependency optimization
+resolve. In dev that broke dependency optimization
 (`[UNRESOLVED_IMPORT] Could not resolve './node.js'`); the same chain failed
 `vinext build` outright:
 

@@ -23,7 +23,12 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createProjectHelpers, VERSIONS, waitForOutput } from "./helpers.ts";
+import {
+	createProjectHelpers,
+	VERSIONS,
+	waitForOutput,
+	waitForServerReady,
+} from "./helpers.ts";
 
 const PLUGIN_ROOT = join(import.meta.dirname, "..");
 const TEST_DIR = join(import.meta.dirname, ".test-rpc-payload");
@@ -242,21 +247,12 @@ describe("e2e: payload + D1 adapter in RPC worker", () => {
 	});
 
 	it("payload initializes through the D1 adapter and reaches a real query", async () => {
-		// First request triggers on-demand dependency optimization of the
-		// whole payload graph — allow retries while the optimizer works.
-		let body = "";
-		for (let attempt = 0; attempt < 10; attempt++) {
-			try {
-				const res = await fetch(`http://localhost:${server.port}/`);
-				body = await res.text();
-				if (body.startsWith("ok:") || body.startsWith("payload-error:")) {
-					break;
-				}
-			} catch {
-				// server still warming
-			}
-			await new Promise((r) => setTimeout(r, 8000));
-		}
+		// The first request triggers on-demand optimization of the whole payload
+		// graph; wait for the optimizer to report done rather than sleeping.
+		await waitForServerReady(server.proc, server.port);
+
+		const res = await fetch(`http://localhost:${server.port}/`);
+		const body = await res.text();
 
 		// "ok:" — the find() succeeded (won't happen on an unmigrated DB).
 		// "payload-error:...Failed query" — payload fully initialized inside

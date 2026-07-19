@@ -3,3 +3,4 @@ dist/
 .wrangler/
 test/.test-project*/
 test/.mock-project/
+tsconfig.tsbuildinfo

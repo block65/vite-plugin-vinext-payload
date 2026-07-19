@@ -5,7 +5,7 @@
 
 ## This repo
 
-A Vite plugin that makes Payload CMS run under [vinext](https://github.com/vinextjs/vinext), including on Cloudflare Workers. It works by patching vinext and Payload internals at build time, so it is tightly coupled to exact upstream versions.
+A Vite plugin that makes Payload CMS run under [vinext](https://github.com/cloudflare/vinext), including on Cloudflare Workers. It works by patching vinext and Payload internals at build time, so it is tightly coupled to exact upstream versions.
 
 **The `vinext` peer dependency is pinned exactly** (`1.0.0-beta.2`, no `^` or `>=`). vinext is pre-1.0 in spirit — patch-level bumps move the internals this plugin patches. Never loosen the range.
 

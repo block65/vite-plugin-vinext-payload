@@ -42,6 +42,16 @@ export const childEnv: NodeJS.ProcessEnv = Object.fromEntries(
 	Object.entries(process.env).filter(([key]) => !key.startsWith("VITEST")),
 );
 
+/**
+ * Ceiling for a single readiness poll. A request that cold optimization holds
+ * open can outlive the entire readiness window — abandoning it keeps the gate
+ * polling instead of reducing it to one attempt.
+ */
+const READY_ATTEMPT_TIMEOUT_MS = 10_000;
+
+/** How much trailing server output a failed readiness gate reports. */
+const SERVER_OUTPUT_TAIL_CHARS = 2_000;
+
 export function createProjectHelpers(testDir: string) {
 	async function run(cmd: string, args: string[], cwd = testDir) {
 		const { stdout } = await execFile(cmd, args, {
@@ -253,43 +263,68 @@ export async function waitForServerReady(
 		exit = `process exited (code ${code}, signal ${signal})`;
 	});
 
+	// "HTTP 500" alone says nothing about a boot failure; the server's own
+	// output does. Keep the tail for the gate's failure messages.
+	proc.stdout?.setEncoding("utf8");
+	proc.stderr?.setEncoding("utf8");
+	let output = "";
+	const onData = (chunk: string) => {
+		output = (output + chunk).slice(-SERVER_OUTPUT_TAIL_CHARS);
+	};
+	proc.stdout?.on("data", onData);
+	proc.stderr?.on("data", onData);
+
+	const fail = (message: string) =>
+		new Error(
+			output.length > 0
+				? `${message}\nServer output tail:\n${output}`
+				: message,
+		);
+
 	const deadline = Date.now() + timeoutMs;
 	let last = "no response yet";
 
-	/* oxlint-disable no-await-in-loop -- each attempt must observe the result of
-	   the one before it; running them concurrently would hammer a starting
-	   server with requests it cannot answer and defeat the point of the gate. */
-	while (Date.now() < deadline) {
-		if (exit !== undefined) {
-			throw new Error(`Server died before becoming ready at ${path}: ${exit}`);
-		}
-
-		try {
-			const res = await fetch(`http://localhost:${port}${path}`, {
-				redirect: "manual",
-			});
-			// Drain the body so the socket closes rather than leaking into the
-			// next attempt.
-			await res.text();
-
-			if (ready(res.status)) {
-				return res.status;
+	try {
+		/* oxlint-disable no-await-in-loop -- each attempt must observe the result of
+		   the one before it; running them concurrently would hammer a starting
+		   server with requests it cannot answer and defeat the point of the gate. */
+		while (Date.now() < deadline) {
+			if (exit !== undefined) {
+				throw fail(`Server died before becoming ready at ${path}: ${exit}`);
 			}
 
-			last = `HTTP ${res.status}`;
-		} catch (error) {
-			// Expected while the runner restarts mid-flight: the connection is
-			// reset. Any other cause shows up in the timeout message below.
-			last = error instanceof Error ? error.message : String(error);
+			try {
+				const res = await fetch(`http://localhost:${port}${path}`, {
+					redirect: "manual",
+					signal: AbortSignal.timeout(READY_ATTEMPT_TIMEOUT_MS),
+				});
+				// Drain the body so the socket closes rather than leaking into the
+				// next attempt.
+				await res.text();
+
+				if (ready(res.status)) {
+					return res.status;
+				}
+
+				last = `HTTP ${res.status}`;
+			} catch (error) {
+				// Expected while the runner restarts mid-flight: the connection is
+				// reset, or a cold-optimization hang hits the attempt ceiling. Any
+				// other cause shows up in the timeout message below.
+				last = error instanceof Error ? error.message : String(error);
+			}
+
+			await new Promise((resolve) => setTimeout(resolve, 250));
 		}
+		/* oxlint-enable no-await-in-loop */
 
-		await new Promise((resolve) => setTimeout(resolve, 250));
+		throw fail(
+			`Server never became ready at ${path} within ${timeoutMs}ms (last: ${last})`,
+		);
+	} finally {
+		proc.stdout?.off("data", onData);
+		proc.stderr?.off("data", onData);
 	}
-	/* oxlint-enable no-await-in-loop */
-
-	throw new Error(
-		`Server never became ready at ${path} within ${timeoutMs}ms (last: ${last})`,
-	);
 }
 
 /**

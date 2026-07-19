@@ -3,7 +3,19 @@ import { join } from "node:path";
 import type { Plugin } from "vite";
 import { dedent } from "./dedent.ts";
 import { iife } from "./iife.ts";
+import { recordPatch, type PatchDeclaration } from "./patch-manifest.ts";
 import { tryRead } from "./try-read.ts";
+
+export const htmlDiffExportFixPatch = {
+	id: "html-diff-export-fix",
+	kind: "file-write",
+	targets: ["@payloadcms/ui — dist/exports/rsc/index.js, rewritten on disk"],
+	reason:
+		"on vinext/Rolldown builds the HTMLDiff re-export resolves to a module missing getHTMLDiffComponents, so the version-diff view crashes; the export is replaced with a local implementation",
+	removeWhen:
+		"@payloadcms/ui's rsc export of getHTMLDiffComponents resolves under Rolldown",
+	moduleId: /@payloadcms[\\/]ui[\\/]dist[\\/]exports[\\/]rsc[\\/]index\.js$/,
+} satisfies PatchDeclaration;
 
 const TARGET_RELATIVE = join(
 	"node_modules",
@@ -88,7 +100,15 @@ export function payloadHtmlDiffExportFix(): Plugin {
 				return undefined;
 			});
 
-			if (updated === undefined || updated === content) {
+			if (updated === undefined) {
+				return;
+			}
+
+			// Applied even when nothing is written: a previous build already
+			// left the file in the patched state.
+			recordPatch(htmlDiffExportFixPatch, target);
+
+			if (updated === content) {
 				return;
 			}
 

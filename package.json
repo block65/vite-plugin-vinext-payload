@@ -42,6 +42,7 @@
 	},
 	"scripts": {
 		"build": "tsc --project tsconfig.build.json",
+		"docs:patches": "node scripts/patch-table.ts && oxfmt --write README.md",
 		"fmt": "oxfmt --write .",
 		"fmt:check": "oxfmt --check .",
 		"lint": "oxlint .",

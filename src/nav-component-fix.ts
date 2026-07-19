@@ -1,6 +1,25 @@
 import { parse, Lang } from "@ast-grep/napi";
 import type { Plugin } from "vite";
 import { isTruthy } from "./iife.ts";
+import {
+	patchApplies,
+	recordPatch,
+	type PatchDeclaration,
+} from "./patch-manifest.ts";
+
+export const navComponentFixPatch = {
+	id: "nav-component-fix",
+	kind: "transform",
+	targets: [
+		"@payloadcms/next — Nav/index.client.js (DefaultNavClient)",
+		"@payloadcms/next — DocumentHeader Tabs TabLink.js (DocumentTabLink)",
+	],
+	reason:
+		"vinext's usePathname()/useParams() differ between SSR and client hydration, so these components render different element types and React 19 discards the server tree, dropping form state",
+	removeWhen:
+		"vinext's navigation hooks use React context like Next.js, or Payload removes the conditional element type rendering",
+	moduleId: /@payloadcms\/.*(?:Nav.*client|TabLink)/,
+} satisfies PatchDeclaration;
 
 /**
  * Fixes hydration mismatches in Payload components that render different
@@ -24,15 +43,12 @@ import { isTruthy } from "./iife.ts";
  *
  * Uses ast-grep for structural matching — resilient to whitespace,
  * comment, and formatting changes across Payload versions.
- *
- * Remove: when vinext's navigation hooks use React context like Next.js,
- * or Payload removes the conditional element type rendering.
  */
 export function payloadNavComponentFix(): Plugin {
 	return {
 		name: "vite-plugin-payload:nav-component-fix",
 		transform(code, id) {
-			if (!id.includes("@payloadcms")) {
+			if (!patchApplies(navComponentFixPatch, id)) {
 				return;
 			}
 
@@ -41,11 +57,19 @@ export function payloadNavComponentFix(): Plugin {
 				id.includes("client") &&
 				code.includes("pathname === href")
 			) {
-				return patchDefaultNavClient(code);
+				const result = patchDefaultNavClient(code);
+				if (result) {
+					recordPatch(navComponentFixPatch, id);
+				}
+				return result;
 			}
 
 			if (id.includes("TabLink") && code.includes("DocumentTabLink")) {
-				return patchDocumentTabLink(code);
+				const result = patchDocumentTabLink(code);
+				if (result) {
+					recordPatch(navComponentFixPatch, id);
+				}
+				return result;
 			}
 		},
 	};

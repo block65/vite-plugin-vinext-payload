@@ -15,19 +15,84 @@
 
 import type { Plugin } from "vite";
 import { cjsInterop } from "vite-plugin-cjs-interop";
-import { payloadCjsInteropDeps } from "./cjs-interop-deps.ts";
-import { payloadCjsTransform } from "./cjs-transform.ts";
-import { payloadCliStubs } from "./cli-stubs.ts";
-import { payloadHtmlDiffExportFix } from "./html-diff-export-fix.ts";
-import { payloadNavComponentFix } from "./nav-component-fix.ts";
-import { payloadOptimizeDeps } from "./optimize-deps.ts";
-import { payloadRscExportFix } from "./rsc-export-fix.ts";
-import { payloadRscRuntime } from "./rsc-runtime.ts";
-import { payloadServerActionFix } from "./server-action-fix.ts";
-import { payloadServerExternals } from "./server-externals.ts";
-import { payloadUseClientBarrel } from "./use-client-barrel.ts";
-import { payloadWorkerdCompat } from "./workerd-compat.ts";
-import { payloadWorkerdEntry } from "./workerd-entry.ts";
+import { cjsInteropPatch, payloadCjsInteropDeps } from "./cjs-interop-deps.ts";
+import { cjsTransformPatch, payloadCjsTransform } from "./cjs-transform.ts";
+import { cliStubsPatch, payloadCliStubs } from "./cli-stubs.ts";
+import {
+	htmlDiffExportFixPatch,
+	payloadHtmlDiffExportFix,
+} from "./html-diff-export-fix.ts";
+import {
+	navComponentFixPatch,
+	payloadNavComponentFix,
+} from "./nav-component-fix.ts";
+import { optimizeDepsPatch, payloadOptimizeDeps } from "./optimize-deps.ts";
+import { payloadPatchReport, type PatchDeclaration } from "./patch-manifest.ts";
+import { payloadRscExportFix, rscExportFixPatch } from "./rsc-export-fix.ts";
+import {
+	payloadRscRuntime,
+	rscSerializerThrowsPatch,
+	rscStubsPatch,
+} from "./rsc-runtime.ts";
+import {
+	payloadServerActionFix,
+	serverActionFixPatch,
+} from "./server-action-fix.ts";
+import {
+	payloadServerExternals,
+	serverExternalsPatch,
+} from "./server-externals.ts";
+import {
+	payloadUseClientBarrel,
+	useClientBarrelPatch,
+} from "./use-client-barrel.ts";
+import {
+	consoleCreateTaskPatch,
+	importMetaUrlGuardPatch,
+	nodeBuiltinShimsPatch,
+	payloadWorkerdCompat,
+	undiciFeatureDetectPatch,
+} from "./workerd-compat.ts";
+import { payloadWorkerdEntry, workerdEntryPatch } from "./workerd-entry.ts";
+
+/**
+ * Every rewrite this plugin makes to third-party code, as data. The README's
+ * patch table is generated from this (`pnpm run docs:patches`), and the
+ * plugins announce and verify it at build time — see patch-manifest.ts.
+ */
+export const PATCH_MANIFEST: readonly PatchDeclaration[] = [
+	useClientBarrelPatch,
+	serverExternalsPatch,
+	consoleCreateTaskPatch,
+	undiciFeatureDetectPatch,
+	importMetaUrlGuardPatch,
+	nodeBuiltinShimsPatch,
+	workerdEntryPatch,
+	htmlDiffExportFixPatch,
+	optimizeDepsPatch,
+	cjsTransformPatch,
+	cliStubsPatch,
+	navComponentFixPatch,
+	rscExportFixPatch,
+	rscStubsPatch,
+	rscSerializerThrowsPatch,
+	serverActionFixPatch,
+	cjsInteropPatch,
+];
+
+/** The subset of `PATCH_MANIFEST` composed by `vinextPayloadWorker`. */
+const WORKER_PATCH_MANIFEST: readonly PatchDeclaration[] = [
+	serverExternalsPatch,
+	consoleCreateTaskPatch,
+	undiciFeatureDetectPatch,
+	importMetaUrlGuardPatch,
+	nodeBuiltinShimsPatch,
+	optimizeDepsPatch,
+	rscStubsPatch,
+	cjsTransformPatch,
+	cliStubsPatch,
+	cjsInteropPatch,
+];
 
 export interface VinextPayloadOptions {
 	/**
@@ -58,6 +123,7 @@ export function vinextPayload(options: VinextPayloadOptions = {}): Plugin[] {
 	} = options;
 
 	return [
+		payloadPatchReport(PATCH_MANIFEST),
 		payloadUseClientBarrel(),
 		payloadServerExternals({ ssrExternal }),
 		payloadWorkerdCompat(),
@@ -136,6 +202,7 @@ export function vinextPayloadWorker(
 	const serverEnvs = [env];
 
 	return [
+		payloadPatchReport(WORKER_PATCH_MANIFEST),
 		payloadServerExternals({ ssrExternal, serverEnvs }),
 		// Enable the createTask polyfill against the worker's own env:
 		// payload.config.ts commonly imports admin components at module

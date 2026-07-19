@@ -1,4 +1,24 @@
 import type { Plugin } from "vite";
+import { recordPatch, type PatchDeclaration } from "./patch-manifest.ts";
+
+export const workerdEntryPatch = {
+	id: "workerd-entry",
+	kind: "transform",
+	targets: ["vinext — the built rsc entry chunk's default export"],
+	reason:
+		"on Vite 8/Rolldown the { fetch } wrapper of vinext's app-router-entry can be inlined to a bare function, and a Worker whose default export has no fetch method fails to start",
+	upstreamIssues: [
+		"https://github.com/cloudflare/workers-sdk/issues/10213",
+		"https://github.com/cloudflare/workers-sdk/pull/10544",
+		"https://github.com/rolldown/rolldown/issues/3500",
+		"https://github.com/rolldown/rolldown/issues/6449",
+	],
+	removeWhen:
+		"Rolldown enforces preserveEntrySignatures: 'strict' for this inlining case",
+	// Verified purely defensive on vinext 1.0.0-beta.2: the wrapper applies
+	// but passes the already-correct { fetch } object through untouched.
+	defensive: true,
+} satisfies PatchDeclaration;
 
 /**
  * Re-wraps the RSC entry chunk's default export in `{ fetch }` when
@@ -72,6 +92,8 @@ export function payloadWorkerdEntry(): Plugin {
 					.trim()
 					.split(/\s+as\s+/)[0];
 				specifiers[defaultIndex] = "__payload_worker_handler as default";
+
+				recordPatch(workerdEntryPatch, chunk.fileName);
 
 				chunk.code = chunk.code.replace(
 					exportMatch[0],

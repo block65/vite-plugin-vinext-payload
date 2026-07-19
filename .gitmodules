@@ -1,0 +1,3 @@
+[submodule "agent-standards"]
+	path = agent-standards
+	url = git@github.com:block65/agent-standards.git

@@ -40,6 +40,7 @@ import {
 	createProjectHelpers,
 	installVinextStack,
 	startDevServer,
+	waitForServerReady,
 	VERSIONS,
 } from "./helpers.ts";
 
@@ -190,6 +191,33 @@ describe("e2e: admin ui", () => {
 		return adminTab;
 	}
 
+	/**
+	 * Open the collections nav, the way an admin on a laptop does.
+	 *
+	 * Payload pins the nav open only above its large breakpoint; below it the
+	 * nav renders in the layout but the main content paints over it, so its
+	 * links are present and visible yet nothing can reach them. Every nav link
+	 * has to go through here. The button reports its own state in its label —
+	 * "Open Menu" only exists while the nav is closed — so this is a no-op on a
+	 * viewport wide enough to pin it.
+	 */
+	async function openNav(page: Page) {
+		// Wait for the toggler rather than probing for it: sign-in returns
+		// before the authenticated layout renders, so a presence check here
+		// finds nothing and silently concludes the nav is already open.
+		const toggle = page.getByRole("button", { name: /(open|close) menu/i });
+		await toggle.waitFor();
+
+		const label = (await toggle.getAttribute("aria-label")) ?? "";
+		if (/open menu/i.test(label)) {
+			await toggle.click();
+			// The button renames itself once the nav is open, which is the
+			// state change to wait on — clicking a link mid-animation is still
+			// a click into the content that covers it.
+			await visible(page.getByRole("button", { name: /close menu/i }));
+		}
+	}
+
 	/** Sign in through the login form, the way an admin does. */
 	async function signIn(page: Page, credentials: Credentials) {
 		await page.getByLabel("Email").fill(credentials.email);
@@ -245,6 +273,14 @@ describe("e2e: admin ui", () => {
 		await helpers.npx(["payload", "generate:importmap"]);
 
 		server = await startDevServer(TEST_DIR, helpers);
+
+		// Compile /admin before any browser action measures it. This is the
+		// only suite that skipped this, so its first Playwright call absorbed
+		// the whole cold build of the heaviest route in the repo inside a 30s
+		// per-action budget — passing or failing on which side of 30s the
+		// build happened to land.
+		await waitForServerReady(server.proc, server.port, "/admin");
+
 		browser = await chromium.launch({ headless: true });
 	});
 
@@ -275,6 +311,7 @@ describe("e2e: admin ui", () => {
 
 			// No page-identity assertion — the nav link click below cannot
 			// resolve unless the dashboard rendered for a signed-in admin.
+			await openNav(admin);
 			await admin.getByRole("link", { name: "Users", exact: true }).click();
 
 			// Terminal: the admin came to see their own account listed.
@@ -301,6 +338,7 @@ describe("e2e: admin ui", () => {
 			const admin = await openAdminPanel(context);
 			await signIn(admin, credentials);
 
+			await openNav(admin);
 			await admin.getByRole("link", { name: /log ?out/i }).click();
 
 			// No assertion that we left — filling the login form below cannot

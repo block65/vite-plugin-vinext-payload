@@ -5,3 +5,10 @@ allowBuilds:
 # is set explicitly: it silently becomes 0 on pnpm 10, and an inherited default
 # is invisible to anyone reading this file.
 minimumReleaseAge: 1440
+
+# Drop the wasm32-wasi fallback bindings (and the @emnapi runtime they pull
+# in). Every environment we run in — dev, CI, Workers builds — uses the native
+# napi bindings; the wasm fallback only exists for platforms without one.
+overrides:
+  "@rolldown/binding-wasm32-wasi": "-"
+  "@oxc-parser/binding-wasm32-wasi": "-"

@@ -123,16 +123,9 @@ async function scaffoldRpcWorker() {
 		"@cloudflare/vite-plugin@^1.37",
 		"@cloudflare/workers-types",
 		"file-type@^21",
-		"--legacy-peer-deps",
 		"--ignore-scripts",
 	]);
-	await helpers.npm([
-		"install",
-		"-D",
-		PLUGIN_ROOT,
-		"--legacy-peer-deps",
-		"--ignore-scripts",
-	]);
+	await helpers.npm(["install", "-D", PLUGIN_ROOT, "--ignore-scripts"]);
 }
 
 describe("e2e: rpc worker", () => {

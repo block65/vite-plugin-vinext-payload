@@ -12,6 +12,10 @@ export const VERSIONS = {
 	payload: "3.86.0",
 	vinext: "1.0.0-beta.2",
 	vite: "8.1.5",
+	// react-server-dom-webpack ships in lockstep with React and carries a caret
+	// peer on its exact minor, so these three move together or not at all.
+	react: "19.2.7",
+	vitePluginReact: "^6.0.1",
 } as const;
 
 const execFile = promisify(execFileCb);
@@ -432,27 +436,53 @@ export async function scaffoldMockProject(
 }
 
 /**
+ * Rewrite the degit'd template's React pins so the dependency graph resolves.
+ *
+ * The upstream Payload template targets Next.js, so it pins versions vinext
+ * cannot accept: `@vitejs/plugin-react@4` against vinext's `^5.1.4 || ^6.0.0`,
+ * and React one patch below what `react-server-dom-webpack` requires — vinext
+ * installs the RSC runtime, and each of its releases carries a caret peer on
+ * the matching React, so `19.2.6` does not satisfy `^19.2.7`.
+ *
+ * Aligning the pins here is what lets every install in this file run with a
+ * strict resolver. The alternative — telling the package manager to ignore
+ * peer conflicts — hides real breakage: it would equally happily install a
+ * React that genuinely does not work with the RSC runtime under test.
+ */
+async function alignTemplatePins(
+	helpers: ReturnType<typeof createProjectHelpers>,
+) {
+	const pkg = JSON.parse(await helpers.read("package.json"));
+
+	pkg.dependencies = {
+		...pkg.dependencies,
+		react: VERSIONS.react,
+		"react-dom": VERSIONS.react,
+		"react-server-dom-webpack": VERSIONS.react,
+	};
+
+	if (pkg.devDependencies?.["@vitejs/plugin-react"]) {
+		pkg.devDependencies["@vitejs/plugin-react"] = VERSIONS.vitePluginReact;
+	}
+
+	await helpers.write("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
+}
+
+/**
  * Install deps, run vinext init, install the plugin.
  *
  * --ignore-scripts: sharp has no prebuilt binary for Node 24 and
  *   falls back to a source build requiring node-addon-api.
- * --legacy-peer-deps: the Payload template pins @vitejs/plugin-react@4
- *   which conflicts with vinext's peer dep on @vitejs/plugin-react@5+.
- *   vinext init also runs npm install internally without --legacy-peer-deps
- *   which can fail — we pre-install vinext+vite first to avoid this.
  */
 export async function installVinextStack(
 	helpers: ReturnType<typeof createProjectHelpers>,
 	pluginRoot: string,
 	platform: "cloudflare" | "node" = "node",
 ) {
-	// `vinext init` runs `npm install` internally (for @vitejs/plugin-react,
-	// @vitejs/plugin-rsc, react-server-dom-webpack) without --legacy-peer-deps.
-	// vinext 0.1.3 pulls react-server-dom-webpack@19.2.7, which peer-pins
-	// react@19.2.7 exactly, while the Payload template pins react@19.2.6 →
-	// ERESOLVE. A project .npmrc makes that internal install lenient too,
-	// matching the --legacy-peer-deps we already pass to every other install.
-	await helpers.write(".npmrc", "legacy-peer-deps=true\n");
+	// Before any install: `vinext init` runs its own install internally, which
+	// takes no flags from us. The pins have to be correct in the manifest by
+	// the time it runs.
+	await alignTemplatePins(helpers);
 	await helpers.npm(["install", "--ignore-scripts"]);
 	await helpers.npm(["rebuild", "esbuild"]);
 	// Pin vinext to the exact version we peer-pin. Installing it unpinned
@@ -464,7 +494,6 @@ export async function installVinextStack(
 		"-D",
 		`vinext@${VERSIONS.vinext}`,
 		`vite@${VERSIONS.vite}`,
-		"--legacy-peer-deps",
 	]);
 	// vinext 1.0 requires an explicit deployment target; it used to infer one.
 	// The cloudflare target additionally demands cache/image choices. These are
@@ -483,14 +512,9 @@ export async function installVinextStack(
 	]);
 	const pkg = JSON.parse(await helpers.read("package.json"));
 	if (pkg.devDependencies?.["@cloudflare/vite-plugin"]) {
-		await helpers.npm([
-			"install",
-			"-D",
-			"@cloudflare/vite-plugin",
-			"--legacy-peer-deps",
-		]);
+		await helpers.npm(["install", "-D", "@cloudflare/vite-plugin"]);
 	}
-	await helpers.npm(["install", "-D", pluginRoot, "--legacy-peer-deps"]);
+	await helpers.npm(["install", "-D", pluginRoot]);
 }
 
 /**

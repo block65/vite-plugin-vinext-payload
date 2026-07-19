@@ -125,16 +125,9 @@ async function scaffold() {
 		"@cloudflare/workers-types",
 		"react@^19",
 		"react-dom@^19",
-		"--legacy-peer-deps",
 		"--ignore-scripts",
 	]);
-	await helpers.npm([
-		"install",
-		"-D",
-		PLUGIN_ROOT,
-		"--legacy-peer-deps",
-		"--ignore-scripts",
-	]);
+	await helpers.npm(["install", "-D", PLUGIN_ROOT, "--ignore-scripts"]);
 }
 
 interface DevServer {

@@ -54,7 +54,7 @@ describe("e2e: cloudflare d1", () => {
 	beforeAll(async () => {
 		await scaffoldD1Project();
 		await helpers.npx(["vite-plugin-vinext-payload", "init"]);
-		await helpers.npm(["install", "--legacy-peer-deps"]);
+		await helpers.npm(["install"]);
 		await helpers.npx(["payload", "generate:importmap"]);
 
 		server = await startDevServer(TEST_DIR, helpers);

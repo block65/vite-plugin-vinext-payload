@@ -3,17 +3,13 @@
 	"version": "0.2.0",
 	"description": "Vite plugin for running Payload CMS with vinext",
 	"keywords": [
-		"cjs-interop",
 		"cloudflare",
 		"cloudflare-workers",
 		"d1",
-		"migration",
 		"nextjs",
 		"payload",
 		"payload-cms",
 		"payloadcms",
-		"react-server-components",
-		"rsc",
 		"vinext",
 		"vite",
 		"vite-plugin"

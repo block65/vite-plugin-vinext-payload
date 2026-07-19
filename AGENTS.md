@@ -21,13 +21,14 @@ This repo uses **pnpm** (see `packageManager` in `package.json`). Never `npm ins
 
 ## Releasing
 
+**Changelog discipline:** every consumer-visible change (`feat:`, `fix:`, `perf:`) adds an entry to `CHANGELOG.md`'s Unreleased section _in the same commit_. Entries describe what a plugin user sees, not the diff — no dev-dep bumps, no internal refactors, and no fixes for regressions that never shipped in a release. If Unreleased is non-empty, prefer cutting a release when the work lands over letting changes accumulate — small releases keep "what changed" answerable.
+
 Publishing is CI-only, via `.github/workflows/deploy.yml` on `release: published`:
 
-```
-git push origin main
-gh release create vX.Y.Z --notes "..."
-```
+1. Move the Unreleased section of `CHANGELOG.md` under a new version heading; bump `version` in `package.json` (edit directly, not `npm version`) — one commit.
+2. `git push origin main`
+3. `gh release create vX.Y.Z --notes "..."` — the notes are that changelog section verbatim; the tag comes from the release.
 
-Never `npm publish` by hand — CI publishes with provenance. Versions are bumped by editing `package.json` directly (not `npm version`); the tag comes from the release. CI gates only `lint` and `fmt:check`, so run the tests locally first.
+Never `npm publish` by hand — CI publishes with provenance. CI gates `lint`, `fmt:check` and `typecheck` only, so run the tests locally first.
 
 On 0.x, breaking changes go in the **minor** position.

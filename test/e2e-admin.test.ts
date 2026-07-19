@@ -12,13 +12,13 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	chromium,
 	type Browser,
 	type BrowserContext,
 	type Page,
 } from "playwright";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	createProjectHelpers,
 	installVinextStack,
@@ -141,10 +141,9 @@ describe("e2e: admin ui", () => {
 	});
 
 	it("navigates to users collection", async () => {
-		await page.goto(
-			`http://localhost:${server.port}/admin/collections/users`,
-			{ waitUntil: "networkidle" },
-		);
+		await page.goto(`http://localhost:${server.port}/admin/collections/users`, {
+			waitUntil: "networkidle",
+		});
 
 		const pageContent = await page.textContent("body");
 		expect(pageContent).toContain(TEST_EMAIL);
@@ -171,8 +170,8 @@ describe("e2e: admin ui", () => {
 	});
 
 	it("no hydration errors throughout test run", () => {
-		const hydrationErrors = consoleErrors.filter(
-			(e) => /[Hh]ydration|mismatch/i.test(e),
+		const hydrationErrors = consoleErrors.filter((e) =>
+			/[Hh]ydration|mismatch/i.test(e),
 		);
 		if (hydrationErrors.length > 0) {
 			console.log("Hydration errors found:", hydrationErrors);
@@ -181,8 +180,8 @@ describe("e2e: admin ui", () => {
 	});
 
 	it("no uncaught NEXT_REDIRECT errors", () => {
-		const redirectErrors = consoleErrors.filter(
-			(e) => e.includes("NEXT_REDIRECT"),
+		const redirectErrors = consoleErrors.filter((e) =>
+			e.includes("NEXT_REDIRECT"),
 		);
 		expect(redirectErrors).toHaveLength(0);
 	});

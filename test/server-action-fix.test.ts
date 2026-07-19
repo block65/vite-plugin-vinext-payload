@@ -20,7 +20,8 @@ import type { Plugin } from "vite";
 import { describe, expect, it } from "vitest";
 import { payloadServerActionFix } from "../src/server-action-fix.ts";
 
-const CONTROLLER_PATH = "/node_modules/vinext/dist/server/app-browser-navigation-controller.js";
+const CONTROLLER_PATH =
+	"/node_modules/vinext/dist/server/app-browser-navigation-controller.js";
 
 function callTransform(plugin: Plugin, code: string, id: string) {
 	const hook = plugin.transform;
@@ -81,8 +82,10 @@ describe("payloadServerActionFix: navigation controller (vinext ≥0.0.47)", () 
 		const first = callTransform(plugin, CONTROLLER_FIXTURE, CONTROLLER_PATH) as
 			| { code: string }
 			| undefined;
-		expect(first).toBeTruthy();
-		const second = callTransform(plugin, first!.code, CONTROLLER_PATH);
+		if (!first) {
+			throw new Error("expected transform to return patched code");
+		}
+		const second = callTransform(plugin, first.code, CONTROLLER_PATH);
 		expect(second).toBeFalsy();
 	});
 

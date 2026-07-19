@@ -34,43 +34,43 @@ import { describe, expect, it } from "vitest";
  * a silent skip here would disable the entire point of this file.
  */
 function findVinextDist(): string {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (;;) {
-    const candidate = join(dir, "node_modules", "vinext", "dist");
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-    const parent = dirname(dir);
-    if (parent === dir) {
-      throw new Error(
-        "vinext is not installed — drift detectors need the real package. Run `pnpm install`.",
-      );
-    }
-    dir = parent;
-  }
+	let dir = dirname(fileURLToPath(import.meta.url));
+	for (;;) {
+		const candidate = join(dir, "node_modules", "vinext", "dist");
+		if (existsSync(candidate)) {
+			return candidate;
+		}
+		const parent = dirname(dir);
+		if (parent === dir) {
+			throw new Error(
+				"vinext is not installed — drift detectors need the real package. Run `pnpm install`.",
+			);
+		}
+		dir = parent;
+	}
 }
 
 const dist = findVinextDist();
 
 describe("vinext patch targets", () => {
-  const read = (relative: string): string =>
-    readFileSync(join(dist, relative), "utf-8");
+	const read = (relative: string): string =>
+		readFileSync(join(dist, relative), "utf-8");
 
-  it("browser entry imports the navigation shim by relative path", () => {
-    const code = read("server/app-browser-entry.js");
-    // Anchored: 1.0 added sibling modules (navigation-context-state.js,
-    // navigation-errors.js) that an unanchored match would hit first.
-    expect(code).toMatch(/["'][^"']*shims\/navigation\.js["']/);
-  });
+	it("browser entry imports the navigation shim by relative path", () => {
+		const code = read("server/app-browser-entry.js");
+		// Anchored: 1.0 added sibling modules (navigation-context-state.js,
+		// navigation-errors.js) that an unanchored match would hit first.
+		expect(code).toMatch(/["'][^"']*shims\/navigation\.js["']/);
+	});
 
-  it("server-action commit function and dispatch both still exist", () => {
-    const code = read("server/app-browser-navigation-controller.js");
-    expect(code).toContain("commitSameUrlNavigatePayload");
-    expect(code).toContain("dispatchSynchronousVisibleCommit");
-  });
+	it("server-action commit function and dispatch both still exist", () => {
+		const code = read("server/app-browser-navigation-controller.js");
+		expect(code).toContain("commitSameUrlNavigatePayload");
+		expect(code).toContain("dispatchSynchronousVisibleCommit");
+	});
 
-  it("RSC entry still default-exports an object with fetch", () => {
-    const code = read("server/app-router-entry.js");
-    expect(code).toMatch(/\{\s*async fetch\s*\(/);
-  });
+	it("RSC entry still default-exports an object with fetch", () => {
+		const code = read("server/app-router-entry.js");
+		expect(code).toMatch(/\{\s*async fetch\s*\(/);
+	});
 });

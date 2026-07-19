@@ -3,23 +3,9 @@
 
 	"useTabs": true,
 	"printWidth": 80,
-	"ignorePatterns": [
-		// build output
-		"**/dist",
-		"**/build",
-
-		// next.js
-		"**/.next",
-		"**/.open-next",
-
-		// wrangler generated
-		"**/.wrangler",
-		"**/worker-configuration.d.ts",
-
-		// payload cms generated
-		"**/payload-types.ts",
-		"**/importMap.js"
-	],
+	// No ignorePatterns: everything we want skipped (dist, .wrangler, and the
+	// generated files inside test/.test-project*) is already covered by
+	// .gitignore, which oxfmt honours.
 	"sortPackageJson": {
 		"sortScripts": true
 	},

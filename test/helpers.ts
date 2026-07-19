@@ -1,13 +1,17 @@
-import { execFile as execFileCb, spawn, type ChildProcess } from "node:child_process";
+import {
+	execFile as execFileCb,
+	spawn,
+	type ChildProcess,
+} from "node:child_process";
 import { readFile, writeFile, mkdir, rm, access } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 /** Known-good version pins for testing. */
 export const VERSIONS = {
-  payload: "3.86.0",
-  vinext: "1.0.0-beta.2",
-  vite: "8.1.5",
+	payload: "3.86.0",
+	vinext: "1.0.0-beta.2",
+	vite: "8.1.5",
 } as const;
 
 const execFile = promisify(execFileCb);
@@ -23,40 +27,43 @@ const execFile = promisify(execFileCb);
  * would outside the test runner.
  */
 export const childEnv: NodeJS.ProcessEnv = Object.fromEntries(
-  Object.entries(process.env).filter(([key]) => !key.startsWith("VITEST")),
+	Object.entries(process.env).filter(([key]) => !key.startsWith("VITEST")),
 );
 
 export function createProjectHelpers(testDir: string) {
-  async function run(cmd: string, args: string[], cwd = testDir) {
-    const { stdout } = await execFile(cmd, args, {
-      cwd,
-      timeout: 300_000,
-      env: childEnv,
-    });
-    return stdout;
-  }
+	async function run(cmd: string, args: string[], cwd = testDir) {
+		const { stdout } = await execFile(cmd, args, {
+			cwd,
+			timeout: 300_000,
+			env: childEnv,
+		});
+		return stdout;
+	}
 
-  return {
-    run,
-    npm: (args: string[]) => run("npm", args),
-    npx: (args: string[]) => run("npx", args),
-    read: (path: string) => readFile(join(testDir, path), "utf8"),
-    write: async (path: string, content: string) => {
-      await mkdir(dirname(join(testDir, path)), { recursive: true });
-      await writeFile(join(testDir, path), content);
-    },
-    exists: (path: string) =>
-      access(join(testDir, path))
-        .then(() => true)
-        .catch(() => false),
-    cleanup: () => rm(testDir, { recursive: true, force: true }).catch(() => {}),
-  };
+	return {
+		run,
+		npm: (args: string[]) => run("npm", args),
+		npx: (args: string[]) => run("npx", args),
+		read: (path: string) => readFile(join(testDir, path), "utf8"),
+		write: async (path: string, content: string) => {
+			await mkdir(dirname(join(testDir, path)), { recursive: true });
+			await writeFile(join(testDir, path), content);
+		},
+		exists: (path: string) =>
+			access(join(testDir, path))
+				.then(() => true)
+				.catch(() => false),
+		cleanup: () =>
+			rm(testDir, { recursive: true, force: true }).catch(() => {}),
+	};
 }
 
-export async function runBuild(helpers: ReturnType<typeof createProjectHelpers>) {
-  const pkg = JSON.parse(await helpers.read("package.json"));
-  const script = pkg.scripts["build:vinext"] ? "build:vinext" : "build";
-  return helpers.npm(["run", script]);
+export async function runBuild(
+	helpers: ReturnType<typeof createProjectHelpers>,
+) {
+	const pkg = JSON.parse(await helpers.read("package.json"));
+	const script = pkg.scripts["build:vinext"] ? "build:vinext" : "build";
+	return helpers.npm(["run", script]);
 }
 
 /**
@@ -66,131 +73,148 @@ export async function runBuild(helpers: ReturnType<typeof createProjectHelpers>)
  * is broken, not slow — do not raise the ceiling to make a boot fit under it.
  */
 export async function startDevServer(
-  testDir: string,
-  helpers: ReturnType<typeof createProjectHelpers>,
-  readyTimeoutMs = 60_000,
+	testDir: string,
+	helpers: ReturnType<typeof createProjectHelpers>,
+	readyTimeoutMs = 60_000,
 ) {
-  const pkg = JSON.parse(await helpers.read("package.json"));
-  const script = pkg.scripts["dev:vinext"] ? "dev:vinext" : "dev";
+	const pkg = JSON.parse(await helpers.read("package.json"));
+	const script = pkg.scripts["dev:vinext"] ? "dev:vinext" : "dev";
 
-  const proc = spawn("npm", ["run", script], {
-    cwd: testDir,
-    stdio: "pipe",
-    env: {
-      ...childEnv,
-      NODE_ENV: "development",
-      NO_COLOR: "1",
-      FORCE_COLOR: "0",
-      CI: process.env.CI || "1",
-    },
-  });
+	const proc = spawn("npm", ["run", script], {
+		cwd: testDir,
+		stdio: "pipe",
+		env: {
+			...childEnv,
+			NODE_ENV: "development",
+			NO_COLOR: "1",
+			FORCE_COLOR: "0",
+			CI: process.env.CI || "1",
+		},
+	});
 
-  let match: RegExpMatchArray;
-  try {
-    match = await waitForOutput(
-      proc,
-      /Local:\s+https?:\/\/[^:\s]+:(\d+)\/?/,
-      readyTimeoutMs,
-    );
-  } catch (error) {
-    proc.kill("SIGTERM");
-    await new Promise<void>((resolve) => {
-      const timeout = setTimeout(() => {
-        proc.kill("SIGKILL");
-        resolve();
-      }, 2000);
-      proc.on("exit", () => {
-        clearTimeout(timeout);
-        resolve();
-      });
-    });
-    throw error;
-  }
+	let match: RegExpMatchArray;
+	try {
+		match = await waitForOutput(
+			proc,
+			/Local:\s+https?:\/\/[^:\s]+:(\d+)\/?/,
+			readyTimeoutMs,
+		);
+	} catch (error) {
+		proc.kill("SIGTERM");
+		await new Promise<void>((resolve) => {
+			const timeout = setTimeout(() => {
+				proc.kill("SIGKILL");
+				resolve();
+			}, 2000);
+			proc.on("exit", () => {
+				clearTimeout(timeout);
+				resolve();
+			});
+		});
+		throw error;
+	}
 
-  const port = Number.parseInt(match[1], 10);
+	const port = Number.parseInt(match[1], 10);
 
-  const kill = async () => {
-    proc.kill("SIGTERM");
-    await new Promise<void>((resolve) => {
-      const timeout = setTimeout(() => {
-        proc.kill("SIGKILL");
-        resolve();
-      }, 2000);
-      proc.on("exit", () => {
-        clearTimeout(timeout);
-        resolve();
-      });
-    });
-  };
+	const kill = async () => {
+		proc.kill("SIGTERM");
+		await new Promise<void>((resolve) => {
+			const timeout = setTimeout(() => {
+				proc.kill("SIGKILL");
+				resolve();
+			}, 2000);
+			proc.on("exit", () => {
+				clearTimeout(timeout);
+				resolve();
+			});
+		});
+	};
 
-  return { port, kill, [Symbol.asyncDispose]: kill };
+	return { port, kill, [Symbol.asyncDispose]: kill };
 }
 
 /** Wait for a spawned process's stdout *or* stderr to match a pattern. */
-export function waitForOutput(proc: ChildProcess, pattern: RegExp, timeoutMs = 60_000) {
-  proc.stdout?.setEncoding("utf8");
-  proc.stderr?.setEncoding("utf8");
+export function waitForOutput(
+	proc: ChildProcess,
+	pattern: RegExp,
+	timeoutMs = 60_000,
+) {
+	proc.stdout?.setEncoding("utf8");
+	proc.stderr?.setEncoding("utf8");
 
-  return new Promise<RegExpMatchArray>((resolve, reject) => {
-    let output = "";
-    const timeout = setTimeout(() => {
-      cleanup();
-      reject(new Error(`Timed out waiting for ${pattern}. Output:\n${output.slice(-500)}`));
-    }, timeoutMs);
+	return new Promise<RegExpMatchArray>((resolve, reject) => {
+		let output = "";
+		const timeout = setTimeout(() => {
+			cleanup();
+			reject(
+				new Error(
+					`Timed out waiting for ${pattern}. Output:\n${output.slice(-500)}`,
+				),
+			);
+		}, timeoutMs);
 
-    const onData = (chunk: string) => {
-      output += chunk;
-      const match = output.match(pattern);
-      if (match) {
-        cleanup();
-        resolve(match);
-      }
-    };
+		const onData = (chunk: string) => {
+			output += chunk;
+			const match = output.match(pattern);
+			if (match) {
+				cleanup();
+				resolve(match);
+			}
+		};
 
-    const cleanup = () => {
-      clearTimeout(timeout);
-      proc.stdout?.off("data", onData);
-      proc.stderr?.off("data", onData);
-    };
+		const cleanup = () => {
+			clearTimeout(timeout);
+			proc.stdout?.off("data", onData);
+			proc.stderr?.off("data", onData);
+		};
 
-    proc.stdout?.on("data", onData);
-    proc.stderr?.on("data", onData);
-  });
+		proc.stdout?.on("data", onData);
+		proc.stderr?.on("data", onData);
+	});
 }
 
 /**
  * Fetch a route from the dev server and assert the status code.
  * Retries with 2s delay for cold-start compilation.
  */
-export async function assertStatus(port: number, path: string, expected: number[], retries = 3) {
-  let lastStatus = 0;
-  for (let attempt = 0; attempt < retries; attempt++) {
-    const res = await fetch(`http://localhost:${port}${path}`, { redirect: "manual" });
-    lastStatus = res.status;
-    if (expected.includes(lastStatus)) {
-      return res;
-    }
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-  throw new Error(`GET ${path} expected ${expected.join("|")}, got ${lastStatus}`);
+export async function assertStatus(
+	port: number,
+	path: string,
+	expected: number[],
+	retries = 3,
+) {
+	let lastStatus = 0;
+	for (let attempt = 0; attempt < retries; attempt++) {
+		const res = await fetch(`http://localhost:${port}${path}`, {
+			redirect: "manual",
+		});
+		lastStatus = res.status;
+		if (expected.includes(lastStatus)) {
+			return res;
+		}
+		await new Promise((r) => setTimeout(r, 2000));
+	}
+	throw new Error(
+		`GET ${path} expected ${expected.join("|")}, got ${lastStatus}`,
+	);
 }
 
 // ── Fixtures ───────────────────────────────────────────────────────
 
 export const FIXTURES = {
-  packageJson: JSON.stringify(
-    {
-      name: "test-project",
-      dependencies: { payload: `^${VERSIONS.payload}` },
-      // Exact, not `^`: the plugin peer-pins vinext exactly, and
-      // `^1.0.0-beta.2` would float across all of 1.x.
-      devDependencies: { vinext: VERSIONS.vinext },
-    },
-    null,
-    2,
-  ),
+	packageJson: JSON.stringify(
+		{
+			name: "test-project",
+			dependencies: { payload: `^${VERSIONS.payload}` },
+			// Exact, not `^`: the plugin peer-pins vinext exactly, and
+			// `^1.0.0-beta.2` would float across all of 1.x.
+			devDependencies: { vinext: VERSIONS.vinext },
+		},
+		null,
+		2,
+	),
 
-  viteConfigSingleLine: `import vinext from "vinext";
+	viteConfigSingleLine: `import vinext from "vinext";
 import { defineConfig } from "vite";
 
 export default defineConfig({
@@ -198,7 +222,7 @@ export default defineConfig({
 });
 `,
 
-  viteConfigMultiLine: `import { defineConfig } from "vite";
+	viteConfigMultiLine: `import { defineConfig } from "vite";
 import vinext from "vinext";
 
 export default defineConfig({
@@ -208,10 +232,10 @@ export default defineConfig({
 });
 `,
 
-  // The exact shape `vinext init --platform=cloudflare` writes on 1.0:
-  // vinext() takes an options object and spans multiple lines. The init
-  // matcher missing this shape is how the D1 e2e ran without the plugin.
-  viteConfigVinextArgs: `import { defineConfig } from "vite";
+	// The exact shape `vinext init --platform=cloudflare` writes on 1.0:
+	// vinext() takes an options object and spans multiple lines. The init
+	// matcher missing this shape is how the D1 e2e ran without the plugin.
+	viteConfigVinextArgs: `import { defineConfig } from "vite";
 import vinext from "vinext";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { cdnAdapter } from "@vinext/cloudflare/cache/cdn-adapter";
@@ -231,7 +255,7 @@ export default defineConfig({
 });
 `,
 
-  viteConfigTabs: `import { defineConfig } from 'vite';
+	viteConfigTabs: `import { defineConfig } from 'vite';
 import vinext from 'vinext';
 
 export default defineConfig({
@@ -241,7 +265,7 @@ export default defineConfig({
 });
 `,
 
-  originalLayout: `/* THIS FILE WAS GENERATED AUTOMATICALLY BY PAYLOAD. */
+	originalLayout: `/* THIS FILE WAS GENERATED AUTOMATICALLY BY PAYLOAD. */
 /* DO NOT MODIFY IT BECAUSE IT COULD BE REWRITTEN AT ANY TIME. */
 import config from '@payload-config'
 import '@payloadcms/next/css'
@@ -274,7 +298,7 @@ const Layout = ({ children }: Args) => (
 export default Layout
 `,
 
-  originalPage: `/* THIS FILE WAS GENERATED AUTOMATICALLY BY PAYLOAD. */
+	originalPage: `/* THIS FILE WAS GENERATED AUTOMATICALLY BY PAYLOAD. */
 /* DO NOT MODIFY IT BECAUSE IT COULD BE REWRITTEN AT ANY TIME. */
 import type { Metadata } from 'next'
 
@@ -300,33 +324,36 @@ const Page = ({ params, searchParams }: Args) =>
 export default Page
 `,
 
-  tsconfig: JSON.stringify(
-    {
-      compilerOptions: {
-        paths: { "@payload-config": ["./src/payload.config.ts"] },
-      },
-    },
-    null,
-    2,
-  ),
+	tsconfig: JSON.stringify(
+		{
+			compilerOptions: {
+				paths: { "@payload-config": ["./src/payload.config.ts"] },
+			},
+		},
+		null,
+		2,
+	),
 } as const;
 
 /** Scaffold a minimal mock Payload project for unit tests. */
 export async function scaffoldMockProject(
-  testDir: string,
-  viteConfig: string = FIXTURES.viteConfigSingleLine,
-  options?: { wranglerConfig?: boolean },
+	testDir: string,
+	viteConfig: string = FIXTURES.viteConfigSingleLine,
+	options?: { wranglerConfig?: boolean },
 ) {
-  const { write, cleanup } = createProjectHelpers(testDir);
-  await cleanup();
-  await write("package.json", FIXTURES.packageJson);
-  await write("vite.config.ts", viteConfig);
-  await write("tsconfig.json", FIXTURES.tsconfig);
-  await write("src/app/(payload)/layout.tsx", FIXTURES.originalLayout);
-  await write("src/app/(payload)/admin/[[...segments]]/page.tsx", FIXTURES.originalPage);
-  if (options?.wranglerConfig) {
-    await write("wrangler.jsonc", '{ "name": "test" }');
-  }
+	const { write, cleanup } = createProjectHelpers(testDir);
+	await cleanup();
+	await write("package.json", FIXTURES.packageJson);
+	await write("vite.config.ts", viteConfig);
+	await write("tsconfig.json", FIXTURES.tsconfig);
+	await write("src/app/(payload)/layout.tsx", FIXTURES.originalLayout);
+	await write(
+		"src/app/(payload)/admin/[[...segments]]/page.tsx",
+		FIXTURES.originalPage,
+	);
+	if (options?.wranglerConfig) {
+		await write("wrangler.jsonc", '{ "name": "test" }');
+	}
 }
 
 /**
@@ -340,50 +367,55 @@ export async function scaffoldMockProject(
  *   which can fail — we pre-install vinext+vite first to avoid this.
  */
 export async function installVinextStack(
-  helpers: ReturnType<typeof createProjectHelpers>,
-  pluginRoot: string,
-  platform: "cloudflare" | "node" = "node",
+	helpers: ReturnType<typeof createProjectHelpers>,
+	pluginRoot: string,
+	platform: "cloudflare" | "node" = "node",
 ) {
-  // `vinext init` runs `npm install` internally (for @vitejs/plugin-react,
-  // @vitejs/plugin-rsc, react-server-dom-webpack) without --legacy-peer-deps.
-  // vinext 0.1.3 pulls react-server-dom-webpack@19.2.7, which peer-pins
-  // react@19.2.7 exactly, while the Payload template pins react@19.2.6 →
-  // ERESOLVE. A project .npmrc makes that internal install lenient too,
-  // matching the --legacy-peer-deps we already pass to every other install.
-  await helpers.write(".npmrc", "legacy-peer-deps=true\n");
-  await helpers.npm(["install", "--ignore-scripts"]);
-  await helpers.npm(["rebuild", "esbuild"]);
-  // Pin vinext to the exact version we peer-pin. Installing it unpinned
-  // resolves to whatever the `latest` dist-tag points at, which may not be
-  // the version this plugin supports — the e2e suite would then be testing
-  // a stack we make no claims about.
-  await helpers.npm([
-    "install",
-    "-D",
-    `vinext@${VERSIONS.vinext}`,
-    `vite@${VERSIONS.vite}`,
-    "--legacy-peer-deps",
-  ]);
-  // vinext 1.0 requires an explicit deployment target; it used to infer one.
-  // The cloudflare target additionally demands cache/image choices. These are
-  // the minimal options — the suite exercises Payload, not vinext's CDN cache.
-  await helpers.npx([
-    "vinext",
-    "init",
-    `--platform=${platform}`,
-    ...(platform === "cloudflare"
-      ? [
-          "--cdn-cache=workers-cache",
-          "--data-cache=none",
-          "--image-optimization=none",
-        ]
-      : []),
-  ]);
-  const pkg = JSON.parse(await helpers.read("package.json"));
-  if (pkg.devDependencies?.["@cloudflare/vite-plugin"]) {
-    await helpers.npm(["install", "-D", "@cloudflare/vite-plugin", "--legacy-peer-deps"]);
-  }
-  await helpers.npm(["install", "-D", pluginRoot, "--legacy-peer-deps"]);
+	// `vinext init` runs `npm install` internally (for @vitejs/plugin-react,
+	// @vitejs/plugin-rsc, react-server-dom-webpack) without --legacy-peer-deps.
+	// vinext 0.1.3 pulls react-server-dom-webpack@19.2.7, which peer-pins
+	// react@19.2.7 exactly, while the Payload template pins react@19.2.6 →
+	// ERESOLVE. A project .npmrc makes that internal install lenient too,
+	// matching the --legacy-peer-deps we already pass to every other install.
+	await helpers.write(".npmrc", "legacy-peer-deps=true\n");
+	await helpers.npm(["install", "--ignore-scripts"]);
+	await helpers.npm(["rebuild", "esbuild"]);
+	// Pin vinext to the exact version we peer-pin. Installing it unpinned
+	// resolves to whatever the `latest` dist-tag points at, which may not be
+	// the version this plugin supports — the e2e suite would then be testing
+	// a stack we make no claims about.
+	await helpers.npm([
+		"install",
+		"-D",
+		`vinext@${VERSIONS.vinext}`,
+		`vite@${VERSIONS.vite}`,
+		"--legacy-peer-deps",
+	]);
+	// vinext 1.0 requires an explicit deployment target; it used to infer one.
+	// The cloudflare target additionally demands cache/image choices. These are
+	// the minimal options — the suite exercises Payload, not vinext's CDN cache.
+	await helpers.npx([
+		"vinext",
+		"init",
+		`--platform=${platform}`,
+		...(platform === "cloudflare"
+			? [
+					"--cdn-cache=workers-cache",
+					"--data-cache=none",
+					"--image-optimization=none",
+				]
+			: []),
+	]);
+	const pkg = JSON.parse(await helpers.read("package.json"));
+	if (pkg.devDependencies?.["@cloudflare/vite-plugin"]) {
+		await helpers.npm([
+			"install",
+			"-D",
+			"@cloudflare/vite-plugin",
+			"--legacy-peer-deps",
+		]);
+	}
+	await helpers.npm(["install", "-D", pluginRoot, "--legacy-peer-deps"]);
 }
 
 /**
@@ -391,108 +423,127 @@ export async function installVinextStack(
  * with getCloudflareEnv. Uses ast-grep for structural matching.
  */
 export async function rewritePayloadConfigForVinext(
-  helpers: ReturnType<typeof createProjectHelpers>,
+	helpers: ReturnType<typeof createProjectHelpers>,
 ) {
-  const { parse, Lang } = await import("@ast-grep/napi");
-  const configPath = "src/payload.config.ts";
-  const code = await helpers.read(configPath);
-  const root = parse(Lang.TypeScript, code).root();
+	const { parse, Lang } = await import("@ast-grep/napi");
+	const configPath = "src/payload.config.ts";
+	const code = await helpers.read(configPath);
+	const root = parse(Lang.TypeScript, code).root();
 
-  const edits: { start: number; end: number; replacement: string }[] = [];
+	const edits: { start: number; end: number; replacement: string }[] = [];
 
-  const removeNode = (node: ReturnType<typeof root.find>, includeTrailingNewline = true) => {
-    if (!node) {
-      return;
-    }
-    const r = node.range();
-    const end = includeTrailingNewline
-      ? code.indexOf("\n", r.end.index) + 1 || r.end.index
-      : r.end.index;
-    edits.push({ start: r.start.index, end, replacement: "" });
-  };
+	const removeNode = (
+		node: ReturnType<typeof root.find>,
+		includeTrailingNewline = true,
+	) => {
+		if (!node) {
+			return;
+		}
+		const r = node.range();
+		const end = includeTrailingNewline
+			? code.indexOf("\n", r.end.index) + 1 || r.end.index
+			: r.end.index;
+		edits.push({ start: r.start.index, end, replacement: "" });
+	};
 
-  // 1. Remove @opennextjs/cloudflare import
-  removeNode(
-    root.find({
-      rule: {
-        kind: "import_statement",
-        has: { pattern: "'@opennextjs/cloudflare'", stopBy: "end" },
-      },
-    }),
-  );
+	// 1. Remove @opennextjs/cloudflare import
+	removeNode(
+		root.find({
+			rule: {
+				kind: "import_statement",
+				has: { pattern: "'@opennextjs/cloudflare'", stopBy: "end" },
+			},
+		}),
+	);
 
-  // 2. Remove wrangler import (only if it's the GetPlatformProxyOptions one)
-  const wranglerImport = root.find({
-    rule: { kind: "import_statement", has: { pattern: "'wrangler'", stopBy: "end" } },
-  });
-  if (wranglerImport?.text().includes("GetPlatformProxyOptions")) {
-    removeNode(wranglerImport);
-  }
+	// 2. Remove wrangler import (only if it's the GetPlatformProxyOptions one)
+	const wranglerImport = root.find({
+		rule: {
+			kind: "import_statement",
+			has: { pattern: "'wrangler'", stopBy: "end" },
+		},
+	});
+	if (wranglerImport?.text().includes("GetPlatformProxyOptions")) {
+		removeNode(wranglerImport);
+	}
 
-  // 3. Remove fs import
-  removeNode(root.find("import fs from $SRC"));
+	// 3. Remove fs import
+	removeNode(root.find("import fs from $SRC"));
 
-  // 4. Remove realpath and isCLI declarations
-  removeNode(root.find("const realpath = $INIT"));
-  removeNode(root.find("const isCLI = $INIT"));
+	// 4. Remove realpath and isCLI declarations
+	removeNode(root.find("const realpath = $INIT"));
+	removeNode(root.find("const isCLI = $INIT"));
 
-  // 5. Replace cloudflare context assignment
-  const cfAssign = root.find("const cloudflare = $INIT");
-  if (cfAssign) {
-    const r = cfAssign.range();
-    const end = code.indexOf("\n", r.end.index) + 1 || r.end.index;
-    edits.push({ start: r.start.index, end, replacement: "" });
-  }
+	// 5. Replace cloudflare context assignment
+	const cfAssign = root.find("const cloudflare = $INIT");
+	if (cfAssign) {
+		const r = cfAssign.range();
+		const end = code.indexOf("\n", r.end.index) + 1 || r.end.index;
+		edits.push({ start: r.start.index, end, replacement: "" });
+	}
 
-  // 6. Replace cloudflare.env.X → cfEnv.X
-  for (const ref of root.findAll("cloudflare.env.$PROP")) {
-    const prop = ref.getMatch("PROP")?.text();
-    if (prop) {
-      const r = ref.range();
-      edits.push({ start: r.start.index, end: r.end.index, replacement: `cfEnv.${prop}` });
-    }
-  }
+	// 6. Replace cloudflare.env.X → cfEnv.X
+	for (const ref of root.findAll("cloudflare.env.$PROP")) {
+		const prop = ref.getMatch("PROP")?.text();
+		if (prop) {
+			const r = ref.range();
+			edits.push({
+				start: r.start.index,
+				end: r.end.index,
+				replacement: `cfEnv.${prop}`,
+			});
+		}
+	}
 
-  // 7. Replace isCLI || !isProduction → !isProduction
-  const cfRange = cfAssign?.range();
-  for (const check of root.findAll("isCLI || !isProduction")) {
-    const r = check.range();
-    if (cfRange && r.start.index >= cfRange.start.index && r.end.index <= cfRange.end.index + 1) {
-      continue;
-    }
-    edits.push({ start: r.start.index, end: r.end.index, replacement: "!isProduction" });
-  }
+	// 7. Replace isCLI || !isProduction → !isProduction
+	const cfRange = cfAssign?.range();
+	for (const check of root.findAll("isCLI || !isProduction")) {
+		const r = check.range();
+		if (
+			cfRange &&
+			r.start.index >= cfRange.start.index &&
+			r.end.index <= cfRange.end.index + 1
+		) {
+			continue;
+		}
+		edits.push({
+			start: r.start.index,
+			end: r.end.index,
+			replacement: "!isProduction",
+		});
+	}
 
-  // 8. Remove getCloudflareContextFromWrangler function (+ preceding comments)
-  const wranglerFn = root.find({
-    rule: {
-      kind: "function_declaration",
-      has: { pattern: "getCloudflareContextFromWrangler", stopBy: "end" },
-    },
-  });
-  if (wranglerFn) {
-    let start = wranglerFn.range().start.index;
-    while (start > 0) {
-      const lineStart = code.lastIndexOf("\n", start - 2) + 1;
-      const line = code.slice(lineStart, start).trim();
-      if (line.startsWith("//")) {
-        start = lineStart;
-      } else {
-        break;
-      }
-    }
-    edits.push({ start, end: code.length, replacement: "" });
-  }
+	// 8. Remove getCloudflareContextFromWrangler function (+ preceding comments)
+	const wranglerFn = root.find({
+		rule: {
+			kind: "function_declaration",
+			has: { pattern: "getCloudflareContextFromWrangler", stopBy: "end" },
+		},
+	});
+	if (wranglerFn) {
+		let start = wranglerFn.range().start.index;
+		while (start > 0) {
+			const lineStart = code.lastIndexOf("\n", start - 2) + 1;
+			const line = code.slice(lineStart, start).trim();
+			if (line.startsWith("//")) {
+				start = lineStart;
+			} else {
+				break;
+			}
+		}
+		edits.push({ start, end: code.length, replacement: "" });
+	}
 
-  // Apply edits bottom-up
-  edits.sort((a, b) => b.start - a.start);
-  let result = code;
-  for (const edit of edits) {
-    result = result.slice(0, edit.start) + edit.replacement + result.slice(edit.end);
-  }
+	// Apply edits bottom-up
+	edits.sort((a, b) => b.start - a.start);
+	let result = code;
+	for (const edit of edits) {
+		result =
+			result.slice(0, edit.start) + edit.replacement + result.slice(edit.end);
+	}
 
-  if (!result.includes("function getCloudflareEnv")) {
-    const fn = `\nasync function getCloudflareEnv() {
+	if (!result.includes("function getCloudflareEnv")) {
+		const fn = `\nasync function getCloudflareEnv() {
   try {
     const { env } = await import(/* @vite-ignore */ 'cloudflare:workers')
     return env
@@ -504,21 +555,26 @@ export async function rewritePayloadConfigForVinext(
     return proxy.env
   }
 }\n\nconst cfEnv = await getCloudflareEnv()\n`;
-    result = result.replace(/(\nexport default)/, fn + "$1");
-  }
+		result = result.replace(/(\nexport default)/, fn + "$1");
+	}
 
-  result = result.replace(/\n{3,}/g, "\n\n");
+	result = result.replace(/\n{3,}/g, "\n\n");
 
-  await helpers.write(configPath, result);
+	await helpers.write(configPath, result);
 }
 
 /** Replace OpenNext main with vinext entry and remove "remote": true for local dev. */
-export async function fixWranglerForLocalDev(helpers: ReturnType<typeof createProjectHelpers>) {
-  const wrangler = await helpers.read("wrangler.jsonc");
-  await helpers.write(
-    "wrangler.jsonc",
-    wrangler
-      .replace(/"main"\s*:\s*"\.open-next\/worker\.js"/g, '"main": "vinext/server/app-router-entry"')
-      .replace(/"remote"\s*:\s*true,?\n?\s*/g, ""),
-  );
+export async function fixWranglerForLocalDev(
+	helpers: ReturnType<typeof createProjectHelpers>,
+) {
+	const wrangler = await helpers.read("wrangler.jsonc");
+	await helpers.write(
+		"wrangler.jsonc",
+		wrangler
+			.replace(
+				/"main"\s*:\s*"\.open-next\/worker\.js"/g,
+				'"main": "vinext/server/app-router-entry"',
+			)
+			.replace(/"remote"\s*:\s*true,?\n?\s*/g, ""),
+	);
 }

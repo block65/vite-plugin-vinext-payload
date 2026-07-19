@@ -10,11 +10,11 @@ Node `v26.3.1`, payload `3.82.1`.
 
 **1. The D1 project never had the plugin.** `vite-plugin-vinext-payload init`
 located `vinext()` in the plugins array with the ast-grep pattern `vinext()`,
-which only matches a *zero-argument* call. vinext 1.0's own
+which only matches a _zero-argument_ call. vinext 1.0's own
 `init --platform=cloudflare` writes `vinext({ cache: { cdn: cdnAdapter() } })`,
 so our matcher found nothing, reported a quiet
 "skipped (could not find vinext() in plugins array)", and exited 0. Every D1
-run since the 1.0 bump therefore exercised vinext *without*
+run since the 1.0 bump therefore exercised vinext _without_
 `payloadPlugin()` — none of our excludes, stubs, or externals were in the
 pipeline at all. Fixed by matching `vinext($$$ARGS)`; guarded by a new unit
 fixture (`viteConfigVinextArgs`) and an e2e assertion that the config
@@ -33,8 +33,8 @@ try {
 }
 ```
 
-The fallback only ever *executes* under plain Node (payload CLI), but the
-import must still *resolve* in every Vite environment that processes the
+The fallback only ever _executes_ under plain Node (payload CLI), but the
+import must still _resolve_ in every Vite environment that processes the
 config. Bundling or optimizer-scanning `wrangler` pulls in its entire CLI —
 including `blake3-wasm`, whose `export * from './node.js'` Rolldown cannot
 resolve. In dev that killed dependency optimization

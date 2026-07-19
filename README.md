@@ -110,7 +110,9 @@ import { getPayload } from "payload";
 import config from "./payload.config";
 
 export class CmsEntrypoint extends WorkerEntrypoint<Env> {
-	async find(args: Parameters<Awaited<ReturnType<typeof getPayload>>["find"]>[0]) {
+	async find(
+		args: Parameters<Awaited<ReturnType<typeof getPayload>>["find"]>[0],
+	) {
 		const payload = await getPayload({ config });
 		return payload.find(args);
 	}

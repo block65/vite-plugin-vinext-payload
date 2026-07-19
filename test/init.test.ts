@@ -6,7 +6,11 @@
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { init } from "../bin/init.ts";
-import { createProjectHelpers, scaffoldMockProject, FIXTURES } from "./helpers.ts";
+import {
+	createProjectHelpers,
+	scaffoldMockProject,
+	FIXTURES,
+} from "./helpers.ts";
 
 const TEST_DIR = join(import.meta.dirname, ".mock-project");
 const { read, write, exists, cleanup } = createProjectHelpers(TEST_DIR);
@@ -82,7 +86,7 @@ describe("init: vite.config.ts styles", () => {
 		await runInit();
 
 		const config = await read("vite.config.ts");
-		expect(config).toContain("from \"vite-plugin-vinext-payload\"");
+		expect(config).toContain('from "vite-plugin-vinext-payload"');
 		expect(config).toContain("    }),\n    payloadPlugin(),");
 	});
 
@@ -174,7 +178,9 @@ describe("init: cloudflare plugin", () => {
 		await runInit();
 
 		const config = await read("vite.config.ts");
-		expect(config.indexOf("cloudflare(")).toBeLessThan(config.indexOf("vinext()"));
+		expect(config.indexOf("cloudflare(")).toBeLessThan(
+			config.indexOf("vinext()"),
+		);
 	});
 
 	it("handles multi-line plugins array with wrangler config", async () => {

@@ -1,7 +1,6 @@
 ---
 name: sanity-check
 description: Run a full sanity check on the vite-plugin-vinext-payload project — lint, format, typecheck, unit tests, and optionally e2e tests (SQLite and/or Cloudflare D1). Use this skill whenever the user says "sanity check", "check everything", "run all checks", "is it clean?", or wants to verify the project is in a shippable state before committing or releasing.
-
 ---
 
 Run this skill as a **subagent with a strong fit for speed/cost without sacrificing quality.** — it's mechanical work that doesn't use superpowered AI. Report the result summary when the agent completes.
@@ -18,6 +17,7 @@ Run all checks sequentially from the project root. Stop and report on first fail
 6. **E2E Cloudflare D1** (optional, slow — ~2 min): `npm run test:e2e-d1`
 
 Only run steps 5-6 if the user explicitly asks for them:
+
 - "full sanity check" / "everything" → run both e2e tests
 - "e2e" / "including e2e" → run SQLite e2e only
 - "d1" / "cloudflare" / "including d1" → run D1 e2e only

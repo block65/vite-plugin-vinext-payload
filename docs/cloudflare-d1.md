@@ -35,18 +35,18 @@ Delete `getCloudflareContextFromWrangler` and the `cloudflare` assignment. Repla
 
 ```ts
 async function getCloudflareEnv(): Promise<CloudflareEnv> {
-  try {
-    const { env } = await import(/* @vite-ignore */ "cloudflare:workers");
-    return env;
-  } catch {
-    const { getPlatformProxy } = await import("wrangler");
-    const proxy = await getPlatformProxy(
-      process.env.CLOUDFLARE_ENV
-        ? { environment: process.env.CLOUDFLARE_ENV }
-        : {},
-    );
-    return proxy.env as CloudflareEnv;
-  }
+	try {
+		const { env } = await import(/* @vite-ignore */ "cloudflare:workers");
+		return env;
+	} catch {
+		const { getPlatformProxy } = await import("wrangler");
+		const proxy = await getPlatformProxy(
+			process.env.CLOUDFLARE_ENV
+				? { environment: process.env.CLOUDFLARE_ENV }
+				: {},
+		);
+		return proxy.env as CloudflareEnv;
+	}
 }
 
 const cfEnv = await getCloudflareEnv();

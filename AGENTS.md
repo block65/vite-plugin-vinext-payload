@@ -16,7 +16,7 @@ A Vite plugin that makes Payload CMS run under [vinext](https://github.com/cloud
 This repo uses **pnpm** (see `packageManager` in `package.json`). Never `npm install` — it will produce a `package-lock.json` that conflicts with `pnpm-lock.yaml`.
 
 - `pnpm test` — unit tests (fast, no network)
-- `pnpm run test:e2e*` — e2e suites; each scaffolds a real project and boots a dev server. Slow (30s–2min), not run in CI.
+- `pnpm run test:e2e*` — e2e suites; each scaffolds a real project and boots a dev server. Slow (30s–2min), not run in CI. They run in a docker container (`scripts/e2e-container.sh`): the checkout is mounted read-only and the scaffold's installs — postinstall scripts included — execute only inside the container. Append `--host` to run directly on the host when debugging.
 - `pnpm run lint` / `pnpm run fmt` — oxlint / oxfmt, scoped to the whole repo. Nothing is exempt.
 
 ## Releasing

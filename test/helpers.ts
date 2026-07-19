@@ -3,7 +3,15 @@ import {
 	spawn,
 	type ChildProcess,
 } from "node:child_process";
-import { readFile, writeFile, mkdir, rm, access } from "node:fs/promises";
+import {
+	readFile,
+	writeFile,
+	mkdir,
+	mkdtemp,
+	rm,
+	access,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
@@ -178,28 +186,25 @@ export function waitForOutput(
 }
 
 /**
- * Vite's line when on-demand dependency optimization finishes. The module
- * runner is restarted around this point, so requests in flight before it can
- * fail or 500 through no fault of the code under test.
- */
-const OPTIMIZER_SETTLED =
-	/(new dependencies optimized|optimized dependencies changed|dependencies? (re)?optimized)/i;
-
-/**
  * Wait until the dev server is genuinely able to serve requests.
  *
  * `startDevServer` resolves on Vite's `Local:` line, which only means the
  * socket is listening. The first request is what *triggers* optimization of
  * the whole dependency graph, and Vite tears down and restarts the module
- * runner when that completes.
+ * runner when that completes — requests landing in that window are reset or
+ * answered with a 500 that has nothing to do with the code under test.
  *
- * This waits on the events the server actually emits rather than sleeping for
- * a guessed duration: fire the priming request, then settle on whichever comes
- * first — the optimizer's completion line, or the priming response if the
- * dependency cache was already warm and no optimization was needed.
+ * There is no event to wait on. Vite logs nothing at all during a cold start:
+ * its "optimized dependencies changed" line is emitted only when a *later*
+ * re-optimization invalidates an existing cache, so a matcher watching for it
+ * never fires here. The endpoint is the only signal the server actually gives,
+ * so this asks it until it stops erroring.
  *
- * A priming request that is *reset* is not a ready signal — it is evidence of
- * the opposite — so that case waits for the optimizer line regardless.
+ * That is a readiness gate, not a retry hiding a flake — no assertion is
+ * relaxed. Callers still assert their real contract exactly once, against a
+ * server that has demonstrably finished starting. A route that is genuinely
+ * broken keeps returning 5xx and this times out naming the status it kept
+ * seeing.
  */
 export async function waitForServerReady(
 	proc: ChildProcess,
@@ -207,50 +212,50 @@ export async function waitForServerReady(
 	path = "/",
 	timeoutMs = 120_000,
 ) {
-	const settled = waitForOutput(proc, OPTIMIZER_SETTLED, timeoutMs);
+	// A dead server will never become ready; without this the caller waits out
+	// the full timeout to be told something the process already knew.
+	let exit: string | undefined;
+	proc.once("exit", (code, signal) => {
+		exit = `process exited (code ${code}, signal ${signal})`;
+	});
 
-	// When the priming request wins the race below, nothing ever awaits
-	// `settled`, but its timeout still rejects. Attaching a handler up front
-	// keeps that from surfacing as an unhandled rejection minutes later, inside
-	// whichever unrelated test happens to be running by then.
-	settled.catch(() => {});
+	const deadline = Date.now() + timeoutMs;
+	let last = "no response yet";
 
-	const primed = fetch(`http://localhost:${port}${path}`, {
-		redirect: "manual",
-	}).then(
-		(res) => {
-			// Drain the body so the socket closes; the status is not asserted
-			// here — this request exists to trigger optimization, not to verify.
-			return res.text().then(() => "served" as const);
-		},
-		(error: unknown) => {
-			// Expected: the runner restarts mid-flight during optimization, so
-			// the connection is reset. Surfaced rather than swallowed, because a
-			// reset for any *other* reason should still be visible in the log.
-			process.stderr.write(
-				`[e2e] priming request to ${path} did not complete: ${
-					error instanceof Error ? error.message : String(error)
-				}\n`,
-			);
-			return "reset" as const;
-		},
-	);
+	/* oxlint-disable no-await-in-loop -- each attempt must observe the result of
+	   the one before it; running them concurrently would hammer a starting
+	   server with requests it cannot answer and defeat the point of the gate. */
+	while (Date.now() < deadline) {
+		if (exit !== undefined) {
+			throw new Error(`Server died before becoming ready at ${path}: ${exit}`);
+		}
 
-	const outcome = await Promise.race([
-		settled.then(() => "optimized" as const),
-		primed,
-	]);
+		try {
+			const res = await fetch(`http://localhost:${port}${path}`, {
+				redirect: "manual",
+			});
+			// Drain the body so the socket closes rather than leaking into the
+			// next attempt.
+			await res.text();
 
-	// A reset means the runner tore down mid-request, so optimization is still
-	// in flight and the server cannot serve yet. The optimizer's line is the
-	// only remaining signal that it finished; returning on the reset alone hands
-	// back a server that is still restarting.
-	if (outcome === "reset") {
-		await settled;
-		return "optimized" as const;
+			if (res.status < 500) {
+				return res.status;
+			}
+
+			last = `HTTP ${res.status}`;
+		} catch (error) {
+			// Expected while the runner restarts mid-flight: the connection is
+			// reset. Any other cause shows up in the timeout message below.
+			last = error instanceof Error ? error.message : String(error);
+		}
+
+		await new Promise((resolve) => setTimeout(resolve, 250));
 	}
+	/* oxlint-enable no-await-in-loop */
 
-	return outcome;
+	throw new Error(
+		`Server never became ready at ${path} within ${timeoutMs}ms (last: ${last})`,
+	);
 }
 
 /**
@@ -436,6 +441,38 @@ export async function scaffoldMockProject(
 }
 
 /**
+ * Pack the plugin and return the tarball path, so scaffolds install what a
+ * consumer installs.
+ *
+ * `npm install -D <dir>` symlinks the directory. Resolution then walks through
+ * that link into this repo's own node_modules, putting a second copy of React
+ * on the scaffold's module graph — the classic cause of intermittent RSC
+ * failures, and invisible in the manifest because nothing declares it. Packing
+ * copies in only what `files` publishes.
+ *
+ * It also means the suites exercise the published artifact rather than the
+ * working tree: a file missing from `files` fails here instead of after
+ * release.
+ */
+async function packPlugin(pluginRoot: string) {
+	const destination = await mkdtemp(join(tmpdir(), "vinext-payload-pack-"));
+
+	// npm pack runs `prepare`, so the tarball always carries a current build.
+	const { stdout } = await execFile(
+		"npm",
+		["pack", "--pack-destination", destination, "--silent"],
+		{ cwd: pluginRoot, env: childEnv, timeout: 300_000 },
+	);
+
+	const tarball = stdout.trim().split("\n").at(-1);
+	if (!tarball) {
+		throw new Error(`npm pack produced no tarball in ${pluginRoot}`);
+	}
+
+	return join(destination, tarball);
+}
+
+/**
  * Rewrite the degit'd template's React pins so the dependency graph resolves.
  *
  * The upstream Payload template targets Next.js, so it pins versions vinext
@@ -514,7 +551,7 @@ export async function installVinextStack(
 	if (pkg.devDependencies?.["@cloudflare/vite-plugin"]) {
 		await helpers.npm(["install", "-D", "@cloudflare/vite-plugin"]);
 	}
-	await helpers.npm(["install", "-D", pluginRoot]);
+	await helpers.npm(["install", "-D", await packPlugin(pluginRoot)]);
 }
 
 /**

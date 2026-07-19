@@ -4,7 +4,7 @@ This doc is for people hacking on the plugin (or on vinext / Payload
 compatibility). Using Payload on vinext requires none of it — the
 [README](../README.md) covers that.
 
-`payloadPlugin()` composes a set of sub-plugins, each working around a
+`vinextPayload()` composes a set of sub-plugins, each working around a
 specific upstream bug. They are not exported individually — the split exists
 purely for readability and maintenance. See
 [`upstream-bugs.md`](upstream-bugs.md) for the full write-up of each bug,

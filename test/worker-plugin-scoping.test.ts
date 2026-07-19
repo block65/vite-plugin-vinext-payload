@@ -1,8 +1,8 @@
 /**
- * Regression guard: `payloadWorkerPlugin` must scope its CJS-related
+ * Regression guard: `vinextPayloadWorker` must scope its CJS-related
  * sub-plugins to the worker env only. The previous version applied
  * `payloadCjsTransform`, `payloadCliStubs`, and `cjsInterop` globally,
- * which meant a website using `payloadWorkerPlugin({ env: "cms" })`
+ * which meant a website using `vinextPayloadWorker({ env: "cms" })`
  * for an auxiliary worker also had its `client` build mangled by the
  * Payload-targeted CJS wrapping — clobbering named exports of
  * unrelated CJS deps (e.g. `use-sync-external-store/shim/with-selector`,
@@ -17,7 +17,7 @@ import type { Plugin } from "vite";
 import { describe, expect, it } from "vitest";
 import { payloadCjsTransform } from "../src/cjs-transform.ts";
 import { payloadCliStubs } from "../src/cli-stubs.ts";
-import { payloadPlugin, payloadWorkerPlugin } from "../src/main.ts";
+import { vinextPayload, vinextPayloadWorker } from "../src/main.ts";
 
 const WORKER_ENV = "norfolk_cms";
 
@@ -57,8 +57,8 @@ describe("payloadCliStubs: envs scoping", () => {
 	});
 });
 
-describe("payloadWorkerPlugin: client env is never touched", () => {
-	const plugins = payloadWorkerPlugin({ env: WORKER_ENV });
+describe("vinextPayloadWorker: client env is never touched", () => {
+	const plugins = vinextPayloadWorker({ env: WORKER_ENV });
 
 	const targets = [
 		"vite-plugin-payload:cjs-transform",
@@ -81,8 +81,8 @@ describe("payloadWorkerPlugin: client env is never touched", () => {
 	}
 });
 
-describe("payloadPlugin: keeps unscoped sub-plugins (Payload admin UI needs client)", () => {
-	const plugins = payloadPlugin();
+describe("vinextPayload: keeps unscoped sub-plugins (Payload admin UI needs client)", () => {
+	const plugins = vinextPayload();
 
 	it("cjs-transform stays unscoped so the admin UI client build still benefits", () => {
 		const plugin = plugins.find(

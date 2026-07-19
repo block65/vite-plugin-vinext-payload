@@ -75,11 +75,11 @@ describe("e2e: cloudflare d1", () => {
 		await assertStatus(server.port, "/api/users", [200, 401, 403]);
 	});
 
-	it("init added payloadPlugin to the vite config", async () => {
+	it("init added vinextPayload to the vite config", async () => {
 		// Guards the exact failure mode where init's vinext() matcher missed
 		// the 1.0 config shape and the whole suite ran without the plugin.
 		const config = await helpers.read("vite.config.ts");
-		expect(config).toContain("payloadPlugin()");
+		expect(config).toContain("vinextPayload()");
 	});
 
 	it("payload config uses getCloudflareEnv", async () => {

@@ -8,14 +8,14 @@
  * prepends a try/catch wrapper to React files.
  *
  * The plugin is parameterized by `reactEnv` (which env loads React) and
- * `serverEnvs` (which envs need workerd polyfills). `payloadPlugin`
- * defaults `reactEnv` to `"rsc"`; `payloadWorkerPlugin` sets it to the
+ * `serverEnvs` (which envs need workerd polyfills). `vinextPayload`
+ * defaults `reactEnv` to `"rsc"`; `vinextPayloadWorker` sets it to the
  * worker's own env name. Passing `false` disables it entirely.
  */
 
 import type { Plugin } from "vite";
 import { assert, describe, expect, it } from "vitest";
-import { payloadWorkerPlugin } from "../src/main.ts";
+import { vinextPayloadWorker } from "../src/main.ts";
 import { payloadWorkerdCompat } from "../src/workerd-compat.ts";
 
 const REACT_FILE_ID = "/node_modules/react/cjs/react.development.js";
@@ -72,7 +72,7 @@ describe("payloadWorkerdCompat: console.createTask polyfill", () => {
 	});
 
 	it("prepends the polyfill when reactEnv matches a custom server env", () => {
-		// Mirrors payloadWorkerPlugin's call: reactEnv === worker env name.
+		// Mirrors vinextPayloadWorker's call: reactEnv === worker env name.
 		const plugin = payloadWorkerdCompat({
 			serverEnvs: ["norfolk_cms"],
 			reactEnv: "norfolk_cms",
@@ -135,16 +135,16 @@ describe("payloadWorkerdCompat: console.createTask polyfill", () => {
 });
 
 // Integration test for the headless plugin's composition. This guards
-// the specific regression of `payloadWorkerPlugin` shipping with
+// the specific regression of `vinextPayloadWorker` shipping with
 // reactEnv:false — the symptom was workerd's `Console.createTask is
 // not implemented` thrown at worker module init in a real consumer
 // stack, which `vite build` and the synthetic runtime e2e couldn't
 // reproduce. Validating the wiring directly makes the regression
 // deterministic and fast to catch.
-describe("payloadWorkerPlugin: composition wires createTask polyfill", () => {
+describe("vinextPayloadWorker: composition wires createTask polyfill", () => {
 	it("polyfills React in the worker's own env", () => {
 		const env = "norfolk_cms";
-		const plugins = payloadWorkerPlugin({ env });
+		const plugins = vinextPayloadWorker({ env });
 		const compat = plugins.find(
 			(p) => p.name === "vite-plugin-payload:workerd-compat",
 		);

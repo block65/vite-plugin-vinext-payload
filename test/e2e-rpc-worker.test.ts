@@ -1,8 +1,8 @@
 /**
- * E2E test: payloadWorkerPlugin for a headless RPC-only worker.
+ * E2E test: vinextPayloadWorker for a headless RPC-only worker.
  *
  * Scaffolds a minimal Cloudflare worker that uses `@cloudflare/vite-plugin`
- * together with `payloadWorkerPlugin`, installs the deps, and runs
+ * together with `vinextPayloadWorker`, installs the deps, and runs
  * `vite build`. This exercises the `configResolved` validation in
  * @cloudflare/vite-plugin — if the plugin sets `resolve.external` on any
  * cloudflare-managed environment, the cloudflare plugin throws
@@ -78,13 +78,13 @@ export default {
 `;
 
 const viteConfig = `import { cloudflare } from "@cloudflare/vite-plugin";
-import { payloadWorkerPlugin } from "vite-plugin-vinext-payload";
+import { vinextPayloadWorker } from "vite-plugin-vinext-payload";
 import { defineConfig } from "vite";
 
 export default defineConfig({
 	plugins: [
 		cloudflare({ viteEnvironment: { name: "${WORKER_ENV}" } }),
-		...payloadWorkerPlugin({ env: "${WORKER_ENV}" }),
+		...vinextPayloadWorker({ env: "${WORKER_ENV}" }),
 	],
 });
 `;

@@ -1,5 +1,5 @@
 /**
- * E2E runtime test: payloadWorkerPlugin under miniflare with React loaded.
+ * E2E runtime test: vinextPayloadWorker under miniflare with React loaded.
  *
  * `vite build` resolves config but never runs the worker. Many of the
  * payload-plugin fixes (console.createTask polyfill, node:* → unenv,
@@ -79,13 +79,13 @@ export default { fetch: handle };
 `;
 
 const viteConfig = `import { cloudflare } from "@cloudflare/vite-plugin";
-import { payloadWorkerPlugin } from "vite-plugin-vinext-payload";
+import { vinextPayloadWorker } from "vite-plugin-vinext-payload";
 import { defineConfig } from "vite";
 
 export default defineConfig({
 	plugins: [
 		cloudflare({ viteEnvironment: { name: "${WORKER_ENV}" } }),
-		...payloadWorkerPlugin({ env: "${WORKER_ENV}" }),
+		...vinextPayloadWorker({ env: "${WORKER_ENV}" }),
 	],
 });
 `;

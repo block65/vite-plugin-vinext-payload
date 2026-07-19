@@ -8,9 +8,9 @@ const TS_CJS_HELPER_RE = /\(this && this\.(__\w+)\)/g;
 export interface PayloadCjsTransformOptions {
 	/**
 	 * Names of Vite environments this transform applies to. When undefined
-	 * (the default used by `payloadPlugin`), the transform runs in every
+	 * (the default used by `vinextPayload`), the transform runs in every
 	 * environment because Payload's admin UI lives in `client`. For headless
-	 * worker setups via `payloadWorkerPlugin`, pass the worker env name so
+	 * worker setups via `vinextPayloadWorker`, pass the worker env name so
 	 * the transform doesn't bleed into the parent app's `client` build and
 	 * clobber named exports of unrelated CJS deps.
 	 */

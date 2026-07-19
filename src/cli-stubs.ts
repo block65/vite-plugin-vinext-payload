@@ -62,8 +62,8 @@ const stubs: Record<string, string> = {
 export interface PayloadCliStubsOptions {
 	/**
 	 * Names of Vite environments this stub resolver applies to. When
-	 * undefined (the default used by `payloadPlugin`), stubs apply to
-	 * every environment. For `payloadWorkerPlugin`, pass the worker env
+	 * undefined (the default used by `vinextPayload`), stubs apply to
+	 * every environment. For `vinextPayloadWorker`, pass the worker env
 	 * name so stubs don't intercept these specifiers in the parent app's
 	 * `client` build — e.g. a website that legitimately imports
 	 * `console-table-printer` from a non-Payload code path.

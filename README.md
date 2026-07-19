@@ -13,10 +13,10 @@ npm install -D vite-plugin-vinext-payload
 // vite.config.ts
 import { defineConfig } from "vite";
 import vinext from "vinext";
-import { payloadPlugin } from "vite-plugin-vinext-payload";
+import vinextPayload from "vite-plugin-vinext-payload";
 
 export default defineConfig({
-	plugins: [vinext(), payloadPlugin()],
+	plugins: [vinext(), vinextPayload()],
 });
 ```
 
@@ -30,7 +30,7 @@ That's it. For Cloudflare Workers with RSC, add the Cloudflare plugin:
 import { cloudflare } from "@cloudflare/vite-plugin";
 import vinext from "vinext";
 import { defineConfig } from "vite";
-import { payloadPlugin } from "vite-plugin-vinext-payload";
+import vinextPayload from "vite-plugin-vinext-payload";
 
 export default defineConfig({
 	plugins: [
@@ -38,7 +38,7 @@ export default defineConfig({
 			viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
 		}),
 		vinext(),
-		payloadPlugin(),
+		vinextPayload(),
 	],
 });
 ```
@@ -61,7 +61,7 @@ npm run dev
 
 `init` is idempotent — safe to run multiple times. Use `--dry-run` to preview changes. It:
 
-- Adds `payloadPlugin()` to the project's `vite.config.ts`
+- Adds `vinextPayload()` to the project's `vite.config.ts`
 - Extracts the inline server function from `layout.tsx` into a separate `'use server'` module (required for Vite's RSC transform)
 - Adds `normalizeParams` to the admin page
 - If a `wrangler.{jsonc,json,toml}` is present, also adds `cloudflare()` to `vite.config.ts` and `@cloudflare/vite-plugin` to `devDependencies`
@@ -70,8 +70,8 @@ npm run dev
 
 ## Two Modes
 
-- **`payloadPlugin()`** — full Payload (admin UI + REST/GraphQL) with [vinext](https://github.com/cloudflare/vinext), Cloudflare's Vite-based re-implementation of Next.js. This is what the Quick Start above uses.
-- **`payloadWorkerPlugin()`** — headless Payload exposing only its [Local API](https://payloadcms.com/docs/local-api/overview) via `WorkerEntrypoint` RPC, no admin UI. Pair with any Vite-based frontend framework (TanStack Start, SvelteKit, Remix, Nuxt) running as the parent worker.
+- **`vinextPayload()`** — full Payload (admin UI + REST/GraphQL) with [vinext](https://github.com/cloudflare/vinext), Cloudflare's Vite-based re-implementation of Next.js. This is what the Quick Start above uses.
+- **`vinextPayloadWorker()`** — headless Payload exposing only its [Local API](https://payloadcms.com/docs/local-api/overview) via `WorkerEntrypoint` RPC, no admin UI. Pair with any Vite-based frontend framework (TanStack Start, SvelteKit, Remix, Nuxt) running as the parent worker.
 
 ### Headless RPC Worker (no admin UI)
 
@@ -80,7 +80,7 @@ Run Payload as a separate Cloudflare auxiliary worker that exposes its Local API
 ```ts
 // services/website/vite.config.ts (parent worker)
 import { cloudflare } from "@cloudflare/vite-plugin";
-import { payloadWorkerPlugin } from "vite-plugin-vinext-payload";
+import { vinextPayloadWorker } from "vite-plugin-vinext-payload";
 import { defineConfig } from "vite";
 
 export default defineConfig({
@@ -99,7 +99,7 @@ export default defineConfig({
 		// plugin normalizes the worker's `name` from wrangler.jsonc:
 		// "payload-cms" → "payload_cms"). The `[vite] (...)` prefix in the
 		// dev log confirms it.
-		...payloadWorkerPlugin({ env: "payload_cms" }),
+		...vinextPayloadWorker({ env: "payload_cms" }),
 	],
 });
 ```
@@ -129,13 +129,13 @@ export default {
 
 Then in the parent's `wrangler.jsonc`, add a service binding pointing at `CmsEntrypoint` and call its methods from the parent's loader / API route / server function. See Cloudflare's [WorkerEntrypoint docs](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/rpc/) for the binding shape.
 
-`payloadWorkerPlugin` composes a subset of the same sub-plugins as `payloadPlugin` (workerd polyfills, server externals, optimize-deps excludes, file-type / drizzle-kit/api stubs, CJS interop, CLI stubs) — everything needed for Payload's Local API to evaluate inside workerd, but none of the admin-UI / RSC fixes.
+`vinextPayloadWorker` composes a subset of the same sub-plugins as `vinextPayload` (workerd polyfills, server externals, optimize-deps excludes, file-type / drizzle-kit/api stubs, CJS interop, CLI stubs) — everything needed for Payload's Local API to evaluate inside workerd, but none of the admin-UI / RSC fixes.
 
 ## Options
 
 ```ts
 // Full Payload + vinext
-payloadPlugin({
+vinextPayload({
 	// Additional packages to externalize from SSR bundling
 	ssrExternal: ["some-native-package"],
 
@@ -147,12 +147,12 @@ payloadPlugin({
 });
 
 // Headless Payload-as-auxiliary-worker
-payloadWorkerPlugin({
+vinextPayloadWorker({
 	// Required — the vite env name of the auxiliary worker (cloudflare
 	// plugin normalizes the wrangler `name` to a JS identifier).
 	env: "payload_cms",
 
-	// Optional — same shape as payloadPlugin
+	// Optional — same shape as vinextPayload
 	ssrExternal: ["..."],
 	excludeFromOptimize: ["..."],
 	cjsInteropDeps: ["..."],
@@ -164,7 +164,7 @@ payloadWorkerPlugin({
 - Node.js `>=24`
 - Vite `^8.0.0`
 - Payload CMS `^3.82.0`
-- vinext `1.0.0-beta.2` (exact — vinext is still pre-release; every bump can break things). Optional — only needed when using `payloadPlugin()`. Not required for `payloadWorkerPlugin()`.
+- vinext `1.0.0-beta.2` (exact — vinext is still pre-release; every bump can break things). Optional — only needed when using `vinextPayload()`. Not required for `vinextPayloadWorker()`.
 
 > **Experimental.** Both vinext and this plugin are experimental.
 >

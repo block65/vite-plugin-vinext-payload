@@ -5,7 +5,7 @@
  * Run this after `vinext init` and `npm install -D vite-plugin-vinext-payload`.
  *
  * Transforms:
- * 1. Adds payloadPlugin() to vite.config.ts
+ * 1. Adds vinextPayload() to vite.config.ts
  * 2. Extracts serverFunction from layout.tsx into a 'use server' module
  * 3. Adds normalizeParams to admin page.tsx
  */
@@ -259,13 +259,15 @@ function findLastImport(source: string) {
 }
 
 function addPayloadPlugin(source: string): Edit {
-	if (source.includes("payloadPlugin")) {
+	// Both spellings: a config initialized before the rename still carries
+	// `payloadPlugin`, and re-running init must not insert a second call.
+	if (source.includes("vinextPayload") || source.includes("payloadPlugin")) {
 		return {
 			content: source,
 			result: {
 				file: "vite.config.ts",
 				action: "skipped",
-				reason: "payloadPlugin already present",
+				reason: "vinextPayload already present",
 			},
 		};
 	}
@@ -308,7 +310,7 @@ function addPayloadPlugin(source: string): Edit {
 
 	const lastImportEnd = lastImport.range().end.index;
 	const quote = lastImport.text().includes("'") ? "'" : '"';
-	const importLine = `\nimport { payloadPlugin } from ${quote}vite-plugin-vinext-payload${quote};`;
+	const importLine = `\nimport vinextPayload from ${quote}vite-plugin-vinext-payload${quote};`;
 
 	const vinextRange = vinextCall.range();
 	const vinextLineStart = source.lastIndexOf("\n", vinextRange.start.index) + 1;
@@ -316,7 +318,7 @@ function addPayloadPlugin(source: string): Edit {
 
 	const { pluginInsert, insertAt } = isSingleLine
 		? {
-				pluginInsert: ", payloadPlugin()",
+				pluginInsert: ", vinextPayload()",
 				insertAt:
 					source[vinextRange.end.index] === ","
 						? vinextRange.end.index + 1
@@ -327,7 +329,7 @@ function addPayloadPlugin(source: string): Edit {
 				const hasComma = source[vinextRange.end.index] === ",";
 				return {
 					pluginInsert:
-						(hasComma ? "" : ",") + "\n" + indent + "payloadPlugin(),",
+						(hasComma ? "" : ",") + "\n" + indent + "vinextPayload(),",
 					insertAt: hasComma
 						? vinextRange.end.index + 1
 						: vinextRange.end.index,

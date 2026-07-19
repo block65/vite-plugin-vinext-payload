@@ -1,5 +1,5 @@
 /**
- * E2E runtime test: payloadWorkerPlugin with REAL payload + D1 adapter.
+ * E2E runtime test: vinextPayloadWorker with REAL payload + D1 adapter.
  *
  * `e2e-rpc-runtime` proves the workerd runtime shims with a React-only
  * worker; nothing there imports payload. That gap is how a consumer
@@ -68,13 +68,13 @@ const wranglerJsonc = JSON.stringify(
 
 const viteConfig = `import { cloudflare } from "@cloudflare/vite-plugin";
 import { defineConfig } from "vite";
-import { payloadWorkerPlugin } from "vite-plugin-vinext-payload";
+import { vinextPayloadWorker } from "vite-plugin-vinext-payload";
 
 // Deliberately NO ssrExternal: the plugin must handle this graph on its own.
 export default defineConfig({
 	plugins: [
 		cloudflare({ viteEnvironment: { name: "${WORKER_ENV}" } }),
-		...payloadWorkerPlugin({ env: "${WORKER_ENV}" }),
+		...vinextPayloadWorker({ env: "${WORKER_ENV}" }),
 	],
 });
 `;

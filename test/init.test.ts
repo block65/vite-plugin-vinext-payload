@@ -111,7 +111,7 @@ describe("init: vite.config.ts styles", () => {
 		await runInit();
 
 		const config = await read("vite.config.ts");
-		expect(config).toContain("vinext(), payloadPlugin()");
+		expect(config).toContain("vinext(), vinextPayload()");
 	});
 
 	it("handles multi-line plugins array", async () => {
@@ -119,7 +119,7 @@ describe("init: vite.config.ts styles", () => {
 		await runInit();
 
 		const config = await read("vite.config.ts");
-		expect(config).toContain("    vinext(),\n    payloadPlugin(),");
+		expect(config).toContain("    vinext(),\n    vinextPayload(),");
 	});
 
 	it("handles vinext() with an options argument (1.0 cloudflare shape)", async () => {
@@ -128,7 +128,7 @@ describe("init: vite.config.ts styles", () => {
 
 		const config = await read("vite.config.ts");
 		expect(config).toContain('from "vite-plugin-vinext-payload"');
-		expect(config).toContain("    }),\n    payloadPlugin(),");
+		expect(config).toContain("    }),\n    vinextPayload(),");
 	});
 
 	it("handles tabs and single quotes", async () => {
@@ -137,7 +137,7 @@ describe("init: vite.config.ts styles", () => {
 
 		const config = await read("vite.config.ts");
 		expect(config).toContain("from 'vite-plugin-vinext-payload'");
-		expect(config).toContain("\t\tvinext(),\n\t\tpayloadPlugin(),");
+		expect(config).toContain("\t\tvinext(),\n\t\tvinextPayload(),");
 	});
 });
 
@@ -151,14 +151,14 @@ describe("init: idempotency", () => {
 		expect(output).toContain("0 file(s) changed");
 	});
 
-	it("does not duplicate payloadPlugin on repeated runs", async () => {
+	it("does not duplicate vinextPayload on repeated runs", async () => {
 		await scaffold();
 		await runInit();
 		await runInit();
 		await runInit();
 
 		const config = await read("vite.config.ts");
-		const matches = config.match(/payloadPlugin/g) ?? [];
+		const matches = config.match(/vinextPayload/g) ?? [];
 		expect(matches).toHaveLength(2); // import + call
 	});
 });
@@ -174,11 +174,36 @@ describe("init: edge cases", () => {
 		expect(output).toContain("already exists");
 	});
 
-	it("skips vite.config.ts when payloadPlugin already present", async () => {
+	it("skips vite.config.ts when vinextPayload already present", async () => {
 		await scaffold();
 		await runInit();
 		const output = await runInit();
-		expect(output).toContain("payloadPlugin already present");
+		expect(output).toContain("vinextPayload already present");
+	});
+
+	// A config written before the rename carries the deprecated name. Matching
+	// only the new one would insert a second, duplicate plugin call.
+	it("skips vite.config.ts still using the pre-rename payloadPlugin", async () => {
+		await scaffold();
+		await write(
+			"vite.config.ts",
+			`import vinext from "vinext";
+import { payloadPlugin } from "vite-plugin-vinext-payload";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [vinext(), payloadPlugin()],
+});
+`,
+		);
+
+		const output = await runInit();
+
+		expect(output).toContain("vinextPayload already present");
+
+		const config = await read("vite.config.ts");
+		expect(config.match(/payloadPlugin/g) ?? []).toHaveLength(2);
+		expect(config).not.toContain("vinextPayload(");
 	});
 
 	it("dry-run does not write files", async () => {
@@ -230,7 +255,7 @@ describe("init: cloudflare plugin", () => {
 
 		const config = await read("vite.config.ts");
 		expect(config).toContain("cloudflare(");
-		expect(config).toContain("payloadPlugin()");
+		expect(config).toContain("vinextPayload()");
 		expect(config).toContain("vinext()");
 	});
 

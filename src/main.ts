@@ -5,10 +5,10 @@
  *
  * @example
  * ```ts
- * import { payloadPlugin } from "vite-plugin-vinext-payload";
+ * import vinextPayload from "vite-plugin-vinext-payload";
  *
  * export default defineConfig({
- *   plugins: [vinext(), payloadPlugin()],
+ *   plugins: [vinext(), vinextPayload()],
  * });
  * ```
  */
@@ -29,7 +29,7 @@ import { payloadUseClientBarrel } from "./use-client-barrel.ts";
 import { payloadWorkerdCompat } from "./workerd-compat.ts";
 import { payloadWorkerdEntry } from "./workerd-entry.ts";
 
-export interface PayloadPluginOptions {
+export interface VinextPayloadOptions {
 	/**
 	 * Additional packages to externalize from server (SSR + RSC) bundling.
 	 * Merged with the built-in list (esbuild, wrangler, miniflare, sharp).
@@ -50,7 +50,7 @@ export interface PayloadPluginOptions {
  * Environment API, plugin-rsc, and (optionally) workerd via
  * `@cloudflare/vite-plugin`.
  */
-export function payloadPlugin(options: PayloadPluginOptions = {}): Plugin[] {
+export function vinextPayload(options: VinextPayloadOptions = {}): Plugin[] {
 	const {
 		ssrExternal,
 		excludeFromOptimize = [],
@@ -76,7 +76,7 @@ export function payloadPlugin(options: PayloadPluginOptions = {}): Plugin[] {
 	];
 }
 
-export interface PayloadWorkerPluginOptions {
+export interface VinextPayloadWorkerOptions {
 	/**
 	 * The Vite environment name for the auxiliary worker. Must match the
 	 * `name` of the worker in `@cloudflare/vite-plugin`'s `auxiliaryWorkers`
@@ -101,7 +101,7 @@ export interface PayloadWorkerPluginOptions {
  * (`WorkerEntrypoint`) — no admin UI, no vinext, no RSC pipeline. The
  * parent worker calls into this one via a Cloudflare service binding.
  *
- * Subset of `payloadPlugin`: workerd polyfills, server externals,
+ * Subset of `vinextPayload`: workerd polyfills, server externals,
  * optimizeDeps excludes, CJS transforms, CLI stubs, and CJS interop.
  * The admin-UI / RSC fixes are intentionally excluded.
  *
@@ -123,8 +123,8 @@ export interface PayloadWorkerPluginOptions {
  * };
  * ```
  */
-export function payloadWorkerPlugin(
-	options: PayloadWorkerPluginOptions,
+export function vinextPayloadWorker(
+	options: VinextPayloadWorkerOptions,
 ): Plugin[] {
 	const {
 		env,
@@ -161,3 +161,17 @@ export function payloadWorkerPlugin(
 		},
 	];
 }
+
+export default vinextPayload;
+
+/** @deprecated Renamed to `vinextPayload`. */
+export const payloadPlugin = vinextPayload;
+
+/** @deprecated Renamed to `vinextPayloadWorker`. */
+export const payloadWorkerPlugin = vinextPayloadWorker;
+
+/** @deprecated Renamed to `VinextPayloadOptions`. */
+export type PayloadPluginOptions = VinextPayloadOptions;
+
+/** @deprecated Renamed to `VinextPayloadWorkerOptions`. */
+export type PayloadWorkerPluginOptions = VinextPayloadWorkerOptions;

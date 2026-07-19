@@ -20,5 +20,4 @@ export const cjsInteropPatch = {
 	reason:
 		"their CJS default exports arrive as { default: fn } without interop wrapping, so calls like pluralize('item') break at runtime",
 	removeWhen: "these packages ship native ESM",
-	untracked: true,
 } satisfies PatchDeclaration;

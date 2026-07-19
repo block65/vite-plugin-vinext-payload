@@ -184,13 +184,9 @@ The individual fixes are not needed to use the plugin; they are listed in
 ### Build-time patches
 
 This plugin rewrites other packages' code at build time. Every such rewrite
-is declared as data (`PATCH_MANIFEST` in [`src/main.ts`](src/main.ts)); the
-plugin announces one summary line per build, lists each patch under
-`DEBUG=vinext-payload`, and at the end of a production build warns for any
-declared patch that no longer found its target — the defect it works around
-may then be back. Transform patches with an id filter are gated through
-their declaration, so a pattern cannot rewrite code outside what this table
-discloses.
+is declared as data (`PATCH_MANIFEST` in [`src/main.ts`](src/main.ts)); this
+table is generated from those declarations, and a unit test fails when it
+drifts from them.
 
 <!-- patch-table:begin — generated from PATCH_MANIFEST by scripts/patch-table.ts; edit the src/ declarations, then `pnpm run docs:patches` -->
 

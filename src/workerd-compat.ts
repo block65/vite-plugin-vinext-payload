@@ -1,7 +1,7 @@
 import { Lang, parse } from "@ast-grep/napi";
 import type { EnvironmentOptions, Plugin } from "vite";
 import { logger } from "./logger.ts";
-import { recordPatch, type PatchDeclaration } from "./patch-manifest.ts";
+import type { PatchDeclaration } from "./patch-manifest.ts";
 
 export const consoleCreateTaskPatch = {
 	id: "workerd-console-createtask",
@@ -10,7 +10,6 @@ export const consoleCreateTaskPatch = {
 	reason:
 		"workerd's node:console defines console.createTask but throws 'not implemented' when called; React 19 dev mode calls it for async stack traces",
 	removeWhen: "workerd makes console.createTask a no-op instead of throwing",
-	moduleId: /react/,
 } satisfies PatchDeclaration;
 
 export const undiciFeatureDetectPatch = {
@@ -21,7 +20,6 @@ export const undiciFeatureDetectPatch = {
 		"Rolldown converts undici's lazy require('node:*') into a void-returning ESM initializer, so its feature probe reads a property off undefined and throws instead of returning false",
 	removeWhen:
 		"Rolldown preserves require() semantics for externalized node builtins, or undici guards its probe",
-	moduleId: /node_modules\/.*undici.*runtime-features/,
 } satisfies PatchDeclaration;
 
 export const importMetaUrlGuardPatch = {
@@ -144,7 +142,6 @@ export function payloadWorkerdCompat(
 								name: "payload-workerd-console-createtask",
 								transform(code, id) {
 									if (needsCreateTaskPolyfill(code, id)) {
-										recordPatch(consoleCreateTaskPatch, id);
 										return {
 											code: prependCreateTaskPolyfill(code),
 											map: null,
@@ -215,15 +212,6 @@ export function payloadWorkerdCompat(
 					: withUndici;
 
 				if (result !== code) {
-					if (needsCreateTask) {
-						recordPatch(consoleCreateTaskPatch, id);
-					}
-					if (withUndici !== withPolyfill) {
-						recordPatch(undiciFeatureDetectPatch, id);
-					}
-					if (result !== withUndici) {
-						recordPatch(importMetaUrlGuardPatch, id);
-					}
 					return { code: result, map: null };
 				}
 				return null;

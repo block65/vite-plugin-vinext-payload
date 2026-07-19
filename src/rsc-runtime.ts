@@ -34,6 +34,32 @@ const stubPaths: Record<string, string> = Object.fromEntries(
 		.map((pkg) => [pkg, STUB_FILES[pkg]]),
 );
 
+function inlineDrizzleKitApi(code: string): string {
+	return code.replace(
+		/require\s*\(\s*['"]drizzle-kit\/api['"]\s*\)/g,
+		DRIZZLE_KIT_API_INLINE_STUB,
+	);
+}
+
+/**
+ * Replace the RSC serializer's throws for values that can't cross the
+ * server/client boundary with `return undefined`. AST rather than regex, so
+ * every throw form is covered including comma expressions.
+ *
+ * Next.js silently drops these in production; vinext doesn't, so every Payload
+ * page with field configs (access functions, hooks, RegExps) would fail.
+ */
+function dropClientComponentThrows(code: string): string {
+	const root = parse(Lang.JavaScript, code).root();
+
+	const edits = root
+		.findAll({ rule: { kind: "throw_statement" } })
+		.filter((node) => node.text().includes("Client Component"))
+		.map((node) => node.replace("return undefined"));
+
+	return edits.length > 0 ? root.commitEdits(edits) : code;
+}
+
 export interface PayloadRscRuntimeOptions {
 	/**
 	 * Names of server environments running on workerd that need
@@ -79,8 +105,8 @@ export function payloadRscRuntime(
 
 	return {
 		name: "vite-plugin-payload:rsc-runtime",
-		// `enforce: "pre"` is load-bearing for the stub `resolveId` hook below.
-		// Without it, Vite's default Node resolver claims bare specifiers like
+		// `enforce: "pre"` is required for the stub `resolveId` hook below to
+		// win. Without it, Vite's default Node resolver claims bare specifiers like
 		// `file-type` first and points them at the real package's `core.js` —
 		// which doesn't export `fileTypeFromFile`, so Rolldown then errors
 		// with MISSING_EXPORT before our stub redirect ever runs. This only
@@ -100,33 +126,26 @@ export function payloadRscRuntime(
 
 			return {
 				optimizeDeps: {
-					// Vite 8+ (Rolldown) — added via spread to avoid type
-					// errors on Vite versions that don't have the type yet
-					...({
-						rolldownOptions: {
-							plugins: [
-								{
-									name: "payload-rsc-runtime-stubs",
-									resolveId(source: string) {
-										return stubs[source] ?? null;
-									},
-									transform(code: string) {
-										if (!code.includes("drizzle-kit/api")) {
-											return null;
-										}
-										const replaced = code.replace(
-											/require\s*\(\s*['"]drizzle-kit\/api['"]\s*\)/g,
-											DRIZZLE_KIT_API_INLINE_STUB,
-										);
-										if (replaced === code) {
-											return null;
-										}
-										return { code: replaced, map: null };
-									},
+					rolldownOptions: {
+						plugins: [
+							{
+								name: "payload-rsc-runtime-stubs",
+								resolveId(source) {
+									return stubs[source] ?? null;
 								},
-							],
-						},
-					} as Record<string, unknown>),
+								transform(code) {
+									if (!code.includes("drizzle-kit/api")) {
+										return null;
+									}
+									const replaced = inlineDrizzleKitApi(code);
+									if (replaced === code) {
+										return null;
+									}
+									return { code: replaced, map: null };
+								},
+							},
+						],
+					},
 				},
 			} satisfies EnvironmentOptions;
 		},
@@ -143,40 +162,19 @@ export function payloadRscRuntime(
 					return;
 				}
 
-				let result = code;
-
 				// createRequire-based requires bypass resolveId — catch at
 				// transform time for non-pre-bundled modules.
-				if (isServerEnv && result.includes("drizzle-kit/api")) {
-					result = result.replace(
-						/require\s*\(\s*['"]drizzle-kit\/api['"]\s*\)/g,
-						DRIZZLE_KIT_API_INLINE_STUB,
-					);
-				}
+				const withStubbedDrizzle =
+					isServerEnv && code.includes("drizzle-kit/api")
+						? inlineDrizzleKitApi(code)
+						: code;
 
-				// Patch RSC serializer: replace throw statements for values
-				// that can't cross the server/client boundary with
-				// `return undefined`. Uses AST (not regex) to handle all
-				// throw forms including comma expressions.
-				//
-				// Next.js silently drops these in production. vinext doesn't
-				// replicate that behavior, so every Payload page with field
-				// configs (access functions, hooks, RegExps) would fail.
-				if (
+				const result =
 					isRscEnv &&
 					id.includes("react-server-dom-webpack") &&
-					result.includes("Client Component")
-				) {
-					const root = parse(Lang.JavaScript, result).root();
-					const throws = root
-						.findAll({ rule: { kind: "throw_statement" } })
-						.filter((t) => t.text().includes("Client Component"));
-
-					if (throws.length > 0) {
-						const edits = throws.map((t) => t.replace("return undefined"));
-						result = root.commitEdits(edits);
-					}
-				}
+					withStubbedDrizzle.includes("Client Component")
+						? dropClientComponentThrows(withStubbedDrizzle)
+						: withStubbedDrizzle;
 
 				if (result === code) {
 					return;

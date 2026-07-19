@@ -27,5 +27,6 @@ jobs:
 
       - run: pnpm run lint
       - run: pnpm run fmt:check
+      - run: pnpm run typecheck
 
       - run: npm publish --access=public --provenance

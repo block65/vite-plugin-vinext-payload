@@ -14,9 +14,6 @@ importers:
       payload:
         specifier: ^3.82.0
         version: 3.85.1(graphql@16.14.0)(typescript@7.0.2)
-      type-fest:
-        specifier: ^5.8.0
-        version: 5.8.0
       vinext:
         specifier: 1.0.0-beta.2
         version: 1.0.0-beta.2(@vitejs/plugin-react@6.0.2(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.22.4)))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.22.4))
@@ -1610,10 +1607,6 @@ packages:
     resolution: {integrity: sha512-ki4hZQfh5rX0QDLLkOCj+h+CVNkqmp/CMf8v8kZpkNVK6jGQooMytqzLZYUVYIZcFZ6yDB70EfD8POcFXiF5oA==}
     engines: {node: '>=18'}
 
-  tagged-tag@1.0.0:
-    resolution: {integrity: sha512-yEFYrVhod+hdNyx7g5Bnkkb0G6si8HJurOoOEgC8B/O0uXLHlaey/65KRv6cuWBNhBgHKAROVpc7QyYqE5gFng==}
-    engines: {node: '>=20'}
-
   thread-stream@3.1.0:
     resolution: {integrity: sha512-OqyPZ9u96VohAyMfJykzmivOrY2wfMSf3C5TtFJVgN+Hm6aj+voFhlK+kZEIv2FBh1X6Xp3DlnCOfEQ3B2J86A==}
 
@@ -1665,10 +1658,6 @@ packages:
     resolution: {integrity: sha512-X8EX+XV4QR5xCsrgxaED954zTDfY8KqlDtskKEL0cHhyS/P8b4IFOvGDQpsC9Q1XnLq915wEfwwY/zzskCtmhg==}
     engines: {node: '>=18.0.0'}
     hasBin: true
-
-  type-fest@5.8.0:
-    resolution: {integrity: sha512-YGYEVz3Fm5iy/AybuA0oyNFq7H4CgQNfRp/qfe8nurE1kuCeNm3/vfm9X4Mtl+qLyaKJUh5xrFZwogr41SMjYA==}
-    engines: {node: '>=20'}
 
   typescript@7.0.2:
     resolution: {integrity: sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==}
@@ -3044,8 +3033,6 @@ snapshots:
     dependencies:
       '@tokenizer/token': 0.3.0
 
-  tagged-tag@1.0.0: {}
-
   thread-stream@3.1.0:
     dependencies:
       real-require: 0.2.0
@@ -3091,10 +3078,6 @@ snapshots:
       esbuild: 0.28.1
     optionalDependencies:
       fsevents: 2.3.3
-
-  type-fest@5.8.0:
-    dependencies:
-      tagged-tag: 1.0.0
 
   typescript@7.0.2:
     optionalDependencies:

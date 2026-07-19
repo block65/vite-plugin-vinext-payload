@@ -1,5 +1,6 @@
 import { parse, Lang } from "@ast-grep/napi";
 import type { Plugin } from "vite";
+import { isTruthy } from "./iife.ts";
 
 /**
  * Fixes hydration mismatches in Payload components that render different
@@ -54,23 +55,19 @@ function patchDefaultNavClient(
 	code: string,
 ): { code: string; map: null } | undefined {
 	const root = parse(Lang.JavaScript, code).root();
-	const edits = [];
 
 	const condition = root.find("pathname === href");
-	if (condition) {
-		edits.push(condition.replace("false /* patched: always render <Link> */"));
-	}
 
 	// Fix 2: `isActive && _jsx("div", ...)` with link-indicator → `false && ...`
 	const indicatorExpr = root.find('isActive && _jsx("div", $PROPS)');
-	if (indicatorExpr?.text().includes("link-indicator")) {
-		const leftNode = indicatorExpr.find({
-			rule: { kind: "identifier", regex: "^isActive$" },
-		});
-		if (leftNode) {
-			edits.push(leftNode.replace("false /* patched: skip indicator */"));
-		}
-	}
+	const indicatorFlag = indicatorExpr?.text().includes("link-indicator")
+		? indicatorExpr.find({ rule: { kind: "identifier", regex: "^isActive$" } })
+		: undefined;
+
+	const edits = [
+		condition?.replace("false /* patched: always render <Link> */"),
+		indicatorFlag?.replace("false /* patched: skip indicator */"),
+	].filter(isTruthy);
 
 	if (edits.length === 0) {
 		return;
@@ -88,14 +85,8 @@ function patchDocumentTabLink(
 	// Fix: always render el="link", disabled=false, to=hrefWithLocale.
 
 	const root = parse(Lang.JavaScript, code).root();
-	const edits = [];
 
 	const elTernary = root.find('$_ ? "link" : "div"');
-	if (elTernary) {
-		edits.push(
-			elTernary.replace('"link" /* patched: always render as link */'),
-		);
-	}
 
 	const disabledProp = root.find({
 		rule: {
@@ -106,21 +97,19 @@ function patchDocumentTabLink(
 			],
 		},
 	});
-	if (disabledProp) {
-		for (const child of disabledProp.children()) {
-			if (child.text() === "isActive" && child.kind() === "identifier") {
-				edits.push(child.replace("false /* patched */"));
-				break;
-			}
-		}
-	}
+	const disabledFlag = disabledProp
+		?.children()
+		.find(
+			(child) => child.text() === "isActive" && child.kind() === "identifier",
+		);
 
 	const toTernary = root.find("$_ ? hrefWithLocale : undefined");
-	if (toTernary) {
-		edits.push(
-			toTernary.replace("hrefWithLocale /* patched: always provide href */"),
-		);
-	}
+
+	const edits = [
+		elTernary?.replace('"link" /* patched: always render as link */'),
+		disabledFlag?.replace("false /* patched */"),
+		toTernary?.replace("hrefWithLocale /* patched: always provide href */"),
+	].filter(isTruthy);
 
 	if (edits.length === 0) {
 		return;

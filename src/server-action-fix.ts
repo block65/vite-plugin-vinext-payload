@@ -1,5 +1,7 @@
 import { parse, Lang } from "@ast-grep/napi";
+import type { SgNode } from "@ast-grep/napi";
 import type { Plugin } from "vite";
+import { iife } from "./iife.ts";
 
 /**
  * Fixes issues in vinext's browser entry and navigation controller:
@@ -74,6 +76,15 @@ const RENDER_PATTERNS = [
 	"reactRoot.render($ROOT)",
 ];
 
+/** Walk forward through siblings for the first node of the given kind. */
+function findFollowingSibling(node: SgNode, kind: string): SgNode | undefined {
+	const next = node.next();
+	if (!next) {
+		return undefined;
+	}
+	return next.kind() === kind ? next : findFollowingSibling(next, kind);
+}
+
 /**
  * Move the render() call after the returnValue check so data-returning
  * server actions (like getFormState) don't trigger a re-render that
@@ -82,29 +93,30 @@ const RENDER_PATTERNS = [
 function moveRenderAfterReturnValue(code: string): string | null {
 	const root = parse(Lang.JavaScript, code).root();
 
-	let ifStmt = null;
-	let matchedPattern: string | null = null;
-
-	for (const pattern of RENDER_PATTERNS) {
-		ifStmt = root.find({
-			rule: {
-				kind: "if_statement",
-				has: { pattern: "result.returnValue", stopBy: "end" },
-				follows: {
-					pattern: `${pattern};`,
-					stopBy: "end",
+	const match = iife(() => {
+		for (const pattern of RENDER_PATTERNS) {
+			const ifStmt = root.find({
+				rule: {
+					kind: "if_statement",
+					has: { pattern: "result.returnValue", stopBy: "end" },
+					follows: {
+						pattern: `${pattern};`,
+						stopBy: "end",
+					},
 				},
-			},
-		});
-		if (ifStmt) {
-			matchedPattern = pattern;
-			break;
+			});
+			if (ifStmt) {
+				return { ifStmt, pattern };
+			}
 		}
-	}
+		return undefined;
+	});
 
-	if (!ifStmt || !matchedPattern) {
+	if (!match) {
 		return null;
 	}
+
+	const { ifStmt, pattern: matchedPattern } = match;
 
 	const parentBlock = ifStmt.parent();
 	if (!parentBlock) {
@@ -116,14 +128,8 @@ function moveRenderAfterReturnValue(code: string): string | null {
 		return null;
 	}
 
-	// Find `return;` or `return undefined;` after the returnValue if-block
-	let returnStmt = ifStmt.next();
-	while (returnStmt) {
-		if (returnStmt.kind() === "return_statement") {
-			break;
-		}
-		returnStmt = returnStmt.next();
-	}
+	// `return;` or `return undefined;` after the returnValue if-block
+	const returnStmt = findFollowingSibling(ifStmt, "return_statement");
 	if (!returnStmt) {
 		return null;
 	}

@@ -14,7 +14,7 @@
  */
 
 import type { Plugin } from "vite";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 import { payloadWorkerPlugin } from "../src/main.ts";
 import { payloadWorkerdCompat } from "../src/workerd-compat.ts";
 
@@ -36,6 +36,28 @@ function callTransform(plugin: Plugin, env: string, code: string, id: string) {
 	return handler.call(ctx as never, code, id);
 }
 
+/** Narrows a Vite transform result to its emitted code without casting. */
+function hasCode(value: unknown): value is { code: string } {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"code" in value &&
+		typeof value.code === "string"
+	);
+}
+
+function transformedCode(result: unknown): string {
+	if (typeof result === "string") {
+		return result;
+	}
+	if (hasCode(result)) {
+		return result.code;
+	}
+	throw new Error(
+		`expected the transform to emit code, got ${JSON.stringify(result)}`,
+	);
+}
+
 const POLYFILL_PREFIX =
 	"try{console.createTask('_')}catch(_e){console.createTask=function(){return{run:function(f){return f()}}}};";
 
@@ -45,10 +67,7 @@ describe("payloadWorkerdCompat: console.createTask polyfill", () => {
 		const result = callTransform(plugin, "rsc", REACT_FIXTURE, REACT_FILE_ID);
 		expect(result).not.toBeNull();
 		expect(result).not.toBeUndefined();
-		const out =
-			typeof result === "object" && result !== null && "code" in result
-				? (result as { code: string }).code
-				: (result as string);
+		const out = transformedCode(result);
 		expect(out.startsWith(POLYFILL_PREFIX)).toBe(true);
 	});
 
@@ -64,10 +83,7 @@ describe("payloadWorkerdCompat: console.createTask polyfill", () => {
 			REACT_FIXTURE,
 			REACT_FILE_ID,
 		);
-		const out =
-			typeof result === "object" && result !== null && "code" in result
-				? (result as { code: string }).code
-				: (result as string);
+		const out = transformedCode(result);
 		expect(out.startsWith(POLYFILL_PREFIX)).toBe(true);
 	});
 
@@ -86,16 +102,10 @@ describe("payloadWorkerdCompat: console.createTask polyfill", () => {
 			REACT_FIXTURE,
 			REACT_FILE_ID,
 		);
-		// The transform may still return null/unchanged code, but it must
-		// NOT have prepended the polyfill.
-		if (result == null) {
-			return;
-		}
-		const out =
-			typeof result === "object" && "code" in result
-				? (result as { code: string }).code
-				: (result as string);
-		expect(out.startsWith(POLYFILL_PREFIX)).toBe(false);
+		// reactEnv:false must skip entirely. The transform signals "no change"
+		// with null, so that is the assertion — an early return here would let
+		// the test pass without checking anything.
+		expect(result).toBeNull();
 	});
 
 	it("skips the polyfill in non-server envs even when code matches", () => {
@@ -107,7 +117,7 @@ describe("payloadWorkerdCompat: console.createTask polyfill", () => {
 			REACT_FILE_ID,
 		);
 		// transform's outer guard returns null for non-server envs.
-		expect(result == null).toBe(true);
+		expect(result).toBeNull();
 	});
 
 	it("skips the polyfill for non-React files even in the rscEnv", () => {
@@ -120,14 +130,7 @@ describe("payloadWorkerdCompat: console.createTask polyfill", () => {
 		);
 		// React-id gating is the only thing keeping the polyfill from
 		// being injected into unrelated packages.
-		if (result == null) {
-			return;
-		}
-		const out =
-			typeof result === "object" && "code" in result
-				? (result as { code: string }).code
-				: (result as string);
-		expect(out.startsWith(POLYFILL_PREFIX)).toBe(false);
+		expect(result).toBeNull();
 	});
 });
 
@@ -145,20 +148,12 @@ describe("payloadWorkerPlugin: composition wires createTask polyfill", () => {
 		const compat = plugins.find(
 			(p) => p.name === "vite-plugin-payload:workerd-compat",
 		);
-		expect(compat).toBeDefined();
+		assert(compat, "expected the workerd-compat plugin to be composed in");
 
-		const result = callTransform(
-			compat as Plugin,
-			env,
-			REACT_FIXTURE,
-			REACT_FILE_ID,
-		);
+		const result = callTransform(compat, env, REACT_FIXTURE, REACT_FILE_ID);
 		expect(result).not.toBeNull();
 		expect(result).not.toBeUndefined();
-		const out =
-			typeof result === "object" && result !== null && "code" in result
-				? (result as { code: string }).code
-				: (result as string);
+		const out = transformedCode(result);
 		expect(out.startsWith(POLYFILL_PREFIX)).toBe(true);
 	});
 });

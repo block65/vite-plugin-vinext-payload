@@ -130,7 +130,7 @@ export async function startDevServer(
 		});
 	};
 
-	return { port, kill, [Symbol.asyncDispose]: kill };
+	return { port, proc, kill, [Symbol.asyncDispose]: kill };
 }
 
 /** Wait for a spawned process's stdout *or* stderr to match a pattern. */
@@ -174,29 +174,84 @@ export function waitForOutput(
 }
 
 /**
+ * Vite's line when on-demand dependency optimization finishes. The module
+ * runner is restarted around this point, so requests in flight before it can
+ * fail or 500 through no fault of the code under test.
+ */
+const OPTIMIZER_SETTLED =
+	/(new dependencies optimized|optimized dependencies changed|dependencies? (re)?optimized)/i;
+
+/**
+ * Wait until the dev server is genuinely able to serve requests.
+ *
+ * `startDevServer` resolves on Vite's `Local:` line, which only means the
+ * socket is listening. The first request is what *triggers* optimization of
+ * the whole dependency graph, and Vite tears down and restarts the module
+ * runner when that completes.
+ *
+ * This waits on the events the server actually emits rather than sleeping for
+ * a guessed duration: fire the priming request, then settle on whichever comes
+ * first — the optimizer's completion line, or the priming response if the
+ * dependency cache was already warm and no optimization was needed.
+ */
+export async function waitForServerReady(
+	proc: ChildProcess,
+	port: number,
+	path = "/",
+	timeoutMs = 120_000,
+) {
+	const primed = fetch(`http://localhost:${port}${path}`, {
+		redirect: "manual",
+	}).then(
+		(res) => {
+			// Drain the body so the socket closes; the status is not asserted
+			// here — this request exists to trigger optimization, not to verify.
+			return res.text().then(() => "served" as const);
+		},
+		(error: unknown) => {
+			// Expected: the runner restarts mid-flight during optimization, so
+			// the connection is reset. Surfaced rather than swallowed, because a
+			// reset for any *other* reason should still be visible in the log.
+			process.stderr.write(
+				`[e2e] priming request to ${path} did not complete: ${
+					error instanceof Error ? error.message : String(error)
+				}\n`,
+			);
+			return "reset" as const;
+		},
+	);
+
+	await Promise.race([
+		waitForOutput(proc, OPTIMIZER_SETTLED, timeoutMs),
+		primed,
+	]);
+
+	return primed;
+}
+
+/**
  * Fetch a route from the dev server and assert the status code.
- * Retries with 2s delay for cold-start compilation.
+ *
+ * Single request, no retry: the server is expected to be ready before this is
+ * called (see `waitForServerReady`). A wrong status here is a real result, not
+ * something to poll past.
  */
 export async function assertStatus(
 	port: number,
 	path: string,
 	expected: number[],
-	retries = 3,
 ) {
-	let lastStatus = 0;
-	for (let attempt = 0; attempt < retries; attempt++) {
-		const res = await fetch(`http://localhost:${port}${path}`, {
-			redirect: "manual",
-		});
-		lastStatus = res.status;
-		if (expected.includes(lastStatus)) {
-			return res;
-		}
-		await new Promise((r) => setTimeout(r, 2000));
+	const res = await fetch(`http://localhost:${port}${path}`, {
+		redirect: "manual",
+	});
+
+	if (!expected.includes(res.status)) {
+		throw new Error(
+			`GET ${path} expected ${expected.join("|")}, got ${res.status}`,
+		);
 	}
-	throw new Error(
-		`GET ${path} expected ${expected.join("|")}, got ${lastStatus}`,
-	);
+
+	return res;
 }
 
 // ── Fixtures ───────────────────────────────────────────────────────

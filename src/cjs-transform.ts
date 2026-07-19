@@ -60,36 +60,27 @@ export function payloadCjsTransform(
 					return;
 				}
 
-				let result = code;
-
 				// --- this → globalThis replacements (all environments) ---
 
-				if (result.includes("})(this,")) {
-					result = result.replaceAll("})(this,", "})(globalThis,");
-				}
-
-				if (result.includes("(this && this.")) {
-					result = result.replace(
-						TS_CJS_HELPER_RE,
-						"(globalThis && globalThis.$1)",
-					);
-				}
+				const withGlobalThis = code
+					.replaceAll("})(this,", "})(globalThis,")
+					.replace(TS_CJS_HELPER_RE, "(globalThis && globalThis.$1)");
 
 				// --- module.exports wrapping (client only) ---
 
 				const needsExportWrap =
 					this.environment?.name === "client" &&
-					!/\bexport\s+(default\b|{)/.test(result) &&
-					result.includes("module.exports");
+					!/\bexport\s+(default\b|{)/.test(withGlobalThis) &&
+					withGlobalThis.includes("module.exports");
 
-				if (needsExportWrap) {
-					result = [
-						`var module = { exports: {} };`,
-						`var exports = module.exports;`,
-						result,
-						`export default module.exports;`,
-					].join("\n");
-				}
+				const result = needsExportWrap
+					? [
+							`var module = { exports: {} };`,
+							`var exports = module.exports;`,
+							withGlobalThis,
+							`export default module.exports;`,
+						].join("\n")
+					: withGlobalThis;
 
 				if (result !== code) {
 					return { code: result, map: null };

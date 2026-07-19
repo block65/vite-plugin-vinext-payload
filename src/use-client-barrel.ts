@@ -1,6 +1,13 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import type { EnvironmentOptions, Plugin } from "vite";
+import { isTruthy } from "./iife.ts";
+import { logger } from "./logger.ts";
+import { tryRead } from "./try-read.ts";
+
+const RE_EXPORT_PATTERN = /^export\s+\{[^}]*\}\s+from\s+['"][^'"]+['"];?\s*$/;
+const STAR_RE_EXPORT_PATTERN = /^export\s+\*\s+from\s+['"][^'"]+['"];?\s*$/;
+const EXPORT_SOURCE_RE = /from\s+['"]([^'"]+)['"]/g;
 
 /**
  * Automatically excludes packages from RSC optimizeDeps when their
@@ -52,114 +59,123 @@ export function payloadUseClientBarrel(): Plugin {
 	};
 }
 
-async function* findBarrelClientPackagesIter(
-	prefixes: string[],
-	root: string,
-): AsyncGenerator<string> {
-	for await (const prefix of prefixes) {
-		const scope = prefix.startsWith("@") ? prefix.split("/")[0] : null;
-		if (!scope) {
-			continue;
-		}
-
-		const scopeDir = join(root, "node_modules", scope);
-		let entries: string[];
-		try {
-			entries = await readdir(scopeDir);
-		} catch {
-			continue;
-		}
-
-		for await (const entry of entries) {
-			const pkgName = `${scope}/${entry}`;
-			if (!pkgName.startsWith(prefix)) {
-				continue;
-			}
-
-			const pkgDir = join(scopeDir, entry);
-			const pkgJsonPath = join(pkgDir, "package.json");
-
-			let pkgJson: { exports?: Record<string, unknown> };
-			try {
-				pkgJson = JSON.parse(await readFile(pkgJsonPath, "utf-8"));
-			} catch {
-				continue;
-			}
-
-			const exports = pkgJson.exports;
-			if (!exports || typeof exports !== "object") {
-				continue;
-			}
-
-			for await (const [subpath, exportEntry] of Object.entries(exports)) {
-				if (subpath === ".") {
-					continue;
-				}
-
-				const entryPath = resolveExportEntry(exportEntry);
-				if (!entryPath) {
-					continue;
-				}
-
-				const fullPath = resolve(pkgDir, entryPath);
-				if (await isBarrelReExportingUseClient(fullPath)) {
-					yield pkgName;
-					break;
-				}
-			}
-		}
-	}
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
 }
 
 async function findBarrelClientPackages(
 	prefixes: string[],
 	root: string,
 ): Promise<string[]> {
-	const results: string[] = [];
-	for await (const pkg of findBarrelClientPackagesIter(prefixes, root)) {
-		results.push(pkg);
+	const scopes = prefixes.flatMap((prefix) => {
+		const [scope] = prefix.split("/");
+		return prefix.startsWith("@") && scope ? [{ prefix, scope }] : [];
+	});
+
+	const perScope = await Promise.all(
+		scopes.map(async ({ prefix, scope }) => {
+			const scopeDir = join(root, "node_modules", scope);
+
+			const entries = await readdir(scopeDir).catch((err: unknown) => {
+				// The scope may simply not be installed — there is nothing to scan
+				// and no exclude to contribute.
+				logger.trace(`scope directory unreadable: ${scopeDir}`, err);
+				return [];
+			});
+
+			const matches = await Promise.all(
+				entries
+					.map((entry) => ({ pkgName: `${scope}/${entry}`, entry }))
+					.filter(({ pkgName }) => pkgName.startsWith(prefix))
+					.map(async ({ pkgName, entry }) =>
+						(await hasUseClientBarrelExport(join(scopeDir, entry)))
+							? pkgName
+							: undefined,
+					),
+			);
+
+			return matches.filter(isTruthy);
+		}),
+	);
+
+	return perScope.flat();
+}
+
+/** True if any non-root subpath export of the package is a broken barrel. */
+async function hasUseClientBarrelExport(pkgDir: string): Promise<boolean> {
+	const manifest = await readManifest(join(pkgDir, "package.json"));
+
+	const exports = manifest?.exports;
+	if (!isRecord(exports)) {
+		return false;
 	}
-	return results;
+
+	const entryPaths = Object.entries(exports)
+		.filter(([subpath]) => subpath !== ".")
+		.map(([, exportEntry]) => resolveExportEntry(exportEntry))
+		.filter(isTruthy);
+
+	const barrels = await Promise.all(
+		entryPaths.map((entryPath) =>
+			isBarrelReExportingUseClient(resolve(pkgDir, entryPath)),
+		),
+	);
+
+	return barrels.includes(true);
+}
+
+async function readManifest(
+	path: string,
+): Promise<{ exports?: unknown } | undefined> {
+	const raw = await tryRead(path);
+	if (raw === undefined) {
+		return undefined;
+	}
+
+	try {
+		return JSON.parse(raw);
+	} catch (err) {
+		logger.trace(`package.json did not parse: ${path}`, err);
+		return undefined;
+	}
 }
 
 /** Resolve a package.json exports entry to a file path. */
-function resolveExportEntry(entry: unknown): string | null {
+function resolveExportEntry(entry: unknown): string | undefined {
 	if (typeof entry === "string") {
 		return entry;
 	}
-	if (entry && typeof entry === "object") {
-		const obj = entry as Record<string, unknown>;
-		for (const key of ["import", "default"]) {
-			const val = obj[key];
-			if (typeof val === "string") {
-				return val;
+
+	if (!isRecord(entry)) {
+		return undefined;
+	}
+
+	for (const key of ["import", "default"]) {
+		const value = entry[key];
+
+		if (typeof value === "string") {
+			return value;
+		}
+
+		if (isRecord(value)) {
+			if (typeof value["default"] === "string") {
+				return value["default"];
 			}
-			if (val && typeof val === "object") {
-				const nested = val as Record<string, unknown>;
-				if (typeof nested.default === "string") {
-					return nested.default;
-				}
-				if (typeof nested.import === "string") {
-					return nested.import;
-				}
+			if (typeof value["import"] === "string") {
+				return value["import"];
 			}
 		}
 	}
-	return null;
-}
 
-const RE_EXPORT_PATTERN = /^export\s+\{[^}]*\}\s+from\s+['"][^'"]+['"];?\s*$/;
-const STAR_RE_EXPORT_PATTERN = /^export\s+\*\s+from\s+['"][^'"]+['"];?\s*$/;
-const EXPORT_SOURCE_RE = /from\s+['"]([^'"]+)['"]/g;
+	return undefined;
+}
 
 /** Check if a file is a pure barrel that re-exports from 'use client' modules. */
 async function isBarrelReExportingUseClient(
 	filePath: string,
 ): Promise<boolean> {
-	let code: string;
-	try {
-		code = await readFile(filePath, "utf-8");
-	} catch {
+	const code = await tryRead(filePath);
+	if (code === undefined) {
 		return false;
 	}
 
@@ -194,8 +210,11 @@ async function isBarrelReExportingUseClient(
 		resolve(dirname(filePath), m[1]),
 	);
 
+	// A re-export target may not exist on disk (conditional exports, types-only
+	// entries). `tryRead` traces the miss; an unreadable source simply carries no
+	// directive, so the remaining sources still decide the answer.
 	const contents = await Promise.all(
-		sources.map((src) => readFile(src, "utf-8").catch(() => "")),
+		sources.map(async (src) => (await tryRead(src)) ?? ""),
 	);
 
 	return contents.some(

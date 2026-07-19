@@ -32,7 +32,7 @@ plugin-rsc's `output.move()` path.
 **Repo:** https://github.com/vitejs/vite-plugin-react (packages/plugin-rsc)
 **Upstream:** not filed yet
 
-**What breaks:** On current Payload templates (`payload@3.82.1`) with
+**What breaks:** On Payload templates at `payload@3.82.1` with
 vinext `0.1.3` (not re-verified in isolation on `1.0.0-beta.2`; the suites
 pass with the workaround active), RSC build can fail with:
 `"getHTMLDiffComponents" is not exported by @payloadcms/ui/dist/elements/HTMLDiff/index.js`.
@@ -43,7 +43,7 @@ The source module exports it, but the RSC build graph sees it as missing.
 
 **Our workaround:** `payloadHtmlDiffExportFix` patches
 `@payloadcms/ui/dist/exports/rsc/index.js` on disk at build start to
-replace the brittle re-export with a stable fallback export for
+replace the re-export with a fallback export for
 `getHTMLDiffComponents`.
 
 ---
@@ -188,8 +188,8 @@ listed in `ssr.external` are not externalized from the RSC build. This
 causes unresolvable imports (e.g., blake3-wasm's `./node.js` platform
 file) in the RSC bundle.
 
-Additionally, `resolve.external` cannot be used because the cloudflare
-plugin validates and rejects it on all environments it manages.
+`resolve.external` cannot be used either, because the cloudflare plugin
+validates and rejects it on all environments it manages.
 
 **Why Next.js works:** Next.js has a single SSR bundling pass that handles
 both RSC and SSR. Its externals configuration applies uniformly to all
@@ -241,7 +241,7 @@ under plain Node (payload CLI), but it must _resolve_ in every Vite
 environment that processes the config. Anywhere it gets bundled or
 optimizer-scanned, wrangler's entire CLI comes with it — including
 `blake3-wasm`, whose `export * from './node.js'` Rolldown cannot resolve.
-Dev died during dependency optimization
+Dev failed during dependency optimization
 (`[UNRESOLVED_IMPORT] Could not resolve './node.js'`) and `vinext build`
 failed on the same chain
 (`payload.config.ts → wrangler/wrangler-dist/cli.js → blake3-wasm`).
@@ -443,7 +443,7 @@ Verified empirically: the admin e2e auth redirect (`/admin` →
 - https://github.com/cloudflare/workers-sdk/pull/10544 (fix: `preserveEntrySignatures: "strict"`)
 - https://github.com/rolldown/rolldown/issues/3500 (`preserveEntrySignatures` feature request)
 - https://github.com/rolldown/rolldown/issues/6449 (strict mode validation)
-  **Status:** workers-sdk #10213 CLOSED, workers-sdk #10544 MERGED, rolldown #3500 CLOSED, rolldown #6449 CLOSED (re-checked 2026-06-15 against rolldown `1.0.3` / Vite `8.0.16`). Still needed: `preserveEntrySignatures: "strict"` governs _named_ exports (it stops extra exports being hoisted onto the entry — the #10213 case), not the _shape of the default-export value_. vinext `0.1.3` still emits the `{ fetch }` object entry (`dist/server/app-router-entry.js`), and Rolldown can still collapse that object on large bundles. No upstream issue covers default-export-object inlining. On `1.0.0-beta.2` (verified against a real cloudflare-target build, 2026-07-18) the entry chunk's default export survives as a `{ fetch }` object — the workaround's rewrite applies but its runtime wrapper passes the object through untouched, so it is currently defensive rather than load-bearing.
+  **Status:** workers-sdk #10213 CLOSED, workers-sdk #10544 MERGED, rolldown #3500 CLOSED, rolldown #6449 CLOSED (re-checked 2026-06-15 against rolldown `1.0.3` / Vite `8.0.16`). Still needed: `preserveEntrySignatures: "strict"` governs _named_ exports (it stops extra exports being hoisted onto the entry — the #10213 case), not the _shape of the default-export value_. vinext `0.1.3` still emits the `{ fetch }` object entry (`dist/server/app-router-entry.js`), and Rolldown can still collapse that object on large bundles. No upstream issue covers default-export-object inlining. On `1.0.0-beta.2` (verified against a real cloudflare-target build, 2026-07-18) the entry chunk's default export survives as a `{ fetch }` object — the workaround's rewrite applies but its runtime wrapper passes the object through untouched, so it currently has no effect on the emitted output and only guards against the collapse recurring.
 
 **What breaks:** vinext's `app-router-entry.js` exports
 `{ async fetch(request, env, ctx) { return handleRequest(request, env, ctx) } }`

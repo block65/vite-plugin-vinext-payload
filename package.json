@@ -51,18 +51,18 @@
 		"lint": "oxlint .",
 		"prepare": "npm run build",
 		"prepublishOnly": "npm run build",
-		"preversion": "npm run lint && npm run fmt:check",
-		"test": "vitest run test/init.test.ts test/patch-targets.test.ts test/server-action-fix.test.ts test/workerd-compat.test.ts test/worker-plugin-scoping.test.ts",
+		"preversion": "npm run lint && npm run fmt:check && npm run typecheck",
+		"test": "vitest run --project unit",
 		"test:e2e": "vitest run test/e2e.test.ts",
 		"test:e2e-admin": "vitest run test/e2e-admin.test.ts",
 		"test:e2e-d1": "vitest run test/e2e-d1.test.ts",
 		"test:e2e-rpc": "vitest run test/e2e-rpc-worker.test.ts",
 		"test:e2e-rpc-payload": "vitest run test/e2e-rpc-payload.test.ts",
-		"test:e2e-rpc-runtime": "vitest run test/e2e-rpc-runtime.test.ts"
+		"test:e2e-rpc-runtime": "vitest run test/e2e-rpc-runtime.test.ts",
+		"typecheck": "tsc -b --noEmit"
 	},
 	"dependencies": {
 		"@ast-grep/napi": "^0.44.1",
-		"type-fest": "^5.8.0",
 		"vite-plugin-cjs-interop": "^4.0.3"
 	},
 	"devDependencies": {

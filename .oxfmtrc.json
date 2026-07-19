@@ -3,9 +3,11 @@
 
 	"useTabs": true,
 	"printWidth": 80,
-	// No ignorePatterns: everything we want skipped (dist, .wrangler, and the
-	// generated files inside test/.test-project*) is already covered by
-	// .gitignore, which oxfmt honours.
+	// Build output and generated files (dist, .wrangler, test/.test-project*)
+	// need no entry here — .gitignore covers them and oxfmt honours it.
+	// agent-standards is a git submodule: someone else's repo, checked out
+	// inside this one. Formatting it would dirty its working tree.
+	"ignorePatterns": ["agent-standards"],
 	"sortPackageJson": {
 		"sortScripts": true
 	},

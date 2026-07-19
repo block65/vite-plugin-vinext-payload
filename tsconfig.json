@@ -1,6 +1,10 @@
 {
 	"compilerOptions": {
-		"target": "ES2022",
+		// engines.node is >=24, which implements all of ES2024 (Array.fromAsync
+		// landed in Node 22). Not ESNext: that tracks whatever the TypeScript
+		// version happens to know about, which can outrun the runtime.
+		"target": "ES2024",
+		"lib": ["ES2024"],
 		"module": "ESNext",
 		"moduleResolution": "bundler",
 		"strict": true,
@@ -11,6 +15,6 @@
 		"allowImportingTsExtensions": true,
 		"noEmit": true
 	},
-	"include": ["src", "bin", "test"],
+	"include": ["src", "bin", "test", "vitest.config.ts"],
 	"exclude": ["node_modules"]
 }

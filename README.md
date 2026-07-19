@@ -1,6 +1,7 @@
 # vite-plugin-vinext-payload
 
-Run [Payload CMS](https://payloadcms.com/) on Cloudflare Workers with Vite.
+A Vite plugin that makes [Payload CMS](https://payloadcms.com/) run under
+[vinext](https://github.com/cloudflare/vinext), including on Cloudflare Workers.
 
 ## Quick Start
 

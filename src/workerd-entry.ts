@@ -1,5 +1,5 @@
 import type { Plugin } from "vite";
-import { recordPatch, type PatchDeclaration } from "./patch-manifest.ts";
+import type { PatchDeclaration } from "./patch-manifest.ts";
 
 export const workerdEntryPatch = {
 	id: "workerd-entry",
@@ -92,8 +92,6 @@ export function payloadWorkerdEntry(): Plugin {
 					.trim()
 					.split(/\s+as\s+/)[0];
 				specifiers[defaultIndex] = "__payload_worker_handler as default";
-
-				recordPatch(workerdEntryPatch, chunk.fileName);
 
 				chunk.code = chunk.code.replace(
 					exportMatch[0],

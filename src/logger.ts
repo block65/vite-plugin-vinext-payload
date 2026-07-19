@@ -20,20 +20,8 @@ const DEBUG_PATTERN = process.env["DEBUG"] ?? "";
 const enabled =
 	DEBUG_PATTERN === "*" || DEBUG_PATTERN.includes("vinext-payload");
 
-/** `trace` and `debug` are gated; `info`, `warn` and `error` always surface. */
+/** `trace` and `debug` are gated; `warn` and `error` always surface. */
 export const logger = {
-	/**
-	 * Always shown, no level word: the one-line-per-build disclosure of what
-	 * this plugin does to other people's code. Not for diagnostics — those
-	 * are `trace`/`debug`.
-	 */
-	info(message: string, ...detail: unknown[]): void {
-		process.stderr.write(`${PREFIX} ${message}\n`);
-		if (enabled) {
-			logDetail(detail);
-		}
-	},
-
 	trace(message: string, ...detail: unknown[]): void {
 		if (enabled) {
 			process.stderr.write(`${PREFIX} trace ${message}\n`);

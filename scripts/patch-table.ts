@@ -1,7 +1,6 @@
 /**
- * Generates the README's build-time patch table from `PATCH_MANIFEST`, the
- * same data the plugins announce and verify at build time. Run via
- * `pnpm run docs:patches`; `test/patch-manifest.test.ts` fails when the
+ * Generates the README's build-time patch table from `PATCH_MANIFEST`. Run
+ * via `pnpm run docs:patches`; `test/patch-manifest.test.ts` fails when the
  * committed table drifts from the manifest.
  */
 

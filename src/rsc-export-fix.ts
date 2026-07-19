@@ -1,5 +1,5 @@
 import type { Plugin } from "vite";
-import { recordPatch, type PatchDeclaration } from "./patch-manifest.ts";
+import type { PatchDeclaration } from "./patch-manifest.ts";
 
 export const rscExportFixPatch = {
 	id: "rsc-export-fix",
@@ -35,7 +35,7 @@ export function payloadRscExportFix(): Plugin {
 		name: "vite-plugin-payload:rsc-export-fix",
 		enforce: "post",
 		transform: {
-			handler(code, id) {
+			handler(code, _id) {
 				if (this.environment?.name !== "rsc") {
 					return;
 				}
@@ -63,7 +63,6 @@ export function payloadRscExportFix(): Plugin {
 				if (fixed === code) {
 					return;
 				}
-				recordPatch(rscExportFixPatch, id);
 				return { code: fixed, map: null };
 			},
 		},

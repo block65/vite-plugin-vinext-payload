@@ -27,7 +27,7 @@ import {
 	payloadNavComponentFix,
 } from "./nav-component-fix.ts";
 import { optimizeDepsPatch, payloadOptimizeDeps } from "./optimize-deps.ts";
-import { payloadPatchReport, type PatchDeclaration } from "./patch-manifest.ts";
+import type { PatchDeclaration } from "./patch-manifest.ts";
 import { payloadRscExportFix, rscExportFixPatch } from "./rsc-export-fix.ts";
 import {
 	payloadRscRuntime,
@@ -57,8 +57,8 @@ import { payloadWorkerdEntry, workerdEntryPatch } from "./workerd-entry.ts";
 
 /**
  * Every rewrite this plugin makes to third-party code, as data. The README's
- * patch table is generated from this (`pnpm run docs:patches`), and the
- * plugins announce and verify it at build time — see patch-manifest.ts.
+ * patch table is generated from this (`pnpm run docs:patches`) and a unit
+ * test fails when the committed table drifts.
  */
 export const PATCH_MANIFEST: readonly PatchDeclaration[] = [
 	useClientBarrelPatch,
@@ -77,20 +77,6 @@ export const PATCH_MANIFEST: readonly PatchDeclaration[] = [
 	rscStubsPatch,
 	rscSerializerThrowsPatch,
 	serverActionFixPatch,
-	cjsInteropPatch,
-];
-
-/** The subset of `PATCH_MANIFEST` composed by `vinextPayloadWorker`. */
-const WORKER_PATCH_MANIFEST: readonly PatchDeclaration[] = [
-	serverExternalsPatch,
-	consoleCreateTaskPatch,
-	undiciFeatureDetectPatch,
-	importMetaUrlGuardPatch,
-	nodeBuiltinShimsPatch,
-	optimizeDepsPatch,
-	rscStubsPatch,
-	cjsTransformPatch,
-	cliStubsPatch,
 	cjsInteropPatch,
 ];
 
@@ -123,7 +109,6 @@ export function vinextPayload(options: VinextPayloadOptions = {}): Plugin[] {
 	} = options;
 
 	return [
-		payloadPatchReport(PATCH_MANIFEST),
 		payloadUseClientBarrel(),
 		payloadServerExternals({ ssrExternal }),
 		payloadWorkerdCompat(),
@@ -202,7 +187,6 @@ export function vinextPayloadWorker(
 	const serverEnvs = [env];
 
 	return [
-		payloadPatchReport(WORKER_PATCH_MANIFEST),
 		payloadServerExternals({ ssrExternal, serverEnvs }),
 		// Enable the createTask polyfill against the worker's own env:
 		// payload.config.ts commonly imports admin components at module

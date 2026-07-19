@@ -1,11 +1,7 @@
 import { parse, Lang } from "@ast-grep/napi";
 import type { Plugin } from "vite";
 import { isTruthy } from "./iife.ts";
-import {
-	patchApplies,
-	recordPatch,
-	type PatchDeclaration,
-} from "./patch-manifest.ts";
+import type { PatchDeclaration } from "./patch-manifest.ts";
 
 export const navComponentFixPatch = {
 	id: "nav-component-fix",
@@ -18,7 +14,6 @@ export const navComponentFixPatch = {
 		"vinext's usePathname()/useParams() differ between SSR and client hydration, so these components render different element types and React 19 discards the server tree, dropping form state",
 	removeWhen:
 		"vinext's navigation hooks use React context like Next.js, or Payload removes the conditional element type rendering",
-	moduleId: /@payloadcms\/.*(?:Nav.*client|TabLink)/,
 } satisfies PatchDeclaration;
 
 /**
@@ -48,7 +43,7 @@ export function payloadNavComponentFix(): Plugin {
 	return {
 		name: "vite-plugin-payload:nav-component-fix",
 		transform(code, id) {
-			if (!patchApplies(navComponentFixPatch, id)) {
+			if (!id.includes("@payloadcms")) {
 				return;
 			}
 
@@ -57,19 +52,11 @@ export function payloadNavComponentFix(): Plugin {
 				id.includes("client") &&
 				code.includes("pathname === href")
 			) {
-				const result = patchDefaultNavClient(code);
-				if (result) {
-					recordPatch(navComponentFixPatch, id);
-				}
-				return result;
+				return patchDefaultNavClient(code);
 			}
 
 			if (id.includes("TabLink") && code.includes("DocumentTabLink")) {
-				const result = patchDocumentTabLink(code);
-				if (result) {
-					recordPatch(navComponentFixPatch, id);
-				}
-				return result;
+				return patchDocumentTabLink(code);
 			}
 		},
 	};

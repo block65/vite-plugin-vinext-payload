@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { Lang, parse } from "@ast-grep/napi";
 import type { EnvironmentOptions, Plugin } from "vite";
-import { recordPatch, type PatchDeclaration } from "./patch-manifest.ts";
+import type { PatchDeclaration } from "./patch-manifest.ts";
 import { RSC_STUBS } from "./payload-packages.ts";
 
 export const rscStubsPatch = {
@@ -25,7 +25,6 @@ export const rscSerializerThrowsPatch = {
 		"the RSC serializer throws for values that cannot cross the server/client boundary (access functions, hooks, RegExps in Payload field configs); Next.js silently drops them in production, vinext does not, so every Payload page would fail",
 	removeWhen:
 		"vinext's RSC pipeline tolerates non-serializable config values the way Next.js does",
-	moduleId: /react-server-dom-webpack/,
 } satisfies PatchDeclaration;
 
 // Static stub files — these must export the named exports that consumers
@@ -203,12 +202,6 @@ export function payloadRscRuntime(
 
 				if (result === code) {
 					return;
-				}
-				if (withStubbedDrizzle !== code) {
-					recordPatch(rscStubsPatch, id);
-				}
-				if (result !== withStubbedDrizzle) {
-					recordPatch(rscSerializerThrowsPatch, id);
 				}
 				return { code: result, map: null };
 			},

@@ -1,5 +1,5 @@
 import type { Plugin } from "vite";
-import { recordPatch, type PatchDeclaration } from "./patch-manifest.ts";
+import type { PatchDeclaration } from "./patch-manifest.ts";
 
 // Pre-compiled regexes — these run on every node_modules file.
 const REACT_EXCLUDE_RE =
@@ -96,7 +96,6 @@ export function payloadCjsTransform(
 					: withGlobalThis;
 
 				if (result !== code) {
-					recordPatch(cjsTransformPatch, id);
 					return { code: result, map: null };
 				}
 			},

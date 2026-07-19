@@ -52,6 +52,22 @@ export const nodeBuiltinShimsPatch = {
 const CONSOLE_CREATE_TASK_POLYFILL =
 	"try{console.createTask('_')}catch(_e){console.createTask=function(){return{run:function(f){return f()}}}};\n";
 
+export interface PayloadWorkerdCompatOptions {
+	/**
+	 * Names of Vite environments running on workerd. These receive
+	 * `node:*` → `unenv` resolution, undici runtime-feature shims, and
+	 * `import.meta.url` guards. Defaults to `["ssr", "rsc"]`.
+	 */
+	serverEnvs?: string[];
+
+	/**
+	 * Name of the environment that loads React (used for the
+	 * `console.createTask` polyfill). Pass `false` to disable the
+	 * polyfill (workers that don't bundle React). Defaults to `"rsc"`.
+	 */
+	reactEnv?: string | false;
+}
+
 function prependCreateTaskPolyfill(code: string): string {
 	return CONSOLE_CREATE_TASK_POLYFILL + code;
 }
@@ -104,22 +120,6 @@ function guardImportMetaUrl(code: string): string {
 	);
 
 	return edits.length > 0 ? root.commitEdits(edits) : code;
-}
-
-export interface PayloadWorkerdCompatOptions {
-	/**
-	 * Names of Vite environments running on workerd. These receive
-	 * `node:*` → `unenv` resolution, undici runtime-feature shims, and
-	 * `import.meta.url` guards. Defaults to `["ssr", "rsc"]`.
-	 */
-	serverEnvs?: string[];
-
-	/**
-	 * Name of the environment that loads React (used for the
-	 * `console.createTask` polyfill). Pass `false` to disable the
-	 * polyfill (workers that don't bundle React). Defaults to `"rsc"`.
-	 */
-	reactEnv?: string | false;
 }
 
 export function payloadWorkerdCompat(

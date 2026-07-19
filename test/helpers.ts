@@ -193,6 +193,9 @@ const OPTIMIZER_SETTLED =
  * a guessed duration: fire the priming request, then settle on whichever comes
  * first — the optimizer's completion line, or the priming response if the
  * dependency cache was already warm and no optimization was needed.
+ *
+ * A priming request that is *reset* is not a ready signal — it is evidence of
+ * the opposite — so that case waits for the optimizer line regardless.
  */
 export async function waitForServerReady(
 	proc: ChildProcess,
@@ -200,6 +203,14 @@ export async function waitForServerReady(
 	path = "/",
 	timeoutMs = 120_000,
 ) {
+	const settled = waitForOutput(proc, OPTIMIZER_SETTLED, timeoutMs);
+
+	// When the priming request wins the race below, nothing ever awaits
+	// `settled`, but its timeout still rejects. Attaching a handler up front
+	// keeps that from surfacing as an unhandled rejection minutes later, inside
+	// whichever unrelated test happens to be running by then.
+	settled.catch(() => {});
+
 	const primed = fetch(`http://localhost:${port}${path}`, {
 		redirect: "manual",
 	}).then(
@@ -221,12 +232,21 @@ export async function waitForServerReady(
 		},
 	);
 
-	await Promise.race([
-		waitForOutput(proc, OPTIMIZER_SETTLED, timeoutMs),
+	const outcome = await Promise.race([
+		settled.then(() => "optimized" as const),
 		primed,
 	]);
 
-	return primed;
+	// A reset means the runner tore down mid-request, so optimization is still
+	// in flight and the server cannot serve yet. The optimizer's line is the
+	// only remaining signal that it finished; returning on the reset alone hands
+	// back a server that is still restarting.
+	if (outcome === "reset") {
+		await settled;
+		return "optimized" as const;
+	}
+
+	return outcome;
 }
 
 /**

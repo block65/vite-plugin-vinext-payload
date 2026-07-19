@@ -49,12 +49,12 @@
 		"prepublishOnly": "pnpm run build",
 		"preversion": "pnpm run lint && pnpm run fmt:check && pnpm run typecheck",
 		"test": "vitest run --project unit",
-		"test:e2e": "vitest run test/e2e.test.ts",
-		"test:e2e-admin": "vitest run test/e2e-admin.test.ts",
-		"test:e2e-d1": "vitest run test/e2e-d1.test.ts",
-		"test:e2e-rpc": "vitest run test/e2e-rpc-worker.test.ts",
-		"test:e2e-rpc-payload": "vitest run test/e2e-rpc-payload.test.ts",
-		"test:e2e-rpc-runtime": "vitest run test/e2e-rpc-runtime.test.ts",
+		"test:e2e": "scripts/e2e-container.sh test/e2e.test.ts",
+		"test:e2e-admin": "scripts/e2e-container.sh test/e2e-admin.test.ts",
+		"test:e2e-d1": "scripts/e2e-container.sh test/e2e-d1.test.ts",
+		"test:e2e-rpc": "scripts/e2e-container.sh test/e2e-rpc-worker.test.ts",
+		"test:e2e-rpc-payload": "scripts/e2e-container.sh test/e2e-rpc-payload.test.ts",
+		"test:e2e-rpc-runtime": "scripts/e2e-container.sh test/e2e-rpc-runtime.test.ts",
 		"typecheck": "tsc -b --noEmit"
 	},
 	"dependencies": {

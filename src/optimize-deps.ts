@@ -1,9 +1,24 @@
 import type { EnvironmentOptions, Plugin, ResolvedConfig } from "vite";
+import type { PatchDeclaration } from "./patch-manifest.ts";
 import {
 	CLIENT_OPTIMIZE_DEPS_EXCLUDE,
 	CLIENT_OPTIMIZE_DEPS_INCLUDE,
 	OPTIMIZE_DEPS_EXCLUDE,
 } from "./payload-packages.ts";
+
+export const optimizeDepsPatch = {
+	id: "optimize-deps",
+	kind: "config",
+	targets: [
+		"file-type, blake3-wasm, wrangler, @payloadcms/next — excluded from optimizeDeps in every environment",
+		"payload > ajv, payload > bson-objectid, react/compiler-runtime, @payloadcms/ui and discovered next/* aliases — force-included in client optimizeDeps",
+	],
+	reason:
+		"these packages break during esbuild/Rolldown pre-bundling for structural reasons webpack handles natively, and excluded parents lose CJS auto-discovery for their children; per-entry notes live in payload-packages.ts",
+	upstreamIssues: ["https://github.com/cloudflare/vinext/issues/538"],
+	removeWhen:
+		"per-entry conditions in payload-packages.ts — the lists shrink entry by entry",
+} satisfies PatchDeclaration;
 
 /**
  * Collect all `next/*` alias specifiers from the resolved Vite config.

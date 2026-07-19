@@ -1,9 +1,22 @@
 import type { Plugin } from "vite";
+import { recordPatch, type PatchDeclaration } from "./patch-manifest.ts";
 
 // Pre-compiled regexes — these run on every node_modules file.
 const REACT_EXCLUDE_RE =
 	/node_modules\/(react|react-dom|react-server-dom-webpack|scheduler)(\/|$)/;
 const TS_CJS_HELPER_RE = /\(this && this\.(__\w+)\)/g;
+
+export const cjsTransformPatch = {
+	id: "cjs-transform",
+	kind: "transform",
+	targets: [
+		"any node_modules CJS/UMD file except react, react-dom, react-server-dom-webpack and scheduler",
+	],
+	reason:
+		"files served raw via /@fs/ break in the browser (module.exports) and in Vite's strict-ESM module runner, where module-scope `this` is undefined for UMD wrappers and TS CJS helpers",
+	removeWhen:
+		"Vite converts CJS to ESM for files served outside optimizeDeps pre-bundling",
+} satisfies PatchDeclaration;
 
 export interface PayloadCjsTransformOptions {
 	/**
@@ -83,6 +96,7 @@ export function payloadCjsTransform(
 					: withGlobalThis;
 
 				if (result !== code) {
+					recordPatch(cjsTransformPatch, id);
 					return { code: result, map: null };
 				}
 			},

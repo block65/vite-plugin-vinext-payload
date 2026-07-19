@@ -1,5 +1,18 @@
 import type { EnvironmentOptions, Plugin, UserConfig } from "vite";
+import type { PatchDeclaration } from "./patch-manifest.ts";
 import { SSR_EXTERNAL } from "./payload-packages.ts";
+
+export const serverExternalsPatch = {
+	id: "server-externals",
+	kind: "config",
+	targets: [
+		"esbuild, wrangler, miniflare, sharp — externalized from server bundles",
+		"cloudflare:workers — externalized everywhere",
+	],
+	reason:
+		"build/deploy tools and native addons cannot be bundled, and the client environment must not try to bundle the workerd-only cloudflare:workers specifier",
+	removeWhen: "never — build tools and native addons stay external",
+} satisfies PatchDeclaration;
 
 export interface PayloadServerExternalsOptions {
 	/**

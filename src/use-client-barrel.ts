@@ -3,7 +3,20 @@ import { dirname, join, resolve } from "node:path";
 import type { EnvironmentOptions, Plugin } from "vite";
 import { isTruthy } from "./iife.ts";
 import { logger } from "./logger.ts";
+import type { PatchDeclaration } from "./patch-manifest.ts";
 import { tryRead } from "./try-read.ts";
+
+export const useClientBarrelPatch = {
+	id: "use-client-barrel",
+	kind: "config",
+	targets: [
+		"@payloadcms/* — subpath barrels re-exporting 'use client' modules, excluded from rsc optimizeDeps",
+	],
+	reason:
+		"pre-bundling merges barrels with their re-exported modules and strips 'use client', so plugin-rsc executes client components on the server",
+	removeWhen:
+		"@vitejs/plugin-rsc follows re-export chains to detect 'use client' directives",
+} satisfies PatchDeclaration;
 
 const RE_EXPORT_PATTERN = /^export\s+\{[^}]*\}\s+from\s+['"][^'"]+['"];?\s*$/;
 const STAR_RE_EXPORT_PATTERN = /^export\s+\*\s+from\s+['"][^'"]+['"];?\s*$/;

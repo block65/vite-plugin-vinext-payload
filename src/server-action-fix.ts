@@ -2,6 +2,25 @@ import { parse, Lang } from "@ast-grep/napi";
 import type { SgNode } from "@ast-grep/napi";
 import type { Plugin } from "vite";
 import { iife } from "./iife.ts";
+import {
+	patchApplies,
+	recordPatch,
+	type PatchDeclaration,
+} from "./patch-manifest.ts";
+
+export const serverActionFixPatch = {
+	id: "server-action-fix",
+	kind: "transform",
+	targets: [
+		"vinext — server/app-browser-entry.js",
+		"vinext — server/app-browser-navigation-controller.js",
+	],
+	reason:
+		"vinext applies the RSC tree of a data-returning server action before returning its data, resetting Payload form state and looping getFormState; its browser entry also imports the navigation shim by relative path, bypassing the pre-bundled next/navigation alias and forcing a runtime re-optimize",
+	removeWhen:
+		"vinext uses the aliased next/navigation in its browser entry and skips the visible commit for data-returning server actions",
+	moduleId: /app-browser-(?:entry|navigation-controller)/,
+} satisfies PatchDeclaration;
 
 /**
  * Fixes issues in vinext's browser entry and navigation controller:
@@ -38,9 +57,6 @@ import { iife } from "./iife.ts";
  *    Fix: rewrite the relative import to `next/navigation`.
  *
  * Uses ast-grep for structural AST matching.
- *
- * Remove: when vinext uses the aliased `next/navigation` in its browser entry
- * and skips the visible commit for data-returning server actions.
  */
 
 /**
@@ -221,12 +237,17 @@ export function payloadServerActionFix(): Plugin {
 		name: "vite-plugin-payload:server-action-fix",
 		enforce: "post",
 		transform(code, id) {
+			if (!patchApplies(serverActionFixPatch, id)) {
+				return;
+			}
+
 			if (id.includes("app-browser-navigation-controller")) {
 				if (!code.includes("commitSameUrlNavigatePayload")) {
 					return;
 				}
 				const fixed = gateDispatchOnReturnValue(code);
 				if (fixed && fixed !== code) {
+					recordPatch(serverActionFixPatch, id);
 					return { code: fixed, map: null };
 				}
 				return;
@@ -244,6 +265,7 @@ export function payloadServerActionFix(): Plugin {
 			const result = withFixedRender ?? withFixedImport;
 
 			if (result !== code) {
+				recordPatch(serverActionFixPatch, id);
 				return { code: result, map: null };
 			}
 		},

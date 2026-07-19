@@ -1,4 +1,18 @@
 import type { Plugin } from "vite";
+import { recordPatch, type PatchDeclaration } from "./patch-manifest.ts";
+
+export const rscExportFixPatch = {
+	id: "rsc-export-fix",
+	kind: "transform",
+	targets: [
+		"@vitejs/plugin-rsc — output of its CSS export transform, rsc environment only",
+	],
+	reason:
+		"plugin-rsc relocates export statements to end-of-file with MagicString; when the source ends in a sourcemap comment without a trailing newline the export lands inside the comment and Rolldown cannot see it",
+	upstreamIssues: ["https://github.com/vitejs/vite-plugin-react (plugin-rsc)"],
+	removeWhen:
+		"plugin-rsc's transformWrapExport emits a newline before relocated exports",
+} satisfies PatchDeclaration;
 
 /**
  * Fixes exports swallowed by `@vitejs/plugin-rsc`'s CSS export transform.
@@ -21,7 +35,7 @@ export function payloadRscExportFix(): Plugin {
 		name: "vite-plugin-payload:rsc-export-fix",
 		enforce: "post",
 		transform: {
-			handler(code, _id) {
+			handler(code, id) {
 				if (this.environment?.name !== "rsc") {
 					return;
 				}
@@ -49,6 +63,7 @@ export function payloadRscExportFix(): Plugin {
 				if (fixed === code) {
 					return;
 				}
+				recordPatch(rscExportFixPatch, id);
 				return { code: fixed, map: null };
 			},
 		},

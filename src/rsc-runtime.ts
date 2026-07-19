@@ -1,7 +1,32 @@
 import { fileURLToPath } from "node:url";
 import { Lang, parse } from "@ast-grep/napi";
 import type { EnvironmentOptions, Plugin } from "vite";
+import { recordPatch, type PatchDeclaration } from "./patch-manifest.ts";
 import { RSC_STUBS } from "./payload-packages.ts";
+
+export const rscStubsPatch = {
+	id: "rsc-runtime-stubs",
+	kind: "stub",
+	targets: [
+		"file-type → no-op stub (server environments)",
+		"drizzle-kit/api → no-op stub, including inlined createRequire() calls",
+	],
+	reason:
+		"both are transitively imported but never invoked during RSC rendering, and leave bare imports the workerd module runner cannot resolve; per-entry notes live in payload-packages.ts (RSC_STUBS)",
+	removeWhen:
+		"workerd supports the Node APIs they need, or payload lazy-loads them",
+} satisfies PatchDeclaration;
+
+export const rscSerializerThrowsPatch = {
+	id: "rsc-serializer-throws",
+	kind: "transform",
+	targets: ["react-server-dom-webpack — 'Client Component' serializer throws"],
+	reason:
+		"the RSC serializer throws for values that cannot cross the server/client boundary (access functions, hooks, RegExps in Payload field configs); Next.js silently drops them in production, vinext does not, so every Payload page would fail",
+	removeWhen:
+		"vinext's RSC pipeline tolerates non-serializable config values the way Next.js does",
+	moduleId: /react-server-dom-webpack/,
+} satisfies PatchDeclaration;
 
 // Static stub files — these must export the named exports that consumers
 // expect. Dynamic empty stubs don't work because Rolldown checks for
@@ -178,6 +203,12 @@ export function payloadRscRuntime(
 
 				if (result === code) {
 					return;
+				}
+				if (withStubbedDrizzle !== code) {
+					recordPatch(rscStubsPatch, id);
+				}
+				if (result !== withStubbedDrizzle) {
+					recordPatch(rscSerializerThrowsPatch, id);
 				}
 				return { code: result, map: null };
 			},

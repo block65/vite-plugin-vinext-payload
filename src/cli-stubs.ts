@@ -1,5 +1,18 @@
 import type { Plugin } from "vite";
 import { dedent } from "./dedent.ts";
+import type { PatchDeclaration } from "./patch-manifest.ts";
+
+export const cliStubsPatch = {
+	id: "cli-stubs",
+	kind: "stub",
+	targets: [
+		"console-table-printer, json-schema-to-typescript, esbuild-register, ws, wrangler, pnpapi → no-op stubs",
+	],
+	reason:
+		"these are reached only by Payload CLI commands or Next-specific code paths, and bundling them drags broken dependencies into the graph (wrangler's CLI pulls in blake3-wasm, which Rolldown cannot resolve); ws and wrangler throw on use so genuine Node-side calls stay loud",
+	removeWhen:
+		"payload lazy-loads its CLI-only dependencies behind dynamic imports",
+} satisfies PatchDeclaration;
 
 const STUB_PREFIX = "\0payload-stub:";
 

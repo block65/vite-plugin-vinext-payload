@@ -185,6 +185,35 @@ export function waitForOutput(
 	});
 }
 
+interface ReadyOptions {
+	/**
+	 * Matches `startDevServer`'s boot ceiling deliberately. Cold-start
+	 * optimization of the full Payload graph measures ~22s; a server still
+	 * unable to answer at 60 is broken, not slow. Raising this to fit a slow
+	 * run converts a diagnosis into two minutes of waiting for the same
+	 * failure.
+	 */
+	timeoutMs?: number;
+	/** Given a response status, has the server finished starting? */
+	ready?: (status: number) => boolean;
+}
+
+/**
+ * Ready once the route renders. A 5xx during startup is the module runner
+ * restarting, not a verdict on the route.
+ */
+export const rendersWithoutError = (status: number) => status < 500;
+
+/**
+ * Ready as soon as anything answers, whatever the status.
+ *
+ * For endpoints where an error response is the result under test — a worker
+ * that reports its init failure in the body, say — the status carries no
+ * readiness information, so the only thing left to wait for is the socket
+ * answering at all.
+ */
+export const respondsAtAll = () => true;
+
 /**
  * Wait until the dev server is genuinely able to serve requests.
  *
@@ -205,12 +234,17 @@ export function waitForOutput(
  * server that has demonstrably finished starting. A route that is genuinely
  * broken keeps returning 5xx and this times out naming the status it kept
  * seeing.
+ *
+ * `ready` decides what counts. The default suits routes expected to render:
+ * a 5xx is startup noise, worth waiting through. It does not suit a test
+ * whose subject *is* an error response — pass `respondsAtAll` there, or the
+ * gate waits out the timeout on the very result being asserted.
  */
 export async function waitForServerReady(
 	proc: ChildProcess,
 	port: number,
 	path = "/",
-	timeoutMs = 120_000,
+	{ timeoutMs = 60_000, ready = rendersWithoutError }: ReadyOptions = {},
 ) {
 	// A dead server will never become ready; without this the caller waits out
 	// the full timeout to be told something the process already knew.
@@ -238,7 +272,7 @@ export async function waitForServerReady(
 			// next attempt.
 			await res.text();
 
-			if (res.status < 500) {
+			if (ready(res.status)) {
 				return res.status;
 			}
 
@@ -454,7 +488,7 @@ export async function scaffoldMockProject(
  * working tree: a file missing from `files` fails here instead of after
  * release.
  */
-async function packPlugin(pluginRoot: string) {
+export async function packPlugin(pluginRoot: string) {
 	const destination = await mkdtemp(join(tmpdir(), "vinext-payload-pack-"));
 
 	// npm pack runs `prepare`, so the tarball always carries a current build.

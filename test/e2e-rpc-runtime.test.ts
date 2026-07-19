@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	createProjectHelpers,
+	packPlugin,
 	waitForOutput,
 	waitForServerReady,
 } from "./helpers.ts";
@@ -127,7 +128,12 @@ async function scaffold() {
 		"react-dom@^19",
 		"--ignore-scripts",
 	]);
-	await helpers.npm(["install", "-D", PLUGIN_ROOT, "--ignore-scripts"]);
+	await helpers.npm([
+		"install",
+		"-D",
+		await packPlugin(PLUGIN_ROOT),
+		"--ignore-scripts",
+	]);
 }
 
 interface DevServer {

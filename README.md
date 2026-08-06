@@ -164,11 +164,13 @@ vinextPayloadWorker({
 - Node.js `>=24`
 - Vite `^8.0.0`
 - Payload CMS `^3.82.0`
-- vinext `1.0.0-beta.2` (exact — vinext is still pre-release; every bump can break things). Optional — only needed when using `vinextPayload()`. Not required for `vinextPayloadWorker()`.
+- vinext `1.0.0-beta.4` (exact — vinext is still pre-release; every bump can break things). Optional — only needed when using `vinextPayload()`. Not required for `vinextPayloadWorker()`.
 
 > **Experimental.** Both vinext and this plugin are experimental.
 >
-> **Validated against:** Payload `3.86.0`, vinext `1.0.0-beta.2`, Vite `8.1.5` (Rolldown), Node `>=24` — the versions the e2e suites pin (`test/helpers.ts`). Peer dependency ranges are pinned to the validated stack — see [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for known regressions.
+> **Validated against:** Payload `3.87.0`, vinext `1.0.0-beta.4`, Vite `8.2.0` (Rolldown), Node `>=24` — the versions the e2e suites pin (`test/helpers.ts`). Peer dependency ranges are pinned to the validated stack — see [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for known regressions.
+>
+> **Not yet e2e-validated on this stack.** The `1.0.0-beta.4` bump has passed the static patch-target drift detectors only; the e2e suites have not been re-run against it.
 
 ## What It Does
 

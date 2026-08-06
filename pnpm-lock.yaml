@@ -19,8 +19,8 @@ importers:
         specifier: ^3.82.0
         version: 3.87.0(graphql@16.14.0)(typescript@7.0.2)
       vinext:
-        specifier: 1.0.0-beta.2
-        version: 1.0.0-beta.2(@vitejs/plugin-react@6.0.2(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.22.4)))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.22.4))
+        specifier: 1.0.0-beta.4
+        version: 1.0.0-beta.4(@vitejs/plugin-react@6.0.2(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.22.4)))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.22.4))
       vite-plugin-cjs-interop:
         specifier: ^4.0.3
         version: 4.0.3(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.22.4))
@@ -1654,8 +1654,8 @@ packages:
     resolution: {integrity: sha512-vzi9uRZ926x4XV73S/4qQaTwPXM2JBj6/6lI/byHH1jOpCzb0zDbfytgA9LcN/hzb2l7WQSQnxITOVx5un/wGw==}
     hasBin: true
 
-  vinext@1.0.0-beta.2:
-    resolution: {integrity: sha512-ihBni6mUKEDm69moFYLkt7dHzo/dX4hEqNgzB2+GCGpGKK5XWE40qGD1rxm9SHvsDDwzl+XeQCUVHcFwz/zZEw==}
+  vinext@1.0.0-beta.4:
+    resolution: {integrity: sha512-2931dmPdXHTCnM4cliTxmJWnXXqoLKgU68qzjeD0lkqvv7cLO3IIvz/azrdBRmAXdhX2e6bmnpuw/9YaIxW7Eg==}
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
@@ -3010,7 +3010,7 @@ snapshots:
 
   uuid@13.0.2: {}
 
-  vinext@1.0.0-beta.2(@vitejs/plugin-react@6.0.2(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.22.4)))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.22.4)):
+  vinext@1.0.0-beta.4(@vitejs/plugin-react@6.0.2(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.22.4)))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.22.4)):
     dependencies:
       '@unpic/react': 1.0.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@vercel/og': 0.8.6

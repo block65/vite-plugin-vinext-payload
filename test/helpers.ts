@@ -17,12 +17,12 @@ import { promisify } from "node:util";
 
 /** Known-good version pins for testing. */
 export const VERSIONS = {
-	payload: "3.86.0",
-	vinext: "1.0.0-beta.2",
-	vite: "8.1.5",
+	payload: "3.87.0",
+	vinext: "1.0.0-beta.4",
+	vite: "8.2.0",
 	// react-server-dom-webpack ships in lockstep with React and carries a caret
 	// peer on its exact minor, so these three move together or not at all.
-	react: "19.2.7",
+	react: "19.2.8",
 	vitePluginReact: "^6.0.1",
 } as const;
 

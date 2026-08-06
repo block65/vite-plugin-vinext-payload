@@ -298,26 +298,27 @@ Resolved 2026-07-18; see
 story (a second, stacked cause — the init matcher missing vinext 1.0's
 config shape — masked this one).
 
-**Upstream has since changed shape (found 2026-08-06).** At `payload@3.87.0`
-the `with-cloudflare-d1` template no longer reaches wrangler through a
-resolvable specifier. It reads bindings via `getCloudflareContext()` from
-`@opennextjs/cloudflare`, and its wrangler fallback is a computed dynamic
-import that no bundler can follow:
+**Where the wrangler import actually comes from (clarified 2026-08-06).** Not
+from upstream. At `payload@3.87.0` the `with-cloudflare-d1` template reads
+bindings via `getCloudflareContext()` from `@opennextjs/cloudflare`, and its
+own wrangler fallback is a computed dynamic import no bundler can follow:
 
 ```ts
 import(/* webpackIgnore: true */ `${"__wrangler".replaceAll("_", "")}`);
 ```
 
-The only remaining static reference is a type-only
-`import { GetPlatformProxyOptions } from "wrangler"`, which erases at build.
-So on a freshly scaffolded project the blake3-wasm chain this section
-describes should no longer form on its own. The `wrangler` stub in
-`payloadCliStubs` is kept because it is still reachable two other ways —
-projects scaffolded from older templates that kept the plain
-`import("wrangler")`, and `payload`'s own CLI paths — and because a stub that
-throws on _call_ costs nothing when nothing imports it. Whether the chain is
-genuinely gone on the current template is unverified: proving it needs a D1
-e2e run with the stub disabled.
+But that template is written for OpenNext, which vinext supersedes — a project
+running under this plugin does not keep it. The config is rewritten to drop
+`@opennextjs/cloudflare` and read bindings directly, and the replacement
+`getCloudflareEnv()` reads `cloudflare:workers` with a plain
+`await import("wrangler")` fallback so the Payload CLI can still resolve
+bindings under Node. **That fallback is a static, resolvable specifier**, which
+is what pulls `wrangler` — and therefore `blake3-wasm` — into the graph.
+
+So this workaround is load-bearing for the shape _we_ prescribe, not for
+upstream's. It cannot be retired by upstream changing the template; it retires
+only if the CLI stops needing a Node-side binding path, or the fallback moves
+to an unresolvable specifier the way upstream's did.
 
 ---
 

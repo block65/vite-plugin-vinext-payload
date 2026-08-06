@@ -17,7 +17,6 @@ export const optimizeDepsPatch = {
 	],
 	reason:
 		"these packages break during esbuild/Rolldown pre-bundling for structural reasons webpack handles natively, excluded parents lose CJS auto-discovery for their children, and deps left to runtime discovery each force a serial re-optimize + module-runner reload on cold start; per-entry notes live in payload-packages.ts",
-	upstreamIssues: ["https://github.com/cloudflare/vinext/issues/538"],
 	removeWhen:
 		"per-entry conditions in payload-packages.ts — the lists shrink entry by entry",
 } satisfies PatchDeclaration;
@@ -32,14 +31,12 @@ export interface PayloadOptimizeDepsOptions {
 	 *
 	 * This used to patch only environments that already declared
 	 * `optimizeDeps`, inferring "this environment optimizes" from the
-	 * framework's config shape. Every vinext version checked does declare
-	 * them — 0.1.3 (`dist/index.js`: rsc 862, ssr 879, client 890),
-	 * 1.0.0-beta.2 (rsc 1307, ssr 1330, client 1342, inside `if (hasAppDir)`)
-	 * and 1.0.0-beta.4 (rsc 1375, ssr 1398, client 1410, plus a second client
-	 * block at 1455) — but the coupling is fragile: the sites move every
-	 * release and multiply, the declarations are conditional, and an
-	 * environment created after our `enforce: "pre"` `config` hook (as
-	 * `@cloudflare/vite-plugin` does) is invisible to it.
+	 * framework's config shape. Both vinext 0.1.3 (`dist/index.js`: rsc 862,
+	 * ssr 879, client 890) and 1.0.0-beta.2 (rsc 1307, ssr 1330, client 1342,
+	 * inside `if (hasAppDir)`) do declare them — but the coupling is fragile:
+	 * the line numbers moved across one minor, the declarations are
+	 * conditional, and an environment created after our `enforce: "pre"`
+	 * `config` hook (as `@cloudflare/vite-plugin` does) is invisible to it.
 	 *
 	 * Excludes are cheap on an environment that never optimizes, so patch
 	 * unconditionally rather than inferring intent from the config shape.
@@ -96,11 +93,6 @@ function getNextAliasSpecifiers(
  * and added to the client optimizeDeps include list. This prevents the
  * optimizer from discovering them at runtime (which causes a full page
  * reload and duplicate React instances).
- *
- * cloudflare/vinext#538 (per-environment optimizeDeps overriding top-level
- * excludes) was closed as completed on 2026-03-16, so per-environment
- * patching is now defensive rather than load-bearing. The include lists are
- * not: they exist per-package for the reasons in payload-packages.ts.
  */
 export function payloadOptimizeDeps(
 	options: PayloadOptimizeDepsOptions | string[] = {},

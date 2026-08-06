@@ -5,23 +5,6 @@ vinext reimplements Next.js's framework layer on top of Vite, and
 these reimplementations have gaps. For each issue, we document what
 Next.js does differently and why the gap exists.
 
-**Last re-check: 2026-08-06**, against vinext `1.0.0-beta.4`, Payload
-`3.87.0`, `@payloadcms/next`/`@payloadcms/ui`/`@payloadcms/drizzle` `3.87.0`,
-`@vitejs/plugin-rsc` `0.5.33`, `react-server-dom-webpack` `19.2.8`, Vite
-`8.2.0`. Two kinds of claim appear below and they are not
-interchangeable:
-
-- **Patch target present** — the upstream code the workaround matches still
-  exists. Checked statically against the published packages; a "reconfirmed"
-  note names the version and file.
-- **Bug still reproduces** — removing the workaround still breaks something.
-  Only an e2e run can establish this, and none has been run against
-  `1.0.0-beta.4`. Where that distinction matters, the section says so.
-
-No upstream issue tracked here changed state between 2026-07-18 and
-2026-08-06. One _unfiled_ assumption did change: see the wrangler/blake3-wasm
-section.
-
 ---
 
 ## RSC export transform drops exports after sourcemap comments
@@ -41,9 +24,6 @@ plugin-rsc's `output.move()` path.
 **Our workaround:** `payloadRscExportFix` inserts a newline before any
 `export` keyword found after a `//` comment on the same line.
 
-Patch target reconfirmed 2026-08-06: `@vitejs/plugin-rsc@0.5.33` still
-relocates exports with `output.move(…)` in `dist/transforms/index.js`.
-
 ---
 
 ## `getHTMLDiffComponents` missing export in RSC build
@@ -52,11 +32,11 @@ relocates exports with `output.move(…)` in `dist/transforms/index.js`.
 **Repo:** https://github.com/vitejs/vite-plugin-react (packages/plugin-rsc)
 **Upstream:** not filed yet
 
-**What breaks:** On Payload templates at `payload@3.82.1` with
-vinext `0.1.3` (the failure has not been reproduced in isolation on any later
-stack; the suites pass with the workaround active), RSC build can fail with:
+**What breaks:** RSC build can fail with:
 `"getHTMLDiffComponents" is not exported by @payloadcms/ui/dist/elements/HTMLDiff/index.js`.
 The source module exports it, but the RSC build graph sees it as missing.
+`@payloadcms/ui@3.87.0` still re-exports the symbol from
+`../../elements/HTMLDiff/index.js`, so the patch still has a target.
 
 **Why Next.js works:** Next.js uses its own RSC/bundling pipeline, not
 `@vitejs/plugin-rsc` + Rolldown.
@@ -66,9 +46,6 @@ The source module exports it, but the RSC build graph sees it as missing.
 replace the re-export with a fallback export for
 `getHTMLDiffComponents`.
 
-Patch target reconfirmed 2026-08-06: `@payloadcms/ui@3.87.0` still re-exports
-`getHTMLDiffComponents` from `../../elements/HTMLDiff/index.js` in that file.
-
 ---
 
 ## Non-serializable RSC values not silently dropped
@@ -76,10 +53,9 @@ Patch target reconfirmed 2026-08-06: `@payloadcms/ui@3.87.0` still re-exports
 **Responsibility:** vinext
 **Repo:** https://github.com/cloudflare/vinext
 **Upstream:** https://github.com/cloudflare/vinext/issues/237
-**Status:** OPEN (re-checked 2026-08-06; still open. PR #250 only makes the
-throw clearer, it doesn't drop the value — workaround still required). Patch
-target reconfirmed 2026-08-06: `react-server-dom-webpack` `19.2.8` still
-carries the "Client Component" `throw` statements the patch rewrites.
+**Status:** OPEN. PR #250 only makes the throw clearer; it does not drop the
+value. `react-server-dom-webpack@19.2.8` still carries the "Client Component"
+throws the patch rewrites.
 
 **What breaks:** React's RSC serializer throws when functions, RegExps,
 or class instances cross the server/client boundary. Payload field configs
@@ -124,7 +100,7 @@ the transform pipeline individually.
 **Repo:** https://github.com/cloudflare/workerd
 **Upstream:** https://github.com/cloudflare/workerd/issues/6408,
 https://github.com/cloudflare/workerd/issues/6488
-**Status:** both OPEN (re-checked 2026-08-06) — workaround still required.
+**Status:** both OPEN.
 
 **What breaks:** workerd defines `console.createTask` but throws when
 called. React 19 dev mode checks for the method's existence and calls it
@@ -187,7 +163,7 @@ returns `false` and undici falls back to its no-op stubs.
 **Responsibility:** workerd (Cloudflare Workers runtime)
 **Repo:** https://github.com/cloudflare/workerd
 **Upstream:** https://github.com/cloudflare/workerd/issues/2963
-**Status:** OPEN (re-checked 2026-08-06) — workaround still required.
+**Status:** OPEN.
 
 **What breaks:** Bundled asset modules deployed to workerd may have
 `import.meta.url` as `undefined`. Packages like Payload use
@@ -249,11 +225,6 @@ layout. And these deps are only used during build/migration, not at
 request time — Next.js's tree-shaking removes them from the runtime
 bundle.
 
-Both still present at `payload@3.87.0` (re-checked 2026-08-06): `file-type` is
-a direct dependency (`21.3.4`) used by `dist/uploads/getFileByPath.js`, and
-`@payloadcms/drizzle@3.87.0` still calls `require('drizzle-kit/api')` in
-`dist/sqlite/requireDrizzleKit.js`.
-
 **Our workaround:** `payloadRscRuntime` stubs both packages. `file-type`
 is handled via `resolveId` → static stub file. `drizzle-kit/api` is
 loaded via `createRequire(import.meta.url)` which bypasses all bundler
@@ -269,17 +240,18 @@ is for upload detection, `drizzle-kit/api` is for migrations.
 **Responsibility:** Payload cloudflare template pattern / Rolldown resolution
 **Repo:** https://github.com/payloadcms/payload (templates/with-cloudflare-d1), https://github.com/rolldown/rolldown
 
-**What breaks:** the cloudflare templates' `payload.config.ts` (and our
-`init` rewrite of it) reads bindings via
+**What breaks:** Payload's cloudflare templates target OpenNext, which vinext
+supersedes, so a project running under this plugin does not keep their
+`@opennextjs/cloudflare` binding access. The replacement reads bindings via
 `import('cloudflare:workers')` with a `catch` fallback to
-`import('wrangler')` → `getPlatformProxy()`. The fallback only _executes_
-under plain Node (payload CLI), but it must _resolve_ in every Vite
-environment that processes the config. Anywhere it gets bundled or
-optimizer-scanned, wrangler's entire CLI comes with it — including
-`blake3-wasm`, whose `export * from './node.js'` Rolldown cannot resolve.
-Dev failed during dependency optimization
-(`[UNRESOLVED_IMPORT] Could not resolve './node.js'`) and `vinext build`
-failed on the same chain
+`import('wrangler')` → `getPlatformProxy()`, so the Payload CLI can still
+resolve bindings under plain Node. The fallback only _executes_ under Node,
+but it must _resolve_ in every Vite environment that processes the config.
+Anywhere it gets bundled or optimizer-scanned, wrangler's entire CLI comes
+with it — including `blake3-wasm`, whose `export * from './node.js'` Rolldown
+cannot resolve. That breaks dependency optimization in dev
+(`[UNRESOLVED_IMPORT] Could not resolve './node.js'`) and fails `vinext build`
+on the same chain
 (`payload.config.ts → wrangler/wrangler-dist/cli.js → blake3-wasm`).
 `wrangler` in `SSR_EXTERNAL` / `OPTIMIZE_DEPS_EXCLUDE` does not help: the
 cloudflare worker build reads neither.
@@ -293,32 +265,8 @@ environment that tries to resolve the wrangler fallback.
 `cloudflare:workers` always resolves so the stub is dead code, and a genuine
 Node-side use fails loudly instead of silently.
 
-Resolved 2026-07-18; see
-[`d1-dev-boot-investigation.md`](d1-dev-boot-investigation.md) for the full
-story (a second, stacked cause — the init matcher missing vinext 1.0's
-config shape — masked this one).
-
-**Where the wrangler import actually comes from (clarified 2026-08-06).** Not
-from upstream. At `payload@3.87.0` the `with-cloudflare-d1` template reads
-bindings via `getCloudflareContext()` from `@opennextjs/cloudflare`, and its
-own wrangler fallback is a computed dynamic import no bundler can follow:
-
-```ts
-import(/* webpackIgnore: true */ `${"__wrangler".replaceAll("_", "")}`);
-```
-
-But that template is written for OpenNext, which vinext supersedes — a project
-running under this plugin does not keep it. The config is rewritten to drop
-`@opennextjs/cloudflare` and read bindings directly, and the replacement
-`getCloudflareEnv()` reads `cloudflare:workers` with a plain
-`await import("wrangler")` fallback so the Payload CLI can still resolve
-bindings under Node. **That fallback is a static, resolvable specifier**, which
-is what pulls `wrangler` — and therefore `blake3-wasm` — into the graph.
-
-So this workaround is load-bearing for the shape _we_ prescribe, not for
-upstream's. It cannot be retired by upstream changing the template; it retires
-only if the CLI stops needing a Node-side binding path, or the fallback moves
-to an unresolvable specifier the way upstream's did.
+See [`d1-dev-boot-investigation.md`](d1-dev-boot-investigation.md) for the
+diagnosis, including the second cause stacked on top of this one.
 
 ---
 
@@ -327,10 +275,8 @@ to an unresolvable specifier the way upstream's did.
 **Responsibility:** vinext
 **Repo:** https://github.com/cloudflare/vinext
 **Upstream:** https://github.com/cloudflare/vinext/issues/666
-**Status:** OPEN (re-checked 2026-08-06; still open. PR #665 is itself still
-open and fixes Pages Router only; App Router CJS-through-plugin-rsc is
-unaddressed — workaround still required). Whether it still reproduces at
-runtime on `1.0.0-beta.4` is unverified: it needs an e2e run.
+**Status:** OPEN. PR #665 is also open and covers Pages Router only; App
+Router CJS-through-plugin-rsc is unaddressed.
 
 **What breaks:** App Router forces `noExternal: true` for RSC/SSR
 environments, so raw CommonJS packages from `node_modules` are pushed
@@ -393,10 +339,6 @@ import to the aliased specifier. `payloadOptimizeDeps` auto-discovers
 all `next/*` alias specifiers and pre-includes them so the optimizer
 doesn't discover them at runtime.
 
-Patch target reconfirmed on `1.0.0-beta.4` (2026-08-06):
-`dist/server/app-browser-entry.js` still imports `shims/navigation.js` by
-relative path.
-
 ---
 
 ## Server action handler renders before checking returnValue
@@ -438,14 +380,6 @@ block, it wraps the call as `if (!returnValue) dispatch(…)` (gating the outer
 transforms the real installed vinext file so a future shape change fails
 loudly.
 
-Patch target reconfirmed on `1.0.0-beta.4` (2026-08-06):
-`dist/server/app-browser-navigation-controller.js` still contains
-`commitSameUrlNavigatePayload` and `dispatchSynchronousVisibleCommit`, and the
-transform still rewrites the real file. beta.3/beta.4 shipped app-router
-changes in this area (prefetch protocol, client cache stale times, streamed
-metadata), so the shape surviving is not proof the _behaviour_ is unchanged —
-that needs the admin e2e journey.
-
 ---
 
 ## Components switch element types based on pathname/params
@@ -466,11 +400,6 @@ always produces the same element type on both sides.
 consistent rendering: ternaries with `"link"` / `"div"` alternatives
 become `"link"`, `pathname === href` becomes `false`, etc.
 
-Patch targets reconfirmed 2026-08-06 against `@payloadcms/next@3.87.0`:
-`elements/Nav/index.client.js` still contains `pathname === href`, and
-`elements/DocumentHeader/Tabs/Tab/TabLink.js` still renders
-`el: !isActive || href !== pathname ? "link" : "div"`.
-
 ---
 
 ## `NEXT_REDIRECT` errors leak through RSC stream — RESOLVED in vinext 0.1.x
@@ -480,9 +409,7 @@ Patch targets reconfirmed 2026-08-06 against `@payloadcms/next@3.87.0`:
 **Upstream:** fixed by https://github.com/cloudflare/vinext/pull/1742,
 https://github.com/cloudflare/vinext/pull/1878 and
 https://github.com/cloudflare/vinext/pull/2000 (all merged June 2026)
-**Status:** RESOLVED — workaround removed at the vinext `0.1.3` bump; still
-resolved on `1.0.0-beta.2` (verified by e2e 2026-07-18). All three PRs remain
-merged (re-checked 2026-08-06); not re-verified by e2e on `1.0.0-beta.4`.
+**Status:** RESOLVED upstream; the workaround is removed.
 
 > Earlier revisions of this section cited vinext #654 as the tracking
 > issue. That was wrong: #654 is "RSC parity gap: action redirects use
@@ -522,7 +449,7 @@ Verified empirically: the admin e2e auth redirect (`/admin` →
 - https://github.com/cloudflare/workers-sdk/pull/10544 (fix: `preserveEntrySignatures: "strict"`)
 - https://github.com/rolldown/rolldown/issues/3500 (`preserveEntrySignatures` feature request)
 - https://github.com/rolldown/rolldown/issues/6449 (strict mode validation)
-  **Status:** workers-sdk #10213 CLOSED, workers-sdk #10544 MERGED, rolldown #3500 CLOSED, rolldown #6449 CLOSED (re-checked 2026-08-06 — no change since 2026-06-15). Still needed: `preserveEntrySignatures: "strict"` governs _named_ exports (it stops extra exports being hoisted onto the entry — the #10213 case), not the _shape of the default-export value_, and no upstream issue covers default-export-object inlining. vinext still ships the `{ fetch }` object entry in `dist/server/app-router-entry.js` — reconfirmed on `1.0.0-beta.4` by the drift detector in `test/patch-targets.test.ts` — and Rolldown can still collapse that object on large bundles. On `1.0.0-beta.2` (verified against a real cloudflare-target build, 2026-07-18) the entry chunk's default export survived as a `{ fetch }` object, so the workaround's rewrite applied but its runtime wrapper passed the object through untouched: it had no effect on the emitted output and only guarded against the collapse recurring. Whether that still holds on a beta.4 cloudflare build is unverified.
+  **Status:** workers-sdk #10213 CLOSED, workers-sdk #10544 MERGED, rolldown #3500 CLOSED, rolldown #6449 CLOSED. None of them cover this case: `preserveEntrySignatures: "strict"` governs _named_ exports (it stops extra exports being hoisted onto the entry — the #10213 case), not the _shape of the default-export value_, and no upstream issue covers default-export-object inlining. vinext ships the `{ fetch }` object entry in `dist/server/app-router-entry.js`, and Rolldown can still collapse that object on large bundles. Where it does not collapse, the rewrite applies but passes the already-correct object through untouched, so the patch is defensive.
 
 **What breaks:** vinext's `app-router-entry.js` exports
 `{ async fetch(request, env, ctx) { return handleRequest(request, env, ctx) } }`

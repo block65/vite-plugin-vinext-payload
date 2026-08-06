@@ -6,6 +6,11 @@
 Resolved against vinext `1.0.0-beta.2`, Vite `8.1.5`, rolldown `1.2.0`,
 Node `v26.3.1`, payload `3.85.1`.
 
+The stack has since moved to vinext `1.0.0-beta.4` / Vite `8.2.0` / payload
+`3.87.0` and the e2e suites have not been re-run on it, so the pass numbers
+above describe the beta.2 stack only. The init matcher fix that resolved cause
+1 is covered by unit tests (`test/init.test.ts`), which still pass.
+
 ## What it was — two stacked causes
 
 **1. The D1 project never had the plugin.** `vite-plugin-vinext-payload init`

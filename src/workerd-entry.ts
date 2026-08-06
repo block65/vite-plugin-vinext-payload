@@ -16,7 +16,8 @@ export const workerdEntryPatch = {
 	removeWhen:
 		"Rolldown enforces preserveEntrySignatures: 'strict' for this inlining case",
 	// Verified purely defensive on vinext 1.0.0-beta.2: the wrapper applies
-	// but passes the already-correct { fetch } object through untouched.
+	// but passes the already-correct { fetch } object through untouched. Not
+	// re-verified on beta.4 — that needs a real cloudflare-target build.
 	defensive: true,
 } satisfies PatchDeclaration;
 
@@ -49,7 +50,10 @@ export const workerdEntryPatch = {
  * (2026-07-18): the rewrite applies, and the default there is already a
  * `{ fetch }` object (`var Zl = Yl ?? {}`), so the wrapper passes it
  * through untouched. On that version the plugin is purely defensive —
- * removing it would not break the build.
+ * removing it would not break the build. On 1.0.0-beta.4 only the source
+ * shape has been rechecked (2026-08-06): `app-router-entry.js` still
+ * default-exports `{ async fetch(…) }`. What Rolldown does with it in a
+ * cloudflare-target build is unverified there.
  *
  * References:
  *   - https://github.com/cloudflare/workers-sdk/issues/10213

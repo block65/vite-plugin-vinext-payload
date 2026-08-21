@@ -18,6 +18,7 @@ import {
 	assertStatus,
 	runBuild,
 	startDevServer,
+	VERSIONS,
 	waitForServerReady,
 } from "./helpers.ts";
 
@@ -33,7 +34,9 @@ async function scaffoldD1Project() {
 		"--yes",
 		"degit",
 		"--force",
-		"payloadcms/payload/templates/with-cloudflare-d1",
+		// Pinned to the release tag: `main` carries the next major's templates,
+		// which import exports the pinned packages do not have.
+		`payloadcms/payload/templates/with-cloudflare-d1#v${VERSIONS.payload}`,
 		TEST_DIR,
 	]);
 

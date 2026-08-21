@@ -28,7 +28,9 @@ async function scaffoldSqliteProject() {
 		"--yes",
 		"degit",
 		"--force",
-		"payloadcms/payload/templates/with-postgres",
+		// Pinned to the release tag: `main` carries the next major's templates,
+		// which import exports the pinned packages do not have.
+		`payloadcms/payload/templates/with-postgres#v${VERSIONS.payload}`,
 		TEST_DIR,
 	]);
 

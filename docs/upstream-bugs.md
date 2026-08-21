@@ -35,7 +35,7 @@ plugin-rsc's `output.move()` path.
 **What breaks:** RSC build can fail with:
 `"getHTMLDiffComponents" is not exported by @payloadcms/ui/dist/elements/HTMLDiff/index.js`.
 The source module exports it, but the RSC build graph sees it as missing.
-`@payloadcms/ui@3.87.0` still re-exports the symbol from
+`@payloadcms/ui@3.88.0` still re-exports the symbol from
 `../../elements/HTMLDiff/index.js`, so the patch still has a target.
 
 **Why Next.js works:** Next.js uses its own RSC/bundling pipeline, not
@@ -163,7 +163,16 @@ returns `false` and undici falls back to its no-op stubs.
 **Responsibility:** workerd (Cloudflare Workers runtime)
 **Repo:** https://github.com/cloudflare/workerd
 **Upstream:** https://github.com/cloudflare/workerd/issues/2963
-**Status:** OPEN.
+**Status:** OPEN in workerd. vinext `1.0.0-beta.7` works around it itself:
+https://github.com/cloudflare/vinext/pull/2942 (`vinext:import-meta-url`,
+`enforce: "post"`) rewrites every `import.meta.url` read in a `node_modules`
+module for non-client environments — to the source `file://` URL in dev and
+to the emitted chunk's identity in builds — naming Payload's
+`fileURLToPath(import.meta.url)` / `createRequire(import.meta.url)` shapes as
+its motivating case. Under `vinextPayload()` our guard therefore runs first
+and is then overwritten by vinext's rewrite (`X ?? "file:///"` where `X` is
+vinext's string), so it is inert there. It stays for
+`vinextPayloadWorker()`, which runs without vinext.
 
 **What breaks:** Bundled asset modules deployed to workerd may have
 `import.meta.url` as `undefined`. Packages like Payload use
@@ -181,6 +190,10 @@ Next.js resolves `__dirname` at build time via webpack's `__dirname` shim.
 use `import.meta.url ?? "file:///"`. The dummy URL produces `"/"` — any
 filesystem operation using this path will fail, but those code paths
 aren't reached in Workers.
+
+**Remove when:** workerd provides `import.meta.url` for bundled modules, or
+`@cloudflare/vite-plugin` rewrites it the way vinext now does — either
+covers `vinextPayloadWorker()`, the composition that still needs this guard.
 
 ---
 

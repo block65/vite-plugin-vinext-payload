@@ -59,21 +59,21 @@
 		"typecheck": "tsc -b --noEmit"
 	},
 	"dependencies": {
-		"@ast-grep/napi": "^0.45.0",
+		"@ast-grep/napi": "^0.45.1",
 		"vite-plugin-cjs-interop": "^4.0.3"
 	},
 	"devDependencies": {
 		"@types/node": "^24.13.3",
-		"oxfmt": "^0.62.0",
-		"oxlint": "^1.77.0",
+		"oxfmt": "^0.64.0",
+		"oxlint": "^1.79.0",
 		"playwright": "^1.62.1",
 		"typescript": "^7.0.2",
-		"vite": "^8.2.0",
-		"vitest": "^4.1.10"
+		"vite": "^8.2.2",
+		"vitest": "^4.1.11"
 	},
 	"peerDependencies": {
 		"payload": "^3.82.0",
-		"vinext": "1.0.0-beta.4",
+		"vinext": "1.0.0-beta.8",
 		"vite": "^8.0.0"
 	},
 	"peerDependenciesMeta": {
@@ -84,5 +84,5 @@
 	"engines": {
 		"node": ">=24"
 	},
-	"packageManager": "pnpm@11.15.0"
+	"packageManager": "pnpm@11.22.0"
 }

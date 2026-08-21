@@ -30,7 +30,9 @@ export const importMetaUrlGuardPatch = {
 	],
 	reason:
 		"bundled asset modules in workerd can see import.meta.url as undefined, crashing module init",
-	removeWhen: "workerd provides import.meta.url for bundled modules",
+	upstreamIssues: ["https://github.com/cloudflare/vinext/pull/2942"],
+	removeWhen:
+		"vinext >= 1.0.0-beta.7 rewrites dependency import.meta.url reads itself (#2942), which makes this inert under vinextPayload(); vinextPayloadWorker() runs without vinext and still relies on it. Remove when workerd provides import.meta.url for bundled modules, or @cloudflare/vite-plugin rewrites it the way vinext does",
 } satisfies PatchDeclaration;
 
 export const nodeBuiltinShimsPatch = {

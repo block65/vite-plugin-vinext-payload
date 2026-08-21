@@ -7,7 +7,7 @@
 
 A Vite plugin that makes Payload CMS run under [vinext](https://github.com/cloudflare/vinext), including on Cloudflare Workers. It works by patching vinext and Payload internals at build time, so it is tightly coupled to exact upstream versions.
 
-**The `vinext` peer dependency is pinned exactly** (`1.0.0-beta.2`, no `^` or `>=`). vinext is pre-1.0 in spirit — patch-level bumps move the internals this plugin patches. Never loosen the range.
+**The `vinext` peer dependency is pinned exactly** in `package.json` — no `^`, no `>=`. vinext is pre-1.0 in spirit — patch-level bumps move the internals this plugin patches. Never loosen the range.
 
 **Patches are AST-based and version-fragile.** `src/` uses `@ast-grep/napi` against specific function shapes in vinext's dist output. Drift detectors in `test/patch-targets.test.ts` and `test/server-action-fix.test.ts` run the transforms against the _actually installed_ vinext and fail loudly when upstream moves. When one fails, the patch pattern needs updating — do not weaken the assertion to make it pass.
 

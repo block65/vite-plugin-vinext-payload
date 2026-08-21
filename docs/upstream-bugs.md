@@ -354,44 +354,35 @@ doesn't discover them at runtime.
 
 ---
 
-## Server action handler renders before checking returnValue
+## ~~Server action handler renders before checking returnValue~~ — RESOLVED in vinext 1.0
 
 **Responsibility:** vinext
 **Repo:** https://github.com/cloudflare/vinext
-**Upstream:** not filed (related: https://github.com/cloudflare/vinext/pull/620)
+**Upstream:** coverage added by https://github.com/cloudflare/vinext/pull/2902
+(merged 2026-08-13); the behaviour itself is in
+`dist/server/app-server-action-execution.js` and
+`dist/server/app-browser-server-action-client.js` (verified on `1.0.0-beta.8`).
+**Status:** RESOLVED upstream; the gate is removed.
 
-**What breaks:** vinext applies the new RSC tree before checking
-`result.returnValue`. Every server action — including data-returning ones
-like `getFormState` — triggers a full re-render. For Payload, this resets
-form state: array field rows flash and disappear.
+**What used to break:** vinext applied the new RSC tree before checking
+`result.returnValue`, so every server action — including data-returning ones
+like `getFormState` — triggered a full re-render. For Payload that reset form
+state: array field rows flashed and disappeared, dropdown edits reverted on
+blur, and each blur fired another `getFormState`. The former gate in
+`payloadServerActionFix` wrapped the visible-commit dispatch in
+`commitSameUrlNavigatePayload` as `if (!returnValue) dispatch(…)`.
 
-The bug has moved across vinext versions:
+**What fixed it:** the server now streams `{ returnValue }` with no page
+root when the action revalidated nothing (`ACTION_DID_NOT_REVALIDATE` branch),
+and the client returns `returnValue.data` without calling
+`commitSameUrlNavigatePayload` when `root` is absent — the Next.js contract
+(`action-handler.ts` skips the render; `server-action-reducer.ts` bails
+without navigating). Our gate was unreachable on that path, and on the
+remaining one — a data-returning action that _did_ revalidate — it suppressed
+a commit Next.js performs, so keeping it would have been a parity bug.
 
-- ≤0.0.46: `getReactRoot().render(result.root)` runs in `app-browser-entry`
-  before the `returnValue` check.
-- 0.0.47–0.0.49: refactored — `commitSameUrlNavigatePayload` in
-  `app-browser-navigation-controller` unconditionally calls
-  `dispatchApprovedVisibleCommit` before returning the action's data.
-- 0.0.50–0.0.55: same site as 0.0.47–0.0.49, but the call was renamed to
-  `dispatchSynchronousVisibleCommit` (a thinner sync wrapper), still a
-  one-line `if ($COND) dispatch(…)`.
-- ≥0.1.0: the dispatch moved into a block body
-  (`if (latestApproval.approvedCommit) { dispatch(…); syncHistory(…); }`,
-  with an `else` branch), so the one-line gate no longer matches.
-
-**Why Next.js works:** Next.js's server action handler (`app-router.js`)
-checks `returnValue` first and only re-renders for void mutations. Data-
-returning actions pass the value back to the caller without touching
-the React tree.
-
-**Our workaround:** `payloadServerActionFix` uses ast-grep. On ≤0.0.46 it
-moves the render call after the `returnValue` check. On 0.0.47–0.0.55 it ANDs
-`!returnValue` onto the one-line dispatch's condition (matching either
-dispatcher name). On ≥0.1.0, where the dispatch is a bare statement inside a
-block, it wraps the call as `if (!returnValue) dispatch(…)` (gating the outer
-`if` would wrongly trip the `else` branch). A drift detector unit test
-transforms the real installed vinext file so a future shape change fails
-loudly.
+`payloadServerActionFix` now carries only the browser-entry import rewrite
+described in "Browser entry imports shims via relative paths".
 
 ---
 

@@ -15,3 +15,8 @@ Consumer-visible changes since the last release. Released versions live in
   `custom.css` and a `generateViewport` export; the old template import of
   `./custom.scss` made every `/admin` request fail with "Failed to load url
   ./custom.scss" on a freshly generated project.
+- Server actions that return data _and_ revalidate now re-render the page as
+  they do on Next.js. The plugin no longer patches vinext's navigation
+  controller: vinext itself skips the re-render for non-revalidating actions
+  (the `getFormState` case the patch existed for), so the gate only ever
+  suppressed the legitimate commit.

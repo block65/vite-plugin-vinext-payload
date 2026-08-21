@@ -12,7 +12,12 @@
 
 import { readFile, writeFile, access } from "node:fs/promises";
 import { join } from "node:path";
-import { parse, Lang } from "@ast-grep/napi";
+import {
+	parse,
+	Lang,
+	type Edit as SourceEdit,
+	type SgNode,
+} from "@ast-grep/napi";
 import { dedent } from "../src/dedent.ts";
 import { iife, isTruthy } from "../src/iife.ts";
 import { tryRead } from "../src/try-read.ts";
@@ -85,30 +90,9 @@ const SERVER_FUNCTION_TS = dedent`
   }
 `;
 
-const LAYOUT_TSX = dedent`
-  /* THIS FILE WAS GENERATED AUTOMATICALLY BY PAYLOAD. */
-  /* Modified by vite-plugin-vinext-payload: extracted serverFunction to separate
+const LAYOUT_MODIFIED_NOTE = dedent`
+  /* Modified by vite-plugin-vinext-payload: serverFunction extracted to its own
      'use server' module for Vite RSC compatibility. */
-  import config from '@payload-config'
-  import '@payloadcms/next/css'
-  import { RootLayout } from '@payloadcms/next/layouts'
-  import React from 'react'
-
-  import { importMap } from './admin/importMap.js'
-  import './custom.scss'
-  import { serverFunction } from './serverFunction.js'
-
-  type Args = {
-    children: React.ReactNode
-  }
-
-  const Layout = ({ children }: Args) => (
-    <RootLayout config={config} importMap={importMap} serverFunction={serverFunction}>
-      {children}
-    </RootLayout>
-  )
-
-  export default Layout
 `;
 
 const PAGE_TSX = dedent`
@@ -430,6 +414,86 @@ async function addPayloadPluginToViteConfig({
 	return results;
 }
 
+/** An edit deleting `node` together with the line break that follows it. */
+function deleteNode(source: string, node: SgNode): SourceEdit {
+	const { start, end } = node.range();
+	const trailingNewline = Buffer.from(source)[end.index] === 0x0a ? 1 : 0;
+	return {
+		startPos: start.index,
+		endPos: end.index + trailingNewline,
+		insertedText: "",
+	};
+}
+
+/**
+ * Move the inline `'use server'` serverFunction out of layout.tsx: drop its
+ * declaration and the two imports only it used, and import it from
+ * serverFunction.ts instead. Everything else Payload generated — stylesheet
+ * import, viewport export, whatever comes next — is kept as is.
+ *
+ * Returns `undefined` when the layout has no inline serverFunction to move.
+ */
+function extractServerFunction(layout: string): string | undefined {
+	const root = parse(Lang.Tsx, layout).root();
+
+	const declaration = root.find({
+		rule: {
+			kind: "lexical_declaration",
+			has: {
+				kind: "variable_declarator",
+				has: { field: "name", regex: "^serverFunction$" },
+			},
+		},
+	});
+	if (!declaration) {
+		return undefined;
+	}
+
+	const typeImport = root.find({
+		rule: {
+			kind: "import_statement",
+			regex: "^import type \\{\\s*ServerFunctionClient\\s*\\} from",
+		},
+	});
+
+	const layoutsImport = root.find({
+		rule: {
+			kind: "import_statement",
+			has: { field: "source", regex: "^['\"]@payloadcms/next/layouts['\"]$" },
+		},
+	});
+	const namedImports = layoutsImport?.find({ rule: { kind: "named_imports" } });
+	const keptSpecifiers = (namedImports?.children() ?? [])
+		.filter((child) => child.kind() === "import_specifier")
+		.map((child) => child.text())
+		.filter((specifier) => specifier !== "handleServerFunctions");
+
+	const imports = root.findAll({ rule: { kind: "import_statement" } });
+	const lastImport = imports.at(-1);
+	if (!lastImport) {
+		return undefined;
+	}
+
+	const edits = [
+		deleteNode(layout, declaration),
+		typeImport && deleteNode(layout, typeImport),
+		namedImports?.replace(`{ ${keptSpecifiers.join(", ")} }`),
+		{
+			startPos: lastImport.range().end.index,
+			endPos: lastImport.range().end.index,
+			insertedText: "\nimport { serverFunction } from './serverFunction.js'",
+		},
+	].filter(isTruthy);
+
+	return root
+		.commitEdits(edits)
+		.replace(
+			/^\/\* DO NOT MODIFY IT BECAUSE IT COULD BE REWRITTEN AT ANY TIME\. \*\/\n/m,
+			LAYOUT_MODIFIED_NOTE,
+		)
+		.replace(/\n{3,}/g, "\n\n");
+}
+
 /**
  * Handles both serverFunction extraction and layout rewrite in one pass.
  * Avoids the race condition of reading/writing layout.tsx concurrently.
@@ -459,7 +523,22 @@ async function fixServerFunction({
 			];
 		}
 		// serverFunction.ts exists but layout doesn't import it yet
-		await maybeWrite(layoutFile, LAYOUT_TSX, dryRun);
+		const rewritten = extractServerFunction(layoutContent);
+		if (!rewritten) {
+			return [
+				{
+					file: `${PAYLOAD_DIR}/serverFunction.ts`,
+					action: "skipped",
+					reason: "already exists",
+				},
+				{
+					file: `${PAYLOAD_DIR}/layout.tsx`,
+					action: "skipped",
+					reason: "no inline serverFunction found",
+				},
+			];
+		}
+		await maybeWrite(layoutFile, rewritten, dryRun);
 		return [
 			{
 				file: `${PAYLOAD_DIR}/serverFunction.ts`,
@@ -502,9 +581,23 @@ async function fixServerFunction({
 		];
 	}
 
-	// Extract: create serverFunction.ts and rewrite layout.tsx
+	const rewritten = extractServerFunction(layoutContent);
+	if (!rewritten) {
+		return [
+			{
+				file: `${PAYLOAD_DIR}/serverFunction.ts`,
+				action: "skipped",
+				reason: "no inline serverFunction found",
+			},
+			{
+				file: `${PAYLOAD_DIR}/layout.tsx`,
+				action: "skipped",
+				reason: "no inline serverFunction found",
+			},
+		];
+	}
 	await maybeWrite(serverFnFile, SERVER_FUNCTION_TS, dryRun);
-	await maybeWrite(layoutFile, LAYOUT_TSX, dryRun);
+	await maybeWrite(layoutFile, rewritten, dryRun);
 
 	return [
 		{ file: `${PAYLOAD_DIR}/serverFunction.ts`, action: "created" },

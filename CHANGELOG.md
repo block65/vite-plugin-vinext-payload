@@ -9,3 +9,9 @@ Consumer-visible changes since the last release. Released versions live in
   `1.0.0-beta.8`, up from `1.0.0-beta.2`. Upgrade vinext alongside this
   plugin — the pin is exact because every vinext pre-release moves internals
   the plugin patches. Validated against Payload `3.88.0` and Vite `8.2.2`.
+- `init` now edits the generated `layout.tsx` in place — removing the inline
+  `serverFunction` and importing it from `serverFunction.ts` — instead of
+  replacing the file with a fixed template. Payload's current templates ship
+  `custom.css` and a `generateViewport` export; the old template import of
+  `./custom.scss` made every `/admin` request fail with "Failed to load url
+  ./custom.scss" on a freshly generated project.

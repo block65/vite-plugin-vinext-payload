@@ -450,6 +450,48 @@ const Layout = ({ children }: Args) => (
 
 export default Layout
 `,
+export default Layout
+`,
+
+	// Payload's current template: stylesheet renamed to .css and a viewport
+	// export added (payloadcms/payload#17464 and after). Anything the layout
+	// rewrite hardcodes rather than preserves shows up as a diff against this.
+	originalLayoutCurrent: `/* THIS FILE WAS GENERATED AUTOMATICALLY BY PAYLOAD. */
+/* DO NOT MODIFY IT BECAUSE IT COULD BE REWRITTEN AT ANY TIME. */
+import config from '@payload-config'
+import '@payloadcms/next/css'
+import type { ServerFunctionClient } from 'payload'
+import {
+  generatePayloadViewport,
+  handleServerFunctions,
+  RootLayout,
+} from '@payloadcms/next/layouts'
+import React from 'react'
+
+import { importMap } from './admin/importMap.js'
+import './custom.css'
+
+export const generateViewport = generatePayloadViewport
+
+type Args = {
+  children: React.ReactNode
+}
+
+const serverFunction: ServerFunctionClient = async function (args) {
+  'use server'
+  return handleServerFunctions({
+    ...args,
+    config,
+    importMap,
+  })
+}
+
+const Layout = ({ children }: Args) => (
+  <RootLayout config={config} importMap={importMap} serverFunction={serverFunction}>
+    {children}
+  </RootLayout>
+)
+
 
 	originalPage: `/* THIS FILE WAS GENERATED AUTOMATICALLY BY PAYLOAD. */
 /* DO NOT MODIFY IT BECAUSE IT COULD BE REWRITTEN AT ANY TIME. */
@@ -492,14 +534,17 @@ export default Page
 export async function scaffoldMockProject(
 	testDir: string,
 	viteConfig: string = FIXTURES.viteConfigSingleLine,
-	options?: { wranglerConfig?: boolean },
+	options?: { wranglerConfig?: boolean; layout?: string },
 ) {
 	const { write, cleanup } = createProjectHelpers(testDir);
 	await cleanup();
 	await write("package.json", FIXTURES.packageJson);
 	await write("vite.config.ts", viteConfig);
 	await write("tsconfig.json", FIXTURES.tsconfig);
-	await write("src/app/(payload)/layout.tsx", FIXTURES.originalLayout);
+	await write(
+		"src/app/(payload)/layout.tsx",
+		options?.layout ?? FIXTURES.originalLayout,
+	);
 	await write(
 		"src/app/(payload)/admin/[[...segments]]/page.tsx",
 		FIXTURES.originalPage,

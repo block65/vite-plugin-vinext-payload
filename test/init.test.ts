@@ -30,7 +30,10 @@ async function runInit(dryRun = false) {
 	return logs.join("");
 }
 
-function scaffold(viteConfig?: string, options?: { wranglerConfig?: boolean }) {
+function scaffold(
+	viteConfig?: string,
+	options?: { wranglerConfig?: boolean; layout?: string },
+) {
 	return scaffoldMockProject(TEST_DIR, viteConfig, options);
 }
 
@@ -53,6 +56,31 @@ describe("init: file transforms", () => {
 		const layout = await read("src/app/(payload)/layout.tsx");
 		expect(layout).toContain("from './serverFunction.js'");
 		expect(layout).not.toMatch(/^\s*'use server'\s*;?\s*$/m);
+		expect(layout).not.toContain("handleServerFunctions");
+		expect(layout).not.toContain("ServerFunctionClient");
+		expect(layout).toContain("import './custom.scss'");
+	});
+
+	// Regression: the rewrite used to replace the whole file with a fixed
+	// template that imported `./custom.scss`. Payload renamed that file to
+	// `custom.css` and added a viewport export, so every /admin request failed
+	// with "Failed to load url ./custom.scss" on a freshly generated project.
+	it("keeps what Payload's current layout generates around the serverFunction", async () => {
+		await scaffold(undefined, { layout: FIXTURES.originalLayoutCurrent });
+		await runInit();
+
+		const layout = await read("src/app/(payload)/layout.tsx");
+		expect(layout).toContain("import './custom.css'");
+		expect(layout).toContain(
+			"export const generateViewport = generatePayloadViewport",
+		);
+		expect(layout).toContain("generatePayloadViewport, RootLayout");
+		expect(layout).toContain("from './serverFunction.js'");
+		expect(layout).not.toContain("handleServerFunctions");
+		expect(layout).not.toContain("ServerFunctionClient");
+		expect(layout).not.toMatch(/^\s*'use server'\s*;?\s*$/m);
+		expect(layout).not.toContain("DO NOT MODIFY");
+		expect(layout).not.toMatch(/\n{3,}/);
 	});
 
 	it("adds normalizeParams to page.tsx", async () => {

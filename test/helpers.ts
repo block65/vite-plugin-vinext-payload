@@ -24,6 +24,8 @@ export const VERSIONS = {
 	// peer on its exact minor, so these three move together or not at all.
 	react: "19.2.8",
 	vitePluginReact: "^6.0.1",
+	// The template's own vitest pin (4.0.x) has a vite peer range ending at 7.
+	vitest: "^4.1.11",
 } as const;
 
 const execFile = promisify(execFileCb);
@@ -450,8 +452,6 @@ const Layout = ({ children }: Args) => (
 
 export default Layout
 `,
-export default Layout
-`,
 
 	// Payload's current template: stylesheet renamed to .css and a viewport
 	// export added (payloadcms/payload#17464 and after). Anything the layout
@@ -492,6 +492,8 @@ const Layout = ({ children }: Args) => (
   </RootLayout>
 )
 
+export default Layout
+`,
 
 	originalPage: `/* THIS FILE WAS GENERATED AUTOMATICALLY BY PAYLOAD. */
 /* DO NOT MODIFY IT BECAUSE IT COULD BE REWRITTEN AT ANY TIME. */
@@ -587,13 +589,17 @@ export async function packPlugin(pluginRoot: string) {
 }
 
 /**
- * Rewrite the degit'd template's React pins so the dependency graph resolves.
+ * Rewrite the degit'd template's pins so the dependency graph resolves and
+ * the suite runs the versions it claims to.
  *
- * The upstream Payload template targets Next.js, so it pins versions vinext
- * cannot accept: `@vitejs/plugin-react@4` against vinext's `^5.1.4 || ^6.0.0`,
- * and React one patch below what `react-server-dom-webpack` requires — vinext
- * installs the RSC runtime, and each of its releases carries a caret peer on
- * the matching React, so `19.2.6` does not satisfy `^19.2.7`.
+ * Payload's templates lag its releases, so the one tagged `v3.88.0` still
+ * pins `payload@3.84.1`; every `payload` / `@payloadcms/*` entry is moved
+ * onto `VERSIONS.payload`. The template also targets Next.js, so it pins
+ * versions vinext cannot accept: `@vitejs/plugin-react@4` against vinext's
+ * `^5.1.4 || ^6.0.0`, `vitest@4.0` whose vite peer stops at 7, and React one
+ * patch below what `react-server-dom-webpack` requires — vinext installs the
+ * RSC runtime, and each of its releases carries a caret peer on the matching
+ * React, so `19.2.6` does not satisfy `^19.2.7`.
  *
  * Aligning the pins here is what lets every install in this file run with a
  * strict resolver. The alternative — telling the package manager to ignore
@@ -605,8 +611,15 @@ async function alignTemplatePins(
 ) {
 	const pkg = JSON.parse(await helpers.read("package.json"));
 
+	const isPayloadPackage = (name: string) =>
+		name === "payload" || name.startsWith("@payloadcms/");
 	pkg.dependencies = {
-		...pkg.dependencies,
+		...Object.fromEntries(
+			Object.entries(pkg.dependencies ?? {}).map(([name, version]) => [
+				name,
+				isPayloadPackage(name) ? VERSIONS.payload : version,
+			]),
+		),
 		react: VERSIONS.react,
 		"react-dom": VERSIONS.react,
 		"react-server-dom-webpack": VERSIONS.react,
@@ -614,6 +627,9 @@ async function alignTemplatePins(
 
 	if (pkg.devDependencies?.["@vitejs/plugin-react"]) {
 		pkg.devDependencies["@vitejs/plugin-react"] = VERSIONS.vitePluginReact;
+	}
+	if (pkg.devDependencies?.vitest) {
+		pkg.devDependencies.vitest = VERSIONS.vitest;
 	}
 
 	await helpers.write("package.json", `${JSON.stringify(pkg, null, 2)}\n`);

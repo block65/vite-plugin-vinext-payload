@@ -16,6 +16,10 @@
 import type { Plugin } from "vite";
 import { cjsInterop } from "vite-plugin-cjs-interop";
 import { cjsInteropPatch, payloadCjsInteropDeps } from "./cjs-interop-deps.ts";
+import {
+	cjsInteropDirectivePatch,
+	preservingDirectives,
+} from "./cjs-interop-directive.ts";
 import { cjsTransformPatch, payloadCjsTransform } from "./cjs-transform.ts";
 import { cliStubsPatch, payloadCliStubs } from "./cli-stubs.ts";
 import {
@@ -78,6 +82,7 @@ export const PATCH_MANIFEST: readonly PatchDeclaration[] = [
 	rscSerializerThrowsPatch,
 	serverActionFixPatch,
 	cjsInteropPatch,
+	cjsInteropDirectivePatch,
 ];
 
 export interface VinextPayloadOptions {
@@ -121,9 +126,11 @@ export function vinextPayload(options: VinextPayloadOptions = {}): Plugin[] {
 		payloadRscExportFix(),
 		payloadRscRuntime(),
 		payloadServerActionFix(),
-		cjsInterop({
-			dependencies: [...payloadCjsInteropDeps, ...extraCjsInterop],
-		}),
+		preservingDirectives(
+			cjsInterop({
+				dependencies: [...payloadCjsInteropDeps, ...extraCjsInterop],
+			}),
+		),
 	];
 }
 
@@ -204,9 +211,11 @@ export function vinextPayloadWorker(
 		payloadCjsTransform({ envs: serverEnvs }),
 		payloadCliStubs({ envs: serverEnvs }),
 		{
-			...cjsInterop({
-				dependencies: [...payloadCjsInteropDeps, ...extraCjsInterop],
-			}),
+			...preservingDirectives(
+				cjsInterop({
+					dependencies: [...payloadCjsInteropDeps, ...extraCjsInterop],
+				}),
+			),
 			applyToEnvironment(viteEnv) {
 				return serverEnvs.includes(viteEnv.name);
 			},

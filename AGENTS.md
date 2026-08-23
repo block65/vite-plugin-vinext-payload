@@ -31,4 +31,5 @@ Publishing is CI-only, via `.github/workflows/deploy.yml` on `release: published
 
 Never `npm publish` by hand — CI publishes with provenance. CI gates `lint`, `fmt:check` and `typecheck` only, so run the tests locally first.
 
-On 0.x, breaking changes go in the **minor** position.
+On 0.x, the **minor** position is the major bump — `0.3.1` to `0.4.0` is a
+breaking release, not a feature one. Treat it with that weight.

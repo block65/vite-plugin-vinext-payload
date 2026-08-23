@@ -1,7 +1,7 @@
 /**
  * The patch manifest is the plugin's public disclosure of what it rewrites.
  * These tests hold the two properties that make it trustworthy: the data is
- * well-formed, and the README table cannot drift from it.
+ * well-formed, and the docs/internals.md table cannot drift from it.
  */
 
 import { readFile } from "node:fs/promises";
@@ -14,7 +14,7 @@ import {
 } from "../scripts/patch-table.ts";
 import { PATCH_MANIFEST } from "../src/main.ts";
 
-const README = join(import.meta.dirname, "..", "README.md");
+const DOC = join(import.meta.dirname, "..", "docs", "internals.md");
 
 describe("patch manifest", () => {
 	it("declares every patch exactly once, with the fields the table needs", () => {
@@ -30,7 +30,7 @@ describe("patch manifest", () => {
 		}
 	});
 
-	it("the committed README table matches the manifest", async () => {
+	it("the committed docs table matches the manifest", async () => {
 		// oxfmt pads markdown table columns, so compare parsed cells rather
 		// than bytes — content drift fails, formatting drift does not.
 		const cells = (table: string) =>
@@ -39,16 +39,14 @@ describe("patch manifest", () => {
 				.filter((line) => !/^\|[\s|:-]+\|$/.test(line))
 				.map((line) => line.split("|").map((cell) => cell.trim()));
 
-		const readme = await readFile(README, "utf8");
+		const doc = await readFile(DOC, "utf8");
 
-		const begin = readme.indexOf(PATCH_TABLE_BEGIN);
-		const end = readme.indexOf(PATCH_TABLE_END);
+		const begin = doc.indexOf(PATCH_TABLE_BEGIN);
+		const end = doc.indexOf(PATCH_TABLE_END);
 		expect(begin).toBeGreaterThan(-1);
 		expect(end).toBeGreaterThan(begin);
 
-		const committed = readme
-			.slice(begin + PATCH_TABLE_BEGIN.length, end)
-			.trim();
+		const committed = doc.slice(begin + PATCH_TABLE_BEGIN.length, end).trim();
 
 		expect(cells(committed)).toEqual(cells(renderPatchTable(PATCH_MANIFEST)));
 	});

@@ -1,13 +1,24 @@
 # vite-plugin-vinext-payload
 
-A Vite plugin that makes [Payload CMS](https://payloadcms.com/) run under
-[vinext](https://github.com/cloudflare/vinext), including on Cloudflare Workers.
+Runs [Payload CMS](https://payloadcms.com/) under
+[vinext](https://github.com/cloudflare/vinext), Cloudflare's Vite-based
+reimplementation of Next.js, including on Cloudflare Workers.
 
-## Quick Start
+Payload 3 runs as a Next.js application; vinext reimplements Next.js's
+framework layer on Vite. This plugin closes the differences between the two
+(RSC pre-bundling, the workerd runtime surface, Rolldown output shapes, CJS
+interop) so the admin UI, the REST and GraphQL APIs, server actions and uploads
+run without modification.
+
+## Installation
 
 ```sh
 npm install -D vite-plugin-vinext-payload
 ```
+
+## Configuration
+
+### Node
 
 ```ts
 // vite.config.ts
@@ -20,11 +31,11 @@ export default defineConfig({
 });
 ```
 
-```sh
-npm run dev
-```
+Then `npm run dev`.
 
-That's it. For Cloudflare Workers with RSC, add the Cloudflare plugin:
+### Cloudflare Workers
+
+Add the Cloudflare plugin and name the RSC environment:
 
 ```ts
 import { cloudflare } from "@cloudflare/vite-plugin";
@@ -43,39 +54,25 @@ export default defineConfig({
 });
 ```
 
-`cloudflare:workers` is externalized automatically — no need to pass it via `ssrExternal`.
+`cloudflare:workers` is externalized by the plugin and does not need listing in
+`ssrExternal`. The order above and the order `init` writes (`vinext()`,
+`vinextPayload()`, `cloudflare()`) each have an e2e suite covering them.
 
-For Cloudflare D1 projects, see the **[Cloudflare D1 guide](docs/cloudflare-d1.md)**.
+For D1-backed projects, see the
+**[Cloudflare D1 guide](docs/cloudflare-d1.md)**.
 
-## Migrating from Next.js
+### Headless RPC worker
 
-Already have a Payload CMS project on Next.js? The `init` command converts it:
+The package exports two plugin factories:
 
-```sh
-npm install -D vinext vite             # Install vinext
-npx vinext init                        # Convert Next.js → vinext
-npm install -D vite-plugin-vinext-payload
-npx vite-plugin-vinext-payload init    # Apply Payload-specific fixes
-npm run dev
-```
-
-`init` is idempotent — safe to run multiple times. Use `--dry-run` to preview changes. It:
-
-- Adds `vinextPayload()` to the project's `vite.config.ts`
-- Extracts the inline server function from `layout.tsx` into a separate `'use server'` module (required for Vite's RSC transform)
-- Adds `normalizeParams` to the admin page
-- If a `wrangler.{jsonc,json,toml}` is present, also adds `cloudflare()` to `vite.config.ts` and `@cloudflare/vite-plugin` to `devDependencies`
-
-> **Note:** `vinext init` runs the project's package manager install internally (npm/pnpm/yarn/bun, detected from the project). Peer dependency conflicts are common with `@vitejs/plugin-react`; installing with `npm install -D vinext vite --legacy-peer-deps` before `npx vinext init` avoids them.
-
-## Two Modes
-
-- **`vinextPayload()`** — full Payload (admin UI + REST/GraphQL) with [vinext](https://github.com/cloudflare/vinext), Cloudflare's Vite-based re-implementation of Next.js. This is what the Quick Start above uses.
-- **`vinextPayloadWorker()`** — headless Payload exposing only its [Local API](https://payloadcms.com/docs/local-api/overview) via `WorkerEntrypoint` RPC, no admin UI. Pair with any Vite-based frontend framework (TanStack Start, SvelteKit, Remix, Nuxt) running as the parent worker.
-
-### Headless RPC Worker (no admin UI)
-
-Run Payload as a separate Cloudflare auxiliary worker that exposes its Local API over `WorkerEntrypoint` RPC. The parent worker talks to it via a service binding — no HTTP, no admin UI, no vinext.
+- **`vinextPayload()`** — the full CMS: admin UI plus the REST and GraphQL
+  APIs, running under vinext. This is what the sections above configure.
+- **`vinextPayloadWorker()`** — Payload's
+  [Local API](https://payloadcms.com/docs/local-api/overview) only, exposed
+  over `WorkerEntrypoint` RPC as a Cloudflare auxiliary worker. No admin UI, no
+  HTTP, no vinext. The parent worker holds the frontend framework and reaches
+  Payload through a service binding, so the frontend can be anything Vite
+  builds.
 
 ```ts
 // services/website/vite.config.ts (parent worker)
@@ -85,7 +82,7 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
 	plugins: [
-		// ...the framework plugin (tanstackStart, sveltekit, etc.)
+		// ...the parent framework's Vite plugin
 		cloudflare({
 			viteEnvironment: { name: "ssr" },
 			auxiliaryWorkers: [
@@ -127,91 +124,78 @@ export default {
 };
 ```
 
-Then in the parent's `wrangler.jsonc`, add a service binding pointing at `CmsEntrypoint` and call its methods from the parent's loader / API route / server function. See Cloudflare's [WorkerEntrypoint docs](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/rpc/) for the binding shape.
+The parent's `wrangler.jsonc` then needs a service binding pointing at
+`CmsEntrypoint`, whose methods the parent calls from a loader, API route or
+server function. Cloudflare's
+[WorkerEntrypoint docs](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/rpc/)
+describe the binding shape.
 
-`vinextPayloadWorker` composes a subset of the same sub-plugins as `vinextPayload` (workerd polyfills, server externals, optimize-deps excludes, file-type / drizzle-kit/api stubs, CJS interop, CLI stubs) — everything needed for Payload's Local API to evaluate inside workerd, but none of the admin-UI / RSC fixes.
+`vinextPayloadWorker()` composes a subset of the same sub-plugins as
+`vinextPayload()`: server externals, workerd compatibility, optimizeDeps
+configuration, the `file-type` and `drizzle-kit/api` stubs, the CJS transform
+and interop, and the CLI stubs. Everything Payload's Local API needs to
+evaluate inside workerd, and none of the admin-UI or RSC fixes.
+
+## Migrating a Next.js project
+
+`init` converts an existing Payload project from Next.js:
+
+```sh
+npm install -D vinext vite             # Install vinext
+npx vinext init                        # Convert Next.js → vinext
+npm install -D vite-plugin-vinext-payload
+npx vite-plugin-vinext-payload init    # Apply Payload-specific fixes
+npm run dev
+```
+
+`init` is idempotent, so repeated runs are safe; `--dry-run` prints the changes
+without writing them. It:
+
+- Adds `vinextPayload()` to `vite.config.ts`
+- Extracts the inline server function from `layout.tsx` into a separate
+  `'use server'` module, which Vite's RSC transform requires
+- Adds `normalizeParams` to the admin page
+- Adds `cloudflare()` to `vite.config.ts` and `@cloudflare/vite-plugin` to
+  `devDependencies` when a `wrangler.{jsonc,json,toml}` is present
+
+`vinext init` runs the detected package manager's install internally (npm,
+pnpm, yarn or bun). Peer dependency conflicts with `@vitejs/plugin-react` are
+common; installing with `npm install -D vinext vite --legacy-peer-deps` before
+`npx vinext init` avoids them.
 
 ## Options
 
-```ts
-// Full Payload + vinext
-vinextPayload({
-	// Additional packages to externalize from SSR bundling
-	ssrExternal: ["some-native-package"],
-
-	// Additional packages to exclude from optimizeDeps
-	excludeFromOptimize: ["some-broken-package"],
-
-	// Additional CJS packages needing default export interop
-	cjsInteropDeps: ["some-cjs-dep"],
-});
-
-// Headless Payload-as-auxiliary-worker
-vinextPayloadWorker({
-	// Required — the vite env name of the auxiliary worker (cloudflare
-	// plugin normalizes the wrangler `name` to a JS identifier).
-	env: "payload_cms",
-
-	// Optional — same shape as vinextPayload
-	ssrExternal: ["..."],
-	excludeFromOptimize: ["..."],
-	cjsInteropDeps: ["..."],
-});
-```
+| Option                | Type       | Description                                                                                                                                                                               |
+| --------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `env`                 | `string`   | **`vinextPayloadWorker()` only, required.** Vite environment name of the auxiliary worker. Must match the worker's `name` in `auxiliaryWorkers`, or the top-level `viteEnvironment.name`. |
+| `ssrExternal`         | `string[]` | Additional packages to externalize from server (SSR + RSC) bundling. Merged with the built-in list: esbuild, wrangler, miniflare, sharp.                                                  |
+| `excludeFromOptimize` | `string[]` | Additional packages to exclude from `optimizeDeps`.                                                                                                                                       |
+| `cjsInteropDeps`      | `string[]` | Additional CommonJS packages needing default-export interop.                                                                                                                              |
 
 ## Requirements
 
 - Node.js `>=24`
 - Vite `^8.0.0`
 - Payload CMS `^3.82.0`
-- vinext `1.0.0-beta.8` (exact — vinext is still pre-release; every bump can break things). Optional — only needed when using `vinextPayload()`. Not required for `vinextPayloadWorker()`.
+- vinext `1.0.0-beta.8`, exact. vinext is pre-release and every bump moves
+  internals this plugin patches. Required by `vinextPayload()` only;
+  `vinextPayloadWorker()` runs without it.
 
-> **Experimental.** Both vinext and this plugin are experimental.
->
-> **Validated against:** Payload `3.88.0`, vinext `1.0.0-beta.8`, Vite `8.2.2` (Rolldown), Node `>=24` — the versions the e2e suites pin (`test/helpers.ts`). Peer dependency ranges are pinned to the validated stack — see [`docs/upstream-bugs.md`](docs/upstream-bugs.md) for known regressions.
+## Status
 
-## What It Does
+Both vinext and this plugin are experimental.
 
-Payload CMS targets Next.js; vinext reimplements Next.js's framework layer on
-Vite and Cloudflare Workers. The gap between the two — RSC pre-bundling,
-workerd's runtime surface, Rolldown's output shapes, CJS interop — is what
-this plugin closes. It applies a set of workarounds so that the admin UI,
-REST/GraphQL API, server actions, and uploads work without hand-patching.
-The individual fixes are not needed to use the plugin; they are listed in
-[`docs/internals.md`](docs/internals.md) and the underlying bugs in
-[`docs/upstream-bugs.md`](docs/upstream-bugs.md).
+Validated against Payload `3.88.0`, vinext `1.0.0-beta.8`, Vite `8.2.2`
+(Rolldown) and Node `>=24`, the versions the e2e suites pin in
+`test/helpers.ts`. The peer dependency ranges match that stack. Known upstream
+regressions are listed in [`docs/upstream-bugs.md`](docs/upstream-bugs.md).
 
-### Build-time patches
+## Internals
 
-This plugin rewrites other packages' code at build time. Every such rewrite
-is declared as data (`PATCH_MANIFEST` in [`src/main.ts`](src/main.ts)); this
-table is generated from those declarations, and a unit test fails when it
-drifts from them.
-
-<!-- patch-table:begin — generated from PATCH_MANIFEST by scripts/patch-table.ts; edit the src/ declarations, then `pnpm run docs:patches` -->
-
-| Patch                           | Kind       | Rewrites                                                                                                                                                                                                                                                                                                                                                                      | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Remove when                                                                                                                                                                                                                                                                                                                   |
-| ------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `use-client-barrel`             | config     | @payloadcms/* — subpath barrels re-exporting 'use client' modules, excluded from rsc optimizeDeps                                                                                                                                                                                                                                                                             | pre-bundling merges barrels with their re-exported modules and strips 'use client', so plugin-rsc executes client components on the server                                                                                                                                                                                                                                                                                                                   | @vitejs/plugin-rsc follows re-export chains to detect 'use client' directives                                                                                                                                                                                                                                                 |
-| `server-externals`              | config     | esbuild, wrangler, miniflare, sharp — externalized from server bundles<br>cloudflare:workers — externalized everywhere                                                                                                                                                                                                                                                        | build/deploy tools and native addons cannot be bundled, and the client environment must not try to bundle the workerd-only cloudflare:workers specifier                                                                                                                                                                                                                                                                                                      | never — build tools and native addons stay external                                                                                                                                                                                                                                                                           |
-| `workerd-console-createtask`    | transform  | react — any module calling console.createTask (dev mode)                                                                                                                                                                                                                                                                                                                      | workerd's node:console defines console.createTask but throws 'not implemented' when called; React 19 dev mode calls it for async stack traces                                                                                                                                                                                                                                                                                                                | workerd makes console.createTask a no-op instead of throwing                                                                                                                                                                                                                                                                  |
-| `workerd-undici-feature-detect` | transform  | undici — runtime-features detection                                                                                                                                                                                                                                                                                                                                           | Rolldown converts undici's lazy require('node:*') into a void-returning ESM initializer, so its feature probe reads a property off undefined and throws instead of returning false                                                                                                                                                                                                                                                                           | Rolldown preserves require() semantics for externalized node builtins, or undici guards its probe                                                                                                                                                                                                                             |
-| `workerd-import-meta-url-guard` | transform  | any server-environment module calling fileURLToPath(import.meta.url) or createRequire(import.meta.url)                                                                                                                                                                                                                                                                        | bundled asset modules in workerd can see import.meta.url as undefined, crashing module init<br>https://github.com/cloudflare/vinext/pull/2942                                                                                                                                                                                                                                                                                                                | vinext >= 1.0.0-beta.7 rewrites dependency import.meta.url reads itself (#2942), which makes this inert under vinextPayload(); vinextPayloadWorker() runs without vinext and still relies on it. Remove when workerd provides import.meta.url for bundled modules, or @cloudflare/vite-plugin rewrites it the way vinext does |
-| `workerd-node-builtin-shims`    | stub       | node:* imports in workerd environments → unenv/node/*                                                                                                                                                                                                                                                                                                                         | workerd does not provide Node builtins; unenv's shims keep transitive imports loadable                                                                                                                                                                                                                                                                                                                                                                       | workerd's node compatibility covers the builtins Payload pulls in                                                                                                                                                                                                                                                             |
-| `workerd-entry`                 | transform  | vinext — the built rsc entry chunk's default export                                                                                                                                                                                                                                                                                                                           | on Vite 8/Rolldown the { fetch } wrapper of vinext's app-router-entry can be inlined to a bare function, and a Worker whose default export has no fetch method fails to start<br>Currently defensive: expected to rewrite nothing.<br>https://github.com/cloudflare/workers-sdk/issues/10213<br>https://github.com/cloudflare/workers-sdk/pull/10544<br>https://github.com/rolldown/rolldown/issues/3500<br>https://github.com/rolldown/rolldown/issues/6449 | Rolldown enforces preserveEntrySignatures: 'strict' for this inlining case                                                                                                                                                                                                                                                    |
-| `html-diff-export-fix`          | file-write | @payloadcms/ui — dist/exports/rsc/index.js, rewritten on disk                                                                                                                                                                                                                                                                                                                 | on vinext/Rolldown builds the HTMLDiff re-export resolves to a module missing getHTMLDiffComponents, so the version-diff view crashes; the export is replaced with a local implementation                                                                                                                                                                                                                                                                    | @payloadcms/ui's rsc export of getHTMLDiffComponents resolves under Rolldown                                                                                                                                                                                                                                                  |
-| `optimize-deps`                 | config     | file-type, blake3-wasm, wrangler, @payloadcms/next — excluded from optimizeDeps in every environment<br>payload > ajv, payload > bson-objectid, react/compiler-runtime, @payloadcms/ui and discovered next/* aliases — force-included in client optimizeDeps<br>payload, @payloadcms/richtext-lexical and @payloadcms/ui transitive deps — force-included in rsc optimizeDeps | these packages break during esbuild/Rolldown pre-bundling for structural reasons webpack handles natively, excluded parents lose CJS auto-discovery for their children, and deps left to runtime discovery each force a serial re-optimize + module-runner reload on cold start; per-entry notes live in payload-packages.ts                                                                                                                                 | per-entry conditions in payload-packages.ts — the lists shrink entry by entry                                                                                                                                                                                                                                                 |
-| `cjs-transform`                 | transform  | any node_modules CJS/UMD file except react, react-dom, react-server-dom-webpack and scheduler                                                                                                                                                                                                                                                                                 | files served raw via /@fs/ break in the browser (module.exports) and in Vite's strict-ESM module runner, where module-scope `this` is undefined for UMD wrappers and TS CJS helpers                                                                                                                                                                                                                                                                          | Vite converts CJS to ESM for files served outside optimizeDeps pre-bundling                                                                                                                                                                                                                                                   |
-| `cli-stubs`                     | stub       | console-table-printer, json-schema-to-typescript, esbuild-register, ws, wrangler, pnpapi → no-op stubs                                                                                                                                                                                                                                                                        | these are reached only by Payload CLI commands or Next-specific code paths, and bundling them drags broken dependencies into the graph (wrangler's CLI pulls in blake3-wasm, which Rolldown cannot resolve); ws and wrangler throw on use so genuine Node-side calls stay loud                                                                                                                                                                               | payload lazy-loads its CLI-only dependencies behind dynamic imports                                                                                                                                                                                                                                                           |
-| `nav-component-fix`             | transform  | @payloadcms/next — Nav/index.client.js (DefaultNavClient)<br>@payloadcms/next — DocumentHeader Tabs TabLink.js (DocumentTabLink)                                                                                                                                                                                                                                              | vinext's usePathname()/useParams() differ between SSR and client hydration, so these components render different element types and React 19 discards the server tree, dropping form state                                                                                                                                                                                                                                                                    | vinext's navigation hooks use React context like Next.js, or Payload removes the conditional element type rendering                                                                                                                                                                                                           |
-| `rsc-export-fix`                | transform  | @vitejs/plugin-rsc — output of its CSS export transform, rsc environment only                                                                                                                                                                                                                                                                                                 | plugin-rsc relocates export statements to end-of-file with MagicString; when the source ends in a sourcemap comment without a trailing newline the export lands inside the comment and Rolldown cannot see it<br>https://github.com/vitejs/vite-plugin-react (plugin-rsc)                                                                                                                                                                                    | plugin-rsc's transformWrapExport emits a newline before relocated exports                                                                                                                                                                                                                                                     |
-| `rsc-runtime-stubs`             | stub       | file-type → no-op stub (server environments)<br>drizzle-kit/api → no-op stub, including inlined createRequire() calls                                                                                                                                                                                                                                                         | both are transitively imported but never invoked during RSC rendering, and leave bare imports the workerd module runner cannot resolve; per-entry notes live in payload-packages.ts (RSC_STUBS)                                                                                                                                                                                                                                                              | workerd supports the Node APIs they need, or payload lazy-loads them                                                                                                                                                                                                                                                          |
-| `rsc-serializer-throws`         | transform  | react-server-dom-webpack — 'Client Component' serializer throws                                                                                                                                                                                                                                                                                                               | the RSC serializer throws for values that cannot cross the server/client boundary (access functions, hooks, RegExps in Payload field configs); Next.js silently drops them in production, vinext does not, so every Payload page would fail                                                                                                                                                                                                                  | vinext's RSC pipeline tolerates non-serializable config values the way Next.js does                                                                                                                                                                                                                                           |
-| `server-action-fix`             | transform  | vinext — server/app-browser-entry.js                                                                                                                                                                                                                                                                                                                                          | vinext's browser entry imports the navigation shim by relative path, bypassing the pre-bundled next/navigation alias: two module instances, split navigation state, and a runtime re-optimize on cold cache                                                                                                                                                                                                                                                  | vinext uses the aliased next/navigation in its browser entry                                                                                                                                                                                                                                                                  |
-| `cjs-default-interop`           | transform  | pluralize, bson-objectid — via vite-plugin-cjs-interop                                                                                                                                                                                                                                                                                                                        | their CJS default exports arrive as { default: fn } without interop wrapping, so calls like pluralize('item') break at runtime                                                                                                                                                                                                                                                                                                                               | these packages ship native ESM                                                                                                                                                                                                                                                                                                |
-| `cjs-interop-directive`         | transform  | vite-plugin-cjs-interop — the preamble it prepends to a module                                                                                                                                                                                                                                                                                                                | on Vite 8 the interop preamble is inserted at byte 0, above any 'use client' directive, which drops the directive out of the parser's prologue; @vitejs/plugin-rsc then reads the module as server code and evaluates a client component under the react-server condition                                                                                                                                                                                    | vite-plugin-cjs-interop inserts its preamble after the directive prologue                                                                                                                                                                                                                                                     |
-
-<!-- patch-table:end -->
+The plugin rewrites other packages' code at build time. Each rewrite is
+declared as data (`PATCH_MANIFEST` in [`src/main.ts`](src/main.ts)) and
+tabulated in [`docs/internals.md`](docs/internals.md), which a unit test keeps
+in sync with the declarations. None of it is needed to use the plugin.
 
 ## License
 

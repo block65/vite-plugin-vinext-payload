@@ -172,7 +172,7 @@ async function readManifest(cwd: string): Promise<Manifest> {
 	const content = await tryRead(join(cwd, "package.json"));
 	if (!content) {
 		throw new InitError(
-			"No package.json found. Run this from your project root.",
+			"No package.json found. Run this from the project root.",
 		);
 	}
 

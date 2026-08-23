@@ -1,5 +1,6 @@
 /**
- * Generates the README's build-time patch table from `PATCH_MANIFEST`. Run
+ * Generates docs/internals.md's build-time patch table from
+ * `PATCH_MANIFEST`. Run
  * via `pnpm run docs:patches`; `test/patch-manifest.test.ts` fails when the
  * committed table drifts from the manifest.
  */
@@ -14,7 +15,7 @@ export const PATCH_TABLE_BEGIN =
 	"<!-- patch-table:begin — generated from PATCH_MANIFEST by scripts/patch-table.ts; edit the src/ declarations, then `pnpm run docs:patches` -->";
 export const PATCH_TABLE_END = "<!-- patch-table:end -->";
 
-const README = join(import.meta.dirname, "..", "README.md");
+const DOC = join(import.meta.dirname, "..", "docs", "internals.md");
 
 function cell(text: string): string {
 	return text.replaceAll("|", "\\|").replaceAll("\n", " ");
@@ -44,28 +45,28 @@ export function renderPatchTable(
 	].join("\n");
 }
 
-export async function updateReadme(): Promise<string> {
-	const readme = await readFile(README, "utf8");
+export async function updatePatchTable(): Promise<string> {
+	const doc = await readFile(DOC, "utf8");
 
-	const begin = readme.indexOf(PATCH_TABLE_BEGIN);
-	const end = readme.indexOf(PATCH_TABLE_END);
+	const begin = doc.indexOf(PATCH_TABLE_BEGIN);
+	const end = doc.indexOf(PATCH_TABLE_END);
 	if (begin === -1 || end === -1 || end < begin) {
 		throw new Error(
-			`README.md is missing the ${PATCH_TABLE_BEGIN} / ${PATCH_TABLE_END} markers`,
+			`docs/internals.md is missing the ${PATCH_TABLE_BEGIN} / ${PATCH_TABLE_END} markers`,
 		);
 	}
 
 	const updated =
-		readme.slice(0, begin + PATCH_TABLE_BEGIN.length) +
+		doc.slice(0, begin + PATCH_TABLE_BEGIN.length) +
 		"\n\n" +
 		renderPatchTable(PATCH_MANIFEST) +
 		"\n\n" +
-		readme.slice(end);
+		doc.slice(end);
 
-	await writeFile(README, updated);
+	await writeFile(DOC, updated);
 	return updated;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-	await updateReadme();
+	await updatePatchTable();
 }

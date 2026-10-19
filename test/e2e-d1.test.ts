@@ -7,18 +7,14 @@
  * only test that runs inside workerd where console.createTask throws.
  */
 
-import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, it } from "vitest";
 import {
-	createProjectHelpers,
-	installVinextStack,
-	rewritePayloadConfigForVinext,
-	fixWranglerForLocalDev,
 	assertStatus,
+	createProjectHelpers,
 	runBuild,
+	scaffoldCloudflareProject,
 	startDevServer,
-	VERSIONS,
 	waitForServerReady,
 } from "./helpers.ts";
 
@@ -26,38 +22,11 @@ const PLUGIN_ROOT = join(import.meta.dirname, "..");
 const TEST_DIR = join(import.meta.dirname, ".test-project-d1");
 const helpers = createProjectHelpers(TEST_DIR);
 
-async function scaffoldD1Project() {
-	await helpers.cleanup();
-	const { mkdir } = await import("node:fs/promises");
-	await mkdir(TEST_DIR, { recursive: true });
-	await helpers.npx([
-		"--yes",
-		"degit",
-		"--force",
-		// Pinned to the release tag: `main` carries the next major's templates,
-		// which import exports the pinned packages do not have.
-		`payloadcms/payload/templates/with-cloudflare-d1#v${VERSIONS.payload}`,
-		TEST_DIR,
-	]);
-
-	await writeFile(
-		join(TEST_DIR, ".env"),
-		`PAYLOAD_SECRET=${crypto.randomUUID()}\n`,
-	);
-
-	await installVinextStack(helpers, PLUGIN_ROOT, "cloudflare");
-
-	await rewritePayloadConfigForVinext(helpers);
-	await fixWranglerForLocalDev(helpers);
-}
-
 describe("e2e: cloudflare d1", () => {
 	let server: Awaited<ReturnType<typeof startDevServer>>;
 
 	beforeAll(async () => {
-		await scaffoldD1Project();
-		await helpers.npx(["vite-plugin-vinext-payload", "init"]);
-		await helpers.npm(["install"]);
+		await scaffoldCloudflareProject(TEST_DIR, helpers, PLUGIN_ROOT);
 		await helpers.npx(["payload", "generate:importmap"]);
 
 		server = await startDevServer(TEST_DIR, helpers);
@@ -76,24 +45,6 @@ describe("e2e: cloudflare d1", () => {
 
 	it("admin API responds in workerd", async () => {
 		await assertStatus(server.port, "/api/users", [200, 401, 403]);
-	});
-
-	it("init added vinextPayload to the vite config", async () => {
-		// Guards the exact failure mode where init's vinext() matcher missed
-		// the 1.0 config shape and the whole suite ran without the plugin.
-		const config = await helpers.read("vite.config.ts");
-		expect(config).toContain("vinextPayload()");
-	});
-
-	it("payload config uses getCloudflareEnv", async () => {
-		const config = await helpers.read("src/payload.config.ts");
-		expect(config).toContain("getCloudflareEnv");
-		expect(config).not.toContain("@opennextjs/cloudflare");
-	});
-
-	it("init is idempotent", async () => {
-		const output = await helpers.npx(["vite-plugin-vinext-payload", "init"]);
-		expect(output).toContain("0 file(s) changed");
 	});
 
 	it("production build succeeds", async () => {

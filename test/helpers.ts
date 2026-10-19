@@ -17,12 +17,12 @@ import { promisify } from "node:util";
 
 /** Known-good version pins for testing. */
 export const VERSIONS = {
-	payload: "3.88.0",
-	vinext: "1.0.0-beta.8",
-	vite: "8.2.2",
+	payload: "3.91.0",
+	vinext: "1.2.1",
+	vite: "8.3.4",
 	// react-server-dom-webpack ships in lockstep with React and carries a caret
 	// peer on its exact minor, so these three move together or not at all.
-	react: "19.2.8",
+	react: "19.3.1",
 	vitePluginReact: "^6.0.1",
 	// The template's own vitest pin (4.0.x) has a vite peer range ending at 7.
 	vitest: "^4.1.11",
@@ -82,9 +82,36 @@ export function createProjectHelpers(testDir: string) {
 	};
 }
 
+// E2E_DISABLE_PLUGINS: comma-separated vinextPayload() sub-plugin names, or `all`
+async function disableNamedPlugins(
+	helpers: ReturnType<typeof createProjectHelpers>,
+) {
+	const disabled = process.env.E2E_DISABLE_PLUGINS?.trim();
+	if (!disabled) {
+		return;
+	}
+	const configPath = (await helpers.exists("vite.config.ts"))
+		? "vite.config.ts"
+		: "vite.config.mts";
+	const config = await helpers.read(configPath);
+	const filter =
+		disabled === "all"
+			? "vinextPayload().filter(() => false)"
+			: `vinextPayload().filter((p) => !${JSON.stringify(disabled.split(","))}.includes(p.name))`;
+	// Lookahead keeps a second call from wrapping an already-filtered config
+	const rewritten = config.replace(/vinextPayload\(\)(?!\.filter)/, filter);
+	if (rewritten === config && !config.includes("vinextPayload().filter")) {
+		throw new Error(
+			`E2E_DISABLE_PLUGINS set but ${configPath} has no vinextPayload()`,
+		);
+	}
+	await helpers.write(configPath, rewritten);
+}
+
 export async function runBuild(
 	helpers: ReturnType<typeof createProjectHelpers>,
 ) {
+	await disableNamedPlugins(helpers);
 	const pkg = JSON.parse(await helpers.read("package.json"));
 	const script = pkg.scripts["build:vinext"] ? "build:vinext" : "build";
 	return helpers.npm(["run", script]);
@@ -101,6 +128,7 @@ export async function startDevServer(
 	helpers: ReturnType<typeof createProjectHelpers>,
 	readyTimeoutMs = 60_000,
 ) {
+	await disableNamedPlugins(helpers);
 	const pkg = JSON.parse(await helpers.read("package.json"));
 	const script = pkg.scripts["dev:vinext"] ? "dev:vinext" : "dev";
 
@@ -677,11 +705,98 @@ export async function installVinextStack(
 				]
 			: []),
 	]);
-	const pkg = JSON.parse(await helpers.read("package.json"));
-	if (pkg.devDependencies?.["@cloudflare/vite-plugin"]) {
-		await helpers.npm(["install", "-D", "@cloudflare/vite-plugin"]);
-	}
+	// init rewrites both to caret ranges; put the exact pins back
+	await helpers.npm([
+		"install",
+		"-D",
+		"--save-exact",
+		`vinext@${VERSIONS.vinext}`,
+		`vite@${VERSIONS.vite}`,
+	]);
 	await helpers.npm(["install", "-D", await packPlugin(pluginRoot)]);
+	await addVinextPayload(helpers);
+}
+
+/**
+ * Add `vinextPayload()` after the `vinext(...)` call `vinext init` wrote —
+ * the one line the README asks users to add.
+ */
+async function addVinextPayload(
+	helpers: ReturnType<typeof createProjectHelpers>,
+) {
+	const { parse, Lang } = await import("@ast-grep/napi");
+	const config = await helpers.read("vite.config.ts");
+	const call = parse(Lang.TypeScript, config).root().find("vinext($$$)");
+	if (!call) {
+		throw new Error(`vite.config.ts has no vinext() call:\n${config}`);
+	}
+	const end = call.range().end.index;
+	const withPlugin = config.startsWith(",", end)
+		? `${config.slice(0, end + 1)}\n    vinextPayload(),${config.slice(end + 1)}`
+		: `${config.slice(0, end)}, vinextPayload()${config.slice(end)}`;
+	await helpers.write(
+		"vite.config.ts",
+		withPlugin.replace(
+			/^(import vinext from "vinext";)$/m,
+			'$1\nimport vinextPayload from "vite-plugin-vinext-payload";',
+		),
+	);
+}
+
+/**
+ * The Payload `with-cloudflare-d1` template moved onto vinext's default
+ * Cloudflare setup: OpenNext removed, `vinext init --platform=cloudflare`,
+ * and the template's bindings declared in the `cloudflare.config.ts` it
+ * generates. `beforeInit` runs once the template is in place, for files
+ * init should see (a `worker/index.ts` entry).
+ */
+export async function scaffoldCloudflareProject(
+	testDir: string,
+	helpers: ReturnType<typeof createProjectHelpers>,
+	pluginRoot: string,
+	beforeInit?: () => Promise<void>,
+) {
+	await helpers.cleanup();
+	await mkdir(testDir, { recursive: true });
+	await helpers.npx([
+		"--yes",
+		"degit",
+		"--force",
+		// Pinned to the release tag: `main` carries the next major's templates,
+		// which import exports the pinned packages do not have.
+		`payloadcms/payload/templates/with-cloudflare-d1#v${VERSIONS.payload}`,
+		testDir,
+	]);
+	await helpers.write(".env", `PAYLOAD_SECRET=${crypto.randomUUID()}\n`);
+
+	// vinext's Cloudflare init refuses to replace a Wrangler config
+	const pkg = JSON.parse(await helpers.read("package.json"));
+	for (const name of ["@opennextjs/cloudflare", "wrangler"]) {
+		delete pkg.dependencies?.[name];
+		delete pkg.devDependencies?.[name];
+	}
+	await helpers.write("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
+	await rm(join(testDir, "wrangler.jsonc"));
+	await rm(join(testDir, "open-next.config.ts"));
+	await rewritePayloadConfigForVinext(helpers);
+	await beforeInit?.();
+
+	await installVinextStack(helpers, pluginRoot, "cloudflare");
+
+	const cloudflareConfig = await helpers.read("cloudflare.config.ts");
+	const anchor = "ASSETS: bindings.assets(),";
+	if (!cloudflareConfig.includes(anchor)) {
+		throw new Error(
+			`cloudflare.config.ts has no ${anchor}:\n${cloudflareConfig}`,
+		);
+	}
+	await helpers.write(
+		"cloudflare.config.ts",
+		cloudflareConfig.replace(
+			anchor,
+			`${anchor}\n      D1: bindings.d1(),\n      R2: bindings.r2(),\n      PAYLOAD_SECRET: bindings.secret(),`,
+		),
+	);
 }
 
 /**
@@ -814,11 +929,8 @@ export async function rewritePayloadConfigForVinext(
     const { env } = await import(/* @vite-ignore */ 'cloudflare:workers')
     return env
   } catch {
-    const { getPlatformProxy } = await import('wrangler')
-    const proxy = await getPlatformProxy({
-      environment: process.env.CLOUDFLARE_ENV,
-    })
-    return proxy.env
+    // Payload's Node CLI: no bindings outside workerd
+    return {} as CloudflareEnv
   }
 }\n\nconst cfEnv = await getCloudflareEnv()\n`;
 		result = result.replace(/(\nexport default)/, fn + "$1");
@@ -827,20 +939,4 @@ export async function rewritePayloadConfigForVinext(
 	result = result.replace(/\n{3,}/g, "\n\n");
 
 	await helpers.write(configPath, result);
-}
-
-/** Replace OpenNext main with vinext entry and remove "remote": true for local dev. */
-export async function fixWranglerForLocalDev(
-	helpers: ReturnType<typeof createProjectHelpers>,
-) {
-	const wrangler = await helpers.read("wrangler.jsonc");
-	await helpers.write(
-		"wrangler.jsonc",
-		wrangler
-			.replace(
-				/"main"\s*:\s*"\.open-next\/worker\.js"/g,
-				'"main": "vinext/server/app-router-entry"',
-			)
-			.replace(/"remote"\s*:\s*true,?\n?\s*/g, ""),
-	);
 }

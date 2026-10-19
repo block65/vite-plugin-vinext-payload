@@ -103,6 +103,11 @@ export const CLIENT_OPTIMIZE_DEPS_INCLUDE = [
 	// Remove: when payload ships ESM or Vite auto-discovers excluded deps.
 	"payload > bson-objectid",
 
+	// CJS with require(), used by payload/uploads/getFileTypeIdentity, which
+	// payload/shared re-exports to the client from 3.91.
+	// Remove: when payload ships ESM or Vite auto-discovers excluded deps.
+	"payload > sanitize-filename",
+
 	// CJS stub with require(), used by @payloadcms/ui components compiled
 	// with React Compiler. Without pre-bundling, the browser gets the raw
 	// CJS file via /@fs/ and can't import named exports.
@@ -188,9 +193,9 @@ export const RSC_OPTIMIZE_DEPS_INCLUDE = [
 // ---------------------------------------------------------------------------
 
 export const RSC_STUBS: Record<string, "empty"> = {
-	// Migration utilities from drizzle-kit. Imported by @payloadcms/db-d1-sqlite
-	// via dynamic require() but migrations only run during build/deploy, not
-	// during RSC rendering. pnpm strict isolation also prevents resolution.
+	// Migration utilities from drizzle-kit, loaded by @payloadcms/drizzle via
+	// createRequire(). Stubbed in builds only: the dev schema push needs the
+	// real package, and production never pushes.
 	// Remove: when payload lazy-loads migration deps, or workerd supports require().
 	"drizzle-kit/api": "empty",
 };

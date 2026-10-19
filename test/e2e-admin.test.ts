@@ -271,7 +271,6 @@ describe("e2e: admin ui", () => {
 
 	beforeAll(async () => {
 		await scaffoldAdminProject();
-		await helpers.npx(["vite-plugin-vinext-payload", "init"]);
 		await helpers.npx(["payload", "generate:importmap"]);
 
 		server = await startDevServer(TEST_DIR, helpers);

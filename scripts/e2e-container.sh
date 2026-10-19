@@ -29,11 +29,14 @@ docker build \
 	"$repo/scripts"
 
 # --shm-size: chromium crashes under docker's default 64MB /dev/shm.
+# E2E_CPUS caps the container's CPU share; 0 (the default) is unlimited.
 exec docker run --rm --init \
+	--cpus="${E2E_CPUS:-0}" \
 	--shm-size=1g \
 	--volume "$repo:/repo:ro" \
 	--volume vinext-payload-e2e-pnpm-store:/pnpm-store \
 	--volume vinext-payload-e2e-npm-cache:/npm-cache \
 	--env npm_config_cache=/npm-cache \
+	--env E2E_DISABLE_PLUGINS \
 	vinext-payload-e2e \
 	/repo/scripts/e2e-container-entry.sh "${args[@]}"

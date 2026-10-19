@@ -115,9 +115,6 @@ export function payloadOptimizeDeps(
 		// payloadServerExternals uses it: it fires once per environment, after
 		// every plugin has declared its own, including environments created
 		// later than our `enforce: "pre"` `config` hook runs.
-		//
-		// NB: this did NOT fix the `blake3-wasm` failure that motivated it —
-		// see docs/d1-dev-boot-investigation.md. That cause is still open.
 		configEnvironment(name, envConfig) {
 			if (explicitEnvs && !explicitEnvs.includes(name)) {
 				return;

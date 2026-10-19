@@ -22,7 +22,7 @@ if (values.help || !command) {
 			Usage: vite-plugin-vinext-payload <command> [options]
 
 			Commands:
-				init          Apply Payload-specific fixes for vinext compatibility
+				init          Deprecated: run vinext init, then add vinextPayload()
 
 			Options:
 				--dry-run     Show what would change without writing files
@@ -32,6 +32,9 @@ if (values.help || !command) {
 	);
 	process.exitCode = 0;
 } else if (command === "init") {
+	printError(
+		"`vite-plugin-vinext-payload init` is deprecated and will be removed. Run `vinext init`, then add vinextPayload() after vinext() in vite.config.ts.",
+	);
 	const { init, InitError } = await import("./init.ts");
 	try {
 		await init({ cwd: resolve(values.cwd), dryRun: values["dry-run"] });

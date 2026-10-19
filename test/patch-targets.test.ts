@@ -71,6 +71,7 @@ describe("vinext patch targets", () => {
 
 	it("RSC entry still default-exports an object with fetch", () => {
 		const code = read("server/app-router-entry.js");
-		expect(code).toMatch(/\{\s*async fetch\s*\(/);
+		// 1.2 puts `__ensureInstrumentation` ahead of `fetch` in the object.
+		expect(code).toMatch(/=\s*\{[^}]*?\basync fetch\s*\(/);
 	});
 });

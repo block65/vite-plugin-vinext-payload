@@ -22,8 +22,8 @@ npm install -D vite-plugin-vinext-payload
 
 ```ts
 // vite.config.ts
-import { defineConfig } from "vite";
 import vinext from "vinext";
+import { defineConfig } from "vite";
 import vinextPayload from "vite-plugin-vinext-payload";
 
 export default defineConfig({
@@ -35,9 +35,12 @@ Then `npm run dev`.
 
 ### Cloudflare Workers
 
-Add the Cloudflare plugin and name the RSC environment:
+Start from what `vinext init --platform=cloudflare` writes
+(`@cloudflare/vite-plugin` v2 and a `cloudflare.config.ts`), and add
+`vinextPayload()` after `vinext()`:
 
 ```ts
+// vite.config.ts
 import { cloudflare } from "@cloudflare/vite-plugin";
 import vinext from "vinext";
 import { defineConfig } from "vite";
@@ -45,20 +48,22 @@ import vinextPayload from "vite-plugin-vinext-payload";
 
 export default defineConfig({
 	plugins: [
+		vinext(),
+		vinextPayload(),
 		cloudflare({
 			viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
 		}),
-		vinext(),
-		vinextPayload(),
 	],
 });
 ```
 
+Keep any options init passed to `vinext()`, such as its CDN cache adapter.
 `cloudflare:workers` is externalized by the plugin and does not need listing in
-`ssrExternal`. The order above and the order `init` writes (`vinext()`,
-`vinextPayload()`, `cloudflare()`) each have an e2e suite covering them.
+`ssrExternal`.
 
-For D1-backed projects, see the
+Declare `PAYLOAD_SECRET` in `cloudflare.config.ts` with `bindings.secret()`:
+the v2 plugin passes only declared secrets to the Worker. Bindings, schema
+setup and the template's OpenNext leftovers are covered in the
 **[Cloudflare D1 guide](docs/cloudflare-d1.md)**.
 
 ### Headless RPC worker
@@ -77,8 +82,8 @@ The package exports two plugin factories:
 ```ts
 // services/website/vite.config.ts (parent worker)
 import { cloudflare } from "@cloudflare/vite-plugin";
-import { vinextPayloadWorker } from "vite-plugin-vinext-payload";
 import { defineConfig } from "vite";
+import { vinextPayloadWorker } from "vite-plugin-vinext-payload";
 
 export default defineConfig({
 	plugins: [
@@ -136,32 +141,10 @@ configuration, `file-type` resolution, the `drizzle-kit/api` stub, the CJS trans
 and interop, and the CLI stubs. Everything Payload's Local API needs to
 evaluate inside workerd, and none of the admin-UI or RSC fixes.
 
-## Migrating a Next.js project
+## `init` (deprecated)
 
-`init` converts an existing Payload project from Next.js:
-
-```sh
-npm install -D vinext vite             # Install vinext
-npx vinext init                        # Convert Next.js → vinext
-npm install -D vite-plugin-vinext-payload
-npx vite-plugin-vinext-payload init    # Apply Payload-specific fixes
-npm run dev
-```
-
-`init` is idempotent, so repeated runs are safe; `--dry-run` prints the changes
-without writing them. It:
-
-- Adds `vinextPayload()` to `vite.config.ts`
-- Extracts the inline server function from `layout.tsx` into a separate
-  `'use server'` module, which Vite's RSC transform requires
-- Adds `normalizeParams` to the admin page
-- Adds `cloudflare()` to `vite.config.ts` and `@cloudflare/vite-plugin` to
-  `devDependencies` when a `wrangler.{jsonc,json,toml}` is present
-
-`vinext init` runs the detected package manager's install internally (npm,
-pnpm, yarn or bun). Peer dependency conflicts with `@vitejs/plugin-react` are
-common; installing with `npm install -D vinext vite --legacy-peer-deps` before
-`npx vinext init` avoids them.
+`npx vite-plugin-vinext-payload init` is deprecated and will be removed in a
+later release. Run `vinext init`, then add `vinextPayload()` as shown above.
 
 ## Options
 
@@ -177,16 +160,16 @@ common; installing with `npm install -D vinext vite --legacy-peer-deps` before
 - Node.js `>=24`
 - Vite `^8.0.0`
 - Payload CMS `^3.82.0`
-- vinext `1.0.0-beta.8`, exact. vinext is pre-release and every bump moves
-  internals this plugin patches. Required by `vinextPayload()` only;
-  `vinextPayloadWorker()` runs without it.
+- vinext `1.2.1`, exact. Every vinext release can move the internals this
+  plugin patches. Required by `vinextPayload()` only; `vinextPayloadWorker()`
+  runs without it.
 
 ## Status
 
 Both vinext and this plugin are experimental.
 
-Validated against Payload `3.88.0`, vinext `1.0.0-beta.8`, Vite `8.2.2`
-(Rolldown) and Node `>=24`, the versions the e2e suites pin in
+Validated against Payload `3.91.0`, vinext `1.2.1`, Vite `8.3.4` (Rolldown),
+`@cloudflare/vite-plugin` v2 and Node `>=24`, the versions the e2e suites pin in
 `test/helpers.ts`. The peer dependency ranges match that stack. Known upstream
 regressions are listed in [`docs/upstream-bugs.md`](docs/upstream-bugs.md).
 

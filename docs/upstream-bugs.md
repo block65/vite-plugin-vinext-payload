@@ -113,7 +113,9 @@ workerd's polyfill.
 **Our workaround:** `payloadWorkerdCompat` prepends a try/catch polyfill
 that replaces the broken implementation with a no-op. Injected via both
 Vite `transform` hook (for non-pre-bundled modules) and
-`optimizeDeps.rolldownOptions.plugins` (for pre-bundled deps like React).
+`optimizeDeps.rolldownOptions.plugins` (for pre-bundled deps like React), in
+both `rsc` and `ssr`: the two share one Worker isolate, and whichever React
+copy evaluates first meets the throwing method.
 
 ---
 
@@ -229,10 +231,11 @@ plugin's `resolve.external` validation.
 **What breaks:** `file-type` is a direct dependency of `payload` itself, used
 for upload type detection. Its `exports` map serves `index.js` under the `node`
 condition and `core.js` otherwise; server environments resolve `core.js`, which
-lacks the `fileTypeFromFile` that Payload imports. `drizzle-kit/api` (via
-`@payloadcms/db-d1-sqlite`) uses Node.js APIs that don't exist in workerd.
-pnpm's strict isolation also prevents the optimizer from finding it during
-pre-bundling.
+lacks the `fileTypeFromFile` that Payload imports. `drizzle-kit/api` is
+loaded by `@payloadcms/drizzle` through `createRequire(import.meta.url)`, a
+runtime `require()` workerd cannot execute, and `@payloadcms/drizzle` does not
+declare it, so under pnpm it only resolves from the adapter packages
+(`@payloadcms/db-d1-sqlite` and siblings).
 
 **Why Next.js works:** webpack resolves `file-type` with the `node`
 condition. It traverses the filesystem directly, bypassing pnpm's symlink
@@ -245,11 +248,11 @@ Node APIs come from workerd's `nodejs_compat`, which Payload already requires
 for `fs`. `strtok3`, which the Node entry imports, has the same condition split
 and no Node subpath, so in workerd it resolves to `core.js` and
 `fileTypeFromFile` throws. Payload calls that only for temp files and local
-disk storage; buffer detection, the path uploads take, works.
-`drizzle-kit/api` is loaded via `createRequire(import.meta.url)` which bypasses
-all bundler resolution hooks, so a `transform` hook replaces the
-`require('drizzle-kit/api')` call with inline no-op stubs during pre-bundling.
-It is only used for migrations.
+disk storage; buffer detection, the path uploads take, works. For `drizzle-kit/api`, a `transform` hook rewrites the
+`require('drizzle-kit/api')` call: in dev to a static import (resolved through
+the adapter packages when `@payloadcms/drizzle` cannot see it), so Payload's
+dev schema push runs inside workerd; in builds to inline no-op stubs, because
+production never pushes and drizzle-kit is 7 MB.
 
 ---
 
@@ -282,9 +285,6 @@ environment that tries to resolve the wrangler fallback.
 `getPlatformProxy` that throws on _call_, not on import — inside workerd
 `cloudflare:workers` always resolves so the stub is dead code, and a genuine
 Node-side use fails loudly instead of silently.
-
-See [`d1-dev-boot-investigation.md`](d1-dev-boot-investigation.md) for the
-diagnosis, including the second cause stacked on top of this one.
 
 ---
 

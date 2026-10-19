@@ -10,17 +10,13 @@
  * with no `'use client'` directive of its own.
  */
 
-import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	assertStatus,
 	createProjectHelpers,
-	fixWranglerForLocalDev,
-	installVinextStack,
-	rewritePayloadConfigForVinext,
+	scaffoldCloudflareProject,
 	startDevServer,
-	VERSIONS,
 	waitForServerReady,
 } from "./helpers.ts";
 
@@ -41,26 +37,7 @@ export const Articles: CollectionConfig = {
 `;
 
 async function scaffoldProject() {
-	await helpers.cleanup();
-	const { mkdir } = await import("node:fs/promises");
-	await mkdir(TEST_DIR, { recursive: true });
-	await helpers.npx([
-		"--yes",
-		"degit",
-		"--force",
-		`payloadcms/payload/templates/with-cloudflare-d1#v${VERSIONS.payload}`,
-		TEST_DIR,
-	]);
-
-	await writeFile(
-		join(TEST_DIR, ".env"),
-		`PAYLOAD_SECRET=${crypto.randomUUID()}\n`,
-	);
-
-	await installVinextStack(helpers, PLUGIN_ROOT, "cloudflare");
-
-	await rewritePayloadConfigForVinext(helpers);
-	await fixWranglerForLocalDev(helpers);
+	await scaffoldCloudflareProject(TEST_DIR, helpers, PLUGIN_ROOT);
 
 	await helpers.write("src/collections/Articles.ts", ARTICLES_COLLECTION);
 
@@ -81,8 +58,6 @@ describe("e2e: lexical richText collection", () => {
 
 	beforeAll(async () => {
 		await scaffoldProject();
-		await helpers.npx(["vite-plugin-vinext-payload", "init"]);
-		await helpers.npm(["install"]);
 		await helpers.npx(["payload", "generate:importmap"]);
 
 		server = await startDevServer(TEST_DIR, helpers);

@@ -1,8 +1,8 @@
 /**
  * E2E test: a project-owned worker entry that imports the Payload config.
  *
- * Every other suite points wrangler's `main` at `vinext/server/app-router-entry`,
- * whose module graph is eighteen vinext modules and reaches neither the Payload
+ * Every other suite runs the worker entry vinext's init picks,
+ * `vinext/server/fetch-handler`, whose module graph reaches neither the Payload
  * config nor `@payloadcms/ui`. Wrapping that handler in a project entry — to add
  * instrumentation, or an auth gate in front of `/api/*` — is an ordinary thing to
  * do, and it changes what boots: `@cloudflare/vite-plugin` evaluates the whole
@@ -10,17 +10,13 @@
  * module scope now runs under the react-server condition before the server listens.
  */
 
-import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, it } from "vitest";
 import {
 	assertStatus,
 	createProjectHelpers,
-	fixWranglerForLocalDev,
-	installVinextStack,
-	rewritePayloadConfigForVinext,
+	scaffoldCloudflareProject,
 	startDevServer,
-	VERSIONS,
 	waitForServerReady,
 } from "./helpers.ts";
 
@@ -30,8 +26,8 @@ const helpers = createProjectHelpers(TEST_DIR);
 
 // Mirrors the shape a consumer reported: the vinext handler re-exported behind a
 // project entry, with the Payload config imported at module scope.
-const WORKER_ENTRY = `import handler from "vinext/server/app-router-entry";
-import config from "./payload.config.ts";
+const WORKER_ENTRY = `import handler from "vinext/server/fetch-handler";
+import config from "../src/payload.config.ts";
 
 export default {
 	async fetch(request, env, ctx) {
@@ -44,37 +40,16 @@ export default {
 `;
 
 async function scaffoldProject() {
-	await helpers.cleanup();
-	const { mkdir } = await import("node:fs/promises");
-	await mkdir(TEST_DIR, { recursive: true });
-	await helpers.npx([
-		"--yes",
-		"degit",
-		"--force",
-		`payloadcms/payload/templates/with-cloudflare-d1#v${VERSIONS.payload}`,
-		TEST_DIR,
-	]);
-
-	await writeFile(
-		join(TEST_DIR, ".env"),
-		`PAYLOAD_SECRET=${crypto.randomUUID()}\n`,
+	// vinext's Cloudflare init points the worker at worker/index.ts when it exists
+	await scaffoldCloudflareProject(TEST_DIR, helpers, PLUGIN_ROOT, () =>
+		helpers.write("worker/index.ts", WORKER_ENTRY),
 	);
-
-	await installVinextStack(helpers, PLUGIN_ROOT, "cloudflare");
-
-	await rewritePayloadConfigForVinext(helpers);
-	await fixWranglerForLocalDev(helpers);
-
-	await helpers.write("src/worker.ts", WORKER_ENTRY);
-
-	const wrangler = await helpers.read("wrangler.jsonc");
-	await helpers.write(
-		"wrangler.jsonc",
-		wrangler.replace(
-			/"main"\s*:\s*"vinext\/server\/app-router-entry"/,
-			'"main": "src/worker.ts"',
-		),
-	);
+	const cloudflareConfig = await helpers.read("cloudflare.config.ts");
+	if (!cloudflareConfig.includes('entrypoint: "./worker/index.ts"')) {
+		throw new Error(
+			`init did not adopt the worker entry:\n${cloudflareConfig}`,
+		);
+	}
 }
 
 describe("e2e: project-owned worker entry", () => {
@@ -82,8 +57,6 @@ describe("e2e: project-owned worker entry", () => {
 
 	beforeAll(async () => {
 		await scaffoldProject();
-		await helpers.npx(["vite-plugin-vinext-payload", "init"]);
-		await helpers.npm(["install"]);
 		await helpers.npx(["payload", "generate:importmap"]);
 
 		server = await startDevServer(TEST_DIR, helpers);

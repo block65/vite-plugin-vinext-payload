@@ -68,7 +68,6 @@ describe("e2e: sqlite", () => {
 
 	beforeAll(async () => {
 		await scaffoldSqliteProject();
-		await helpers.npx(["vite-plugin-vinext-payload", "init"]);
 		await helpers.npx(["payload", "generate:importmap"]);
 
 		server = await startDevServer(TEST_DIR, helpers);
@@ -84,11 +83,18 @@ describe("e2e: sqlite", () => {
 	});
 
 	it("admin redirects to create-first-user", async () => {
-		// 200 would mean the admin rendered without redirecting, which this
-		// project (no user yet) must never do — so only the redirect is valid.
-		const res = await assertStatus(server.port, "/admin", [302, 307]);
-		const location = res.headers.get("location") ?? "";
-		expect(location).toMatch(/create-first-user|login/);
+		// A redirect thrown after the shell flushed streams as a 200 whose
+		// Flight payload carries the NEXT_REDIRECT digest the client follows,
+		// as on Next.js 16; before the flush it is a 307
+		const res = await assertStatus(server.port, "/admin", [200, 302, 307]);
+		const digestTarget = (await res.text()).match(
+			/NEXT_REDIRECT;[^;]*;([^;\\"]+)/,
+		)?.[1];
+		const target =
+			res.status === 200
+				? digestTarget && decodeURIComponent(digestTarget)
+				: res.headers.get("location");
+		expect(target).toMatch(/create-first-user|login/);
 	});
 
 	it("admin API responds", async () => {

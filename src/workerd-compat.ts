@@ -61,11 +61,11 @@ export interface PayloadWorkerdCompatOptions {
 	serverEnvs?: string[];
 
 	/**
-	 * Name of the environment that loads React (used for the
-	 * `console.createTask` polyfill). Pass `false` to disable the
-	 * polyfill (workers that don't bundle React). Defaults to `"rsc"`.
+	 * Environments that load React (used for the `console.createTask`
+	 * polyfill). Pass `false` to disable the polyfill (workers that don't
+	 * bundle React). Defaults to `serverEnvs`.
 	 */
-	reactEnv?: string | false;
+	reactEnv?: string | string[] | false;
 }
 
 function prependCreateTaskPolyfill(code: string): string {
@@ -125,14 +125,17 @@ function guardImportMetaUrl(code: string): string {
 export function payloadWorkerdCompat(
 	options: PayloadWorkerdCompatOptions = {},
 ): Plugin {
-	const { serverEnvs = ["ssr", "rsc"], reactEnv = "rsc" } = options;
+	const { serverEnvs = ["ssr", "rsc"], reactEnv = serverEnvs } = options;
 	const serverEnvSet = new Set(serverEnvs);
+	// Every one: rsc and ssr share one workerd isolate, so whichever React
+	// copy evaluates first meets the throwing console.createTask
+	const reactEnvSet = new Set(reactEnv === false ? [] : [reactEnv].flat());
 
 	return {
 		name: "vite-plugin-payload:workerd-compat",
 
 		configEnvironment(name) {
-			if (reactEnv === false || name !== reactEnv) {
+			if (!reactEnvSet.has(name)) {
 				return;
 			}
 
@@ -188,7 +191,7 @@ export function payloadWorkerdCompat(
 				}
 
 				const needsCreateTask =
-					envName === reactEnv && needsCreateTaskPolyfill(code, id);
+					reactEnvSet.has(envName) && needsCreateTaskPolyfill(code, id);
 				const needsUndici =
 					id.includes("node_modules") &&
 					id.includes("undici") &&

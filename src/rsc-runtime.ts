@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Lang, parse } from "@ast-grep/napi";
 import type { EnvironmentOptions, Plugin } from "vite";
@@ -9,10 +10,10 @@ export const rscStubsPatch = {
 	id: "rsc-runtime-stubs",
 	kind: "stub",
 	targets: [
-		"drizzle-kit/api → no-op stub, including inlined createRequire() calls",
+		"drizzle-kit/api → no-op stub in builds; in dev, createRequire() calls become a static import so the dev schema push runs",
 	],
 	reason:
-		"drizzle-kit/api is transitively imported but never invoked during RSC rendering, and is loaded with createRequire(), which workerd cannot execute; per-entry notes live in payload-packages.ts (RSC_STUBS)",
+		"drizzle-kit/api is loaded with createRequire(), which workerd cannot execute, and is only needed for the dev-mode schema push; per-entry notes live in payload-packages.ts (RSC_STUBS)",
 	removeWhen: "workerd supports require(), or payload lazy-loads drizzle-kit",
 } satisfies PatchDeclaration;
 
@@ -83,11 +84,38 @@ export interface PayloadRscRuntimeOptions {
 	rscEnv?: string | false;
 }
 
+const DRIZZLE_KIT_API_REQUIRE = /require\s*\(\s*['"]drizzle-kit\/api['"]\s*\)/g;
+
+const DRIZZLE_KIT_API_NAMESPACE = "__payloadDrizzleKitApi";
+
 const FILE_TYPE_NODE_ENTRY = "file-type/node";
+
+// Adapters that declare drizzle-kit; @payloadcms/drizzle, which requires it,
+// does not, so under pnpm it only resolves from one of these
+const DRIZZLE_KIT_OWNERS = [
+	"@payloadcms/db-d1-sqlite",
+	"@payloadcms/db-sqlite",
+	"@payloadcms/db-postgres",
+	"@payloadcms/db-vercel-postgres",
+];
+
+function inlineDrizzleKitApi(code: string): string {
+	return code.replace(DRIZZLE_KIT_API_REQUIRE, DRIZZLE_KIT_API_INLINE_STUB);
+}
+
+function importDrizzleKitApi(code: string): string {
+	const replaced = code.replace(
+		DRIZZLE_KIT_API_REQUIRE,
+		DRIZZLE_KIT_API_NAMESPACE,
+	);
+	return replaced === code
+		? code
+		: `import * as ${DRIZZLE_KIT_API_NAMESPACE} from "drizzle-kit/api";\n${replaced}`;
+}
 
 type Resolve = (
 	source: string,
-	importer: string | undefined,
+	importer?: string,
 	options?: { skipSelf?: boolean },
 ) => Promise<{ id: string } | null>;
 
@@ -107,11 +135,25 @@ function fileTypeNodeEntryPath(importer: string) {
 	return createRequire(importer).resolve(FILE_TYPE_NODE_ENTRY);
 }
 
-function inlineDrizzleKitApi(code: string): string {
-	return code.replace(
-		/require\s*\(\s*['"]drizzle-kit\/api['"]\s*\)/g,
-		DRIZZLE_KIT_API_INLINE_STUB,
+async function resolveDrizzleKitApi(
+	resolve: Resolve,
+	importer: string | undefined,
+	root: string,
+) {
+	const direct = await resolve("drizzle-kit/api", importer, { skipSelf: true });
+	if (direct) {
+		return direct;
+	}
+	const fromRoot = join(root, "package.json");
+	const viaOwners = await Promise.all(
+		DRIZZLE_KIT_OWNERS.map(async (owner) => {
+			const ownerEntry = await resolve(owner, fromRoot, { skipSelf: true });
+			return ownerEntry
+				? resolve("drizzle-kit/api", ownerEntry.id, { skipSelf: true })
+				: null;
+		}),
 	);
+	return viaOwners.find((resolved) => resolved !== null) ?? null;
 }
 
 /**
@@ -155,6 +197,8 @@ export function payloadRscRuntime(
 ): Plugin {
 	const { serverEnvs = ["rsc"], rscEnv = "rsc" } = options;
 	const serverEnvSet = new Set(serverEnvs);
+	let root = process.cwd();
+	let isBuild = false;
 
 	return {
 		name: "vite-plugin-payload:rsc-runtime",
@@ -164,6 +208,11 @@ export function payloadRscRuntime(
 		// `fileTypeFromFile`, so Rolldown errors with MISSING_EXPORT.
 		enforce: "pre",
 
+		configResolved(config) {
+			root = config.root;
+			isBuild = config.command === "build";
+		},
+
 		// Redirect during optimizeDeps pre-bundling so the targets are
 		// inlined rather than left as bare external imports that workerd
 		// can't resolve.
@@ -171,8 +220,6 @@ export function payloadRscRuntime(
 			if (!serverEnvSet.has(name)) {
 				return;
 			}
-
-			const stubs = stubPaths;
 
 			return {
 				optimizeDeps: {
@@ -184,13 +231,22 @@ export function payloadRscRuntime(
 									if (source === "file-type" && importer) {
 										return fileTypeNodeEntryPath(importer);
 									}
-									return stubs[source] ?? null;
+									if (source === "drizzle-kit/api") {
+										return resolveDrizzleKitApi(
+											(...args) => this.resolve(...args),
+											importer,
+											root,
+										);
+									}
+									return null;
 								},
+								// Pre-bundling only runs in dev, where the schema push needs
+								// the real drizzle-kit
 								transform(code) {
 									if (!code.includes("drizzle-kit/api")) {
 										return null;
 									}
-									const replaced = inlineDrizzleKitApi(code);
+									const replaced = importDrizzleKitApi(code);
 									if (replaced === code) {
 										return null;
 									}
@@ -219,7 +275,9 @@ export function payloadRscRuntime(
 				// transform time for non-pre-bundled modules.
 				const withStubbedDrizzle =
 					isServerEnv && code.includes("drizzle-kit/api")
-						? inlineDrizzleKitApi(code)
+						? isBuild
+							? inlineDrizzleKitApi(code)
+							: importDrizzleKitApi(code)
 						: code;
 
 				const result =
@@ -247,6 +305,13 @@ export function payloadRscRuntime(
 					return resolveFileTypeNodeEntry(
 						(...args) => this.resolve(...args),
 						importer,
+					);
+				}
+				if (source === "drizzle-kit/api" && !isBuild) {
+					return resolveDrizzleKitApi(
+						(...args) => this.resolve(...args),
+						importer,
+						root,
 					);
 				}
 				return stubPaths[source] ?? undefined;

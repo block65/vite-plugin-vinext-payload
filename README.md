@@ -58,8 +58,6 @@ export default defineConfig({
 ```
 
 Keep any options init passed to `vinext()`, such as its CDN cache adapter.
-`cloudflare:workers` is externalized by the plugin and does not need listing in
-`ssrExternal`.
 
 Declare `PAYLOAD_SECRET` in `cloudflare.config.ts` with `bindings.secret()`:
 the v2 plugin passes only declared secrets to the Worker. Bindings, schema
@@ -136,10 +134,10 @@ server function. Cloudflare's
 describe the binding shape.
 
 `vinextPayloadWorker()` composes a subset of the same sub-plugins as
-`vinextPayload()`: server externals, workerd compatibility, optimizeDeps
-configuration, `file-type` resolution, the `drizzle-kit/api` stub, and the CJS
-transform. Everything Payload's Local API needs to
-evaluate inside workerd, and none of the admin-UI or RSC fixes.
+`vinextPayload()`: workerd compatibility, optimizeDeps configuration, the
+`drizzle-kit/api` stub, `file-type` resolution, and the CJS transform. Everything
+Payload's Local API needs to evaluate inside workerd, and none of the admin-UI
+or RSC fixes.
 
 ## `init` (deprecated)
 
@@ -151,7 +149,6 @@ later release. Run `vinext init`, then add `vinextPayload()` as shown above.
 | Option                | Type       | Description                                                                                                                                                                               |
 | --------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `env`                 | `string`   | **`vinextPayloadWorker()` only, required.** Vite environment name of the auxiliary worker. Must match the worker's `name` in `auxiliaryWorkers`, or the top-level `viteEnvironment.name`. |
-| `ssrExternal`         | `string[]` | Additional packages to externalize from server (SSR + RSC) bundling. Merged with the built-in list: esbuild, wrangler, miniflare, sharp.                                                  |
 | `excludeFromOptimize` | `string[]` | Additional packages to exclude from `optimizeDeps`.                                                                                                                                       |
 
 ## Requirements

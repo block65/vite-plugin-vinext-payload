@@ -111,10 +111,9 @@ export function payloadOptimizeDeps(
 	return {
 		name: "vite-plugin-payload:optimize-deps",
 		enforce: "pre",
-		// `configEnvironment` rather than `config`, for the same reason
-		// payloadServerExternals uses it: it fires once per environment, after
-		// every plugin has declared its own, including environments created
-		// later than our `enforce: "pre"` `config` hook runs.
+		// `configEnvironment` rather than `config`: it fires once per
+		// environment, after every plugin has declared its own, including
+		// environments created later than our `enforce: "pre"` `config` hook runs.
 		configEnvironment(name, envConfig) {
 			if (explicitEnvs && !explicitEnvs.includes(name)) {
 				return;

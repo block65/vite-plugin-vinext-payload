@@ -9,8 +9,8 @@
  * graph pulls in `payload`, `@payloadcms/db-d1-sqlite` (and through it
  * drizzle + `drizzle-kit/api` via createRequire), `richtext-lexical`,
  * a static `cloudflare:workers` import, and the cloudflare template's
- * `getPlatformProxy` wrangler fallback — with NO ssrExternal escape
- * hatch. If the optimizer or workerd chokes on any of that graph, the
+ * `getPlatformProxy` wrangler fallback — with no extra externals.
+ * If the optimizer or workerd chokes on any of that graph, the
  * fetch below never reaches the D1 query.
  *
  * The DB is deliberately unmigrated: reaching payload's first real
@@ -73,7 +73,6 @@ const viteConfig = `import { cloudflare } from "@cloudflare/vite-plugin";
 import { defineConfig } from "vite";
 import { vinextPayloadWorker } from "vite-plugin-vinext-payload";
 
-// Deliberately NO ssrExternal: the plugin must handle this graph on its own.
 export default defineConfig({
 	plugins: [
 		cloudflare({ viteEnvironment: { name: "${WORKER_ENV}" } }),

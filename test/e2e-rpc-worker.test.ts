@@ -15,7 +15,11 @@
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, assert, beforeAll, describe, expect, it } from "vitest";
-import { createProjectHelpers, packPlugin } from "./helpers.ts";
+import {
+	createProjectHelpers,
+	disableNamedPlugins,
+	packPlugin,
+} from "./helpers.ts";
 
 const PLUGIN_ROOT = join(import.meta.dirname, "..");
 const TEST_DIR = join(import.meta.dirname, ".test-rpc-worker");
@@ -108,6 +112,7 @@ async function scaffoldRpcWorker() {
 	await helpers.write("package.json", packageJson);
 	await helpers.write("wrangler.jsonc", wranglerJsonc);
 	await helpers.write("vite.config.ts", viteConfig);
+	await disableNamedPlugins(helpers);
 	await helpers.write("tsconfig.json", tsconfig);
 	await helpers.write("src/index.ts", workerEntry);
 

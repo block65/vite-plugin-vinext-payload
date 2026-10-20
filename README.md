@@ -137,8 +137,8 @@ describe the binding shape.
 
 `vinextPayloadWorker()` composes a subset of the same sub-plugins as
 `vinextPayload()`: server externals, workerd compatibility, optimizeDeps
-configuration, `file-type` resolution, the `drizzle-kit/api` stub, the CJS transform
-and interop, and the CLI stubs. Everything Payload's Local API needs to
+configuration, `file-type` resolution, the `drizzle-kit/api` stub, and the CJS
+transform. Everything Payload's Local API needs to
 evaluate inside workerd, and none of the admin-UI or RSC fixes.
 
 ## `init` (deprecated)
@@ -153,7 +153,6 @@ later release. Run `vinext init`, then add `vinextPayload()` as shown above.
 | `env`                 | `string`   | **`vinextPayloadWorker()` only, required.** Vite environment name of the auxiliary worker. Must match the worker's `name` in `auxiliaryWorkers`, or the top-level `viteEnvironment.name`. |
 | `ssrExternal`         | `string[]` | Additional packages to externalize from server (SSR + RSC) bundling. Merged with the built-in list: esbuild, wrangler, miniflare, sharp.                                                  |
 | `excludeFromOptimize` | `string[]` | Additional packages to exclude from `optimizeDeps`.                                                                                                                                       |
-| `cjsInteropDeps`      | `string[]` | Additional CommonJS packages needing default-export interop.                                                                                                                              |
 
 ## Requirements
 

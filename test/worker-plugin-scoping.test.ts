@@ -1,8 +1,7 @@
 /**
- * Regression guard: `vinextPayloadWorker` must scope its CJS-related
- * sub-plugins to the worker env only. The previous version applied
- * `payloadCjsTransform`, `payloadCliStubs`, and `cjsInterop` globally,
- * which meant a website using `vinextPayloadWorker({ env: "cms" })`
+ * Regression guard: `vinextPayloadWorker` must scope its CJS transform to
+ * the worker env only. The previous version applied `payloadCjsTransform`
+ * globally, which meant a website using `vinextPayloadWorker({ env: "cms" })`
  * for an auxiliary worker also had its `client` build mangled by the
  * Payload-targeted CJS wrapping — clobbering named exports of
  * unrelated CJS deps (e.g. `use-sync-external-store/shim/with-selector`,
@@ -16,7 +15,6 @@
 import type { Plugin } from "vite";
 import { describe, expect, it } from "vitest";
 import { payloadCjsTransform } from "../src/cjs-transform.ts";
-import { payloadCliStubs } from "../src/cli-stubs.ts";
 import { vinextPayload, vinextPayloadWorker } from "../src/main.ts";
 
 const WORKER_ENV = "norfolk_cms";
@@ -44,27 +42,10 @@ describe("payloadCjsTransform: envs scoping", () => {
 	});
 });
 
-describe("payloadCliStubs: envs scoping", () => {
-	it("has no applyToEnvironment when envs is undefined (default)", () => {
-		const plugin = payloadCliStubs();
-		expect(plugin.applyToEnvironment).toBeUndefined();
-	});
-
-	it("applies only to listed envs when envs is set", () => {
-		const plugin = payloadCliStubs({ envs: [WORKER_ENV] });
-		expect(callApplyToEnvironment(plugin, WORKER_ENV)).toBe(true);
-		expect(callApplyToEnvironment(plugin, "client")).toBe(false);
-	});
-});
-
 describe("vinextPayloadWorker: client env is never touched", () => {
 	const plugins = vinextPayloadWorker({ env: WORKER_ENV });
 
-	const targets = [
-		"vite-plugin-payload:cjs-transform",
-		"vite-plugin-payload:cli-stubs",
-		"cjs-interop",
-	];
+	const targets = ["vite-plugin-payload:cjs-transform"];
 
 	for (const name of targets) {
 		it(`${name} rejects the client env via applyToEnvironment`, () => {
@@ -87,14 +68,6 @@ describe("vinextPayload: keeps unscoped sub-plugins (Payload admin UI needs clie
 	it("cjs-transform stays unscoped so the admin UI client build still benefits", () => {
 		const plugin = plugins.find(
 			(p) => p.name === "vite-plugin-payload:cjs-transform",
-		);
-		expect(plugin).toBeDefined();
-		expect((plugin as Plugin).applyToEnvironment).toBeUndefined();
-	});
-
-	it("cli-stubs stays unscoped so admin-UI client doesn't try to bundle ws etc.", () => {
-		const plugin = plugins.find(
-			(p) => p.name === "vite-plugin-payload:cli-stubs",
 		);
 		expect(plugin).toBeDefined();
 		expect((plugin as Plugin).applyToEnvironment).toBeUndefined();

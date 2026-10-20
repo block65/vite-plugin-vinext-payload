@@ -25,6 +25,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	createProjectHelpers,
+	disableNamedPlugins,
 	packPlugin,
 	VERSIONS,
 	waitForOutput,
@@ -146,6 +147,7 @@ async function scaffold() {
 	await helpers.write("package.json", packageJson);
 	await helpers.write("wrangler.jsonc", wranglerJsonc);
 	await helpers.write("vite.config.ts", viteConfig);
+	await disableNamedPlugins(helpers);
 	await helpers.write("src/payload.config.ts", payloadConfig);
 	await helpers.write("src/index.ts", workerEntry);
 

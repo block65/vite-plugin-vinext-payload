@@ -82,8 +82,9 @@ export function createProjectHelpers(testDir: string) {
 	};
 }
 
-// E2E_DISABLE_PLUGINS: comma-separated vinextPayload() sub-plugin names, or `all`
-async function disableNamedPlugins(
+// E2E_DISABLE_PLUGINS: comma-separated vinextPayload() / vinextPayloadWorker()
+// sub-plugin names, or `all`
+export async function disableNamedPlugins(
 	helpers: ReturnType<typeof createProjectHelpers>,
 ) {
 	const disabled = process.env.E2E_DISABLE_PLUGINS?.trim();
@@ -96,13 +97,16 @@ async function disableNamedPlugins(
 	const config = await helpers.read(configPath);
 	const filter =
 		disabled === "all"
-			? "vinextPayload().filter(() => false)"
-			: `vinextPayload().filter((p) => !${JSON.stringify(disabled.split(","))}.includes(p.name))`;
+			? "$1.filter(() => false)"
+			: `$1.filter((p) => !${JSON.stringify(disabled.split(","))}.includes(p.name))`;
 	// Lookahead keeps a second call from wrapping an already-filtered config
-	const rewritten = config.replace(/vinextPayload\(\)(?!\.filter)/, filter);
-	if (rewritten === config && !config.includes("vinextPayload().filter")) {
+	const rewritten = config.replace(
+		/(vinextPayload(?:Worker)?\([^()]*\))(?!\.filter)/,
+		filter,
+	);
+	if (rewritten === config && !config.includes(").filter(")) {
 		throw new Error(
-			`E2E_DISABLE_PLUGINS set but ${configPath} has no vinextPayload()`,
+			`E2E_DISABLE_PLUGINS set but ${configPath} has no vinextPayload() or vinextPayloadWorker()`,
 		);
 	}
 	await helpers.write(configPath, rewritten);
@@ -129,15 +133,36 @@ export async function startDevServer(
 	readyTimeoutMs = 60_000,
 ) {
 	await disableNamedPlugins(helpers);
+	return startServer(testDir, helpers, "dev", readyTimeoutMs);
+}
+
+/**
+ * Serve the production build with the `start` script `vinext init` wrote —
+ * `vite preview` on Cloudflare, which runs the built Worker in workerd.
+ */
+export function startPreviewServer(
+	testDir: string,
+	helpers: ReturnType<typeof createProjectHelpers>,
+	readyTimeoutMs = 60_000,
+) {
+	return startServer(testDir, helpers, "start", readyTimeoutMs);
+}
+
+async function startServer(
+	testDir: string,
+	helpers: ReturnType<typeof createProjectHelpers>,
+	role: "dev" | "start",
+	readyTimeoutMs: number,
+) {
 	const pkg = JSON.parse(await helpers.read("package.json"));
-	const script = pkg.scripts["dev:vinext"] ? "dev:vinext" : "dev";
+	const script = pkg.scripts[`${role}:vinext`] ? `${role}:vinext` : role;
 
 	const proc = spawn("npm", ["run", script], {
 		cwd: testDir,
 		stdio: "pipe",
 		env: {
 			...childEnv,
-			NODE_ENV: "development",
+			NODE_ENV: role === "dev" ? "development" : "production",
 			NO_COLOR: "1",
 			FORCE_COLOR: "0",
 			CI: process.env.CI || "1",

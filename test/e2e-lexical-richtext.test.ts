@@ -15,8 +15,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	assertStatus,
 	createProjectHelpers,
+	runBuild,
 	scaffoldCloudflareProject,
 	startDevServer,
+	startPreviewServer,
 	waitForServerReady,
 } from "./helpers.ts";
 
@@ -82,5 +84,39 @@ describe("e2e: lexical richText collection", () => {
 			"/admin/collections/articles/create",
 			[200, 302, 307],
 		);
+	});
+
+	// The lexical diff component imports getHTMLDiffComponents from
+	// @payloadcms/ui/rsc, the re-export Rolldown has reported missing
+	describe("production build", () => {
+		let preview: Awaited<ReturnType<typeof startPreviewServer>>;
+
+		beforeAll(async () => {
+			await runBuild(helpers);
+			preview = await startPreviewServer(TEST_DIR, helpers);
+			await waitForServerReady(preview.proc, preview.port, "/admin");
+		});
+
+		afterAll(async () => {
+			await preview?.kill();
+		});
+
+		it("builds an importMap that reaches the lexical diff component", async () => {
+			const importMap = await helpers.read(
+				"src/app/(payload)/admin/importMap.js",
+			);
+
+			expect(importMap).toContain(
+				"@payloadcms/richtext-lexical/rsc#LexicalDiffComponent",
+			);
+		});
+
+		it("the built Worker serves the collection's edit view", async () => {
+			await assertStatus(
+				preview.port,
+				"/admin/collections/articles/create",
+				[200, 302, 307],
+			);
+		});
 	});
 });

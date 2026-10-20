@@ -63,8 +63,7 @@
 		"typecheck": "tsc -b --noEmit"
 	},
 	"dependencies": {
-		"@ast-grep/napi": "^0.51.0",
-		"vite-plugin-cjs-interop": "^4.0.3"
+		"@ast-grep/napi": "^0.51.0"
 	},
 	"devDependencies": {
 		"@types/node": "^24.13.3",

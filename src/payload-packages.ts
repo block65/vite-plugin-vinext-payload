@@ -77,8 +77,6 @@ export const OPTIMIZE_DEPS_EXCLUDE = [
 // CLIENT OPTIMIZE DEPS EXCLUDE
 //
 // Packages excluded from client-side optimizeDeps only.
-// Currently empty — RSC 'use client' barrel detection is handled
-// automatically by payloadUseClientBarrel.
 // ---------------------------------------------------------------------------
 
 export const CLIENT_OPTIMIZE_DEPS_EXCLUDE: string[] = [];

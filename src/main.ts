@@ -14,25 +14,13 @@
  */
 
 import type { Plugin } from "vite";
-import { cjsInterop } from "vite-plugin-cjs-interop";
-import { cjsInteropPatch, payloadCjsInteropDeps } from "./cjs-interop-deps.ts";
-import {
-	cjsInteropDirectivePatch,
-	preservingDirectives,
-} from "./cjs-interop-directive.ts";
 import { cjsTransformPatch, payloadCjsTransform } from "./cjs-transform.ts";
-import { cliStubsPatch, payloadCliStubs } from "./cli-stubs.ts";
 import {
 	htmlDiffExportFixPatch,
 	payloadHtmlDiffExportFix,
 } from "./html-diff-export-fix.ts";
-import {
-	navComponentFixPatch,
-	payloadNavComponentFix,
-} from "./nav-component-fix.ts";
 import { optimizeDepsPatch, payloadOptimizeDeps } from "./optimize-deps.ts";
 import type { PatchDeclaration } from "./patch-manifest.ts";
-import { payloadRscExportFix, rscExportFixPatch } from "./rsc-export-fix.ts";
 import {
 	payloadRscRuntime,
 	fileTypeNodeEntryPatch,
@@ -40,17 +28,9 @@ import {
 	rscStubsPatch,
 } from "./rsc-runtime.ts";
 import {
-	payloadServerActionFix,
-	serverActionFixPatch,
-} from "./server-action-fix.ts";
-import {
 	payloadServerExternals,
 	serverExternalsPatch,
 } from "./server-externals.ts";
-import {
-	payloadUseClientBarrel,
-	useClientBarrelPatch,
-} from "./use-client-barrel.ts";
 import {
 	consoleCreateTaskPatch,
 	importMetaUrlGuardPatch,
@@ -66,7 +46,6 @@ import { payloadWorkerdEntry, workerdEntryPatch } from "./workerd-entry.ts";
  * test fails when the committed table drifts.
  */
 export const PATCH_MANIFEST: readonly PatchDeclaration[] = [
-	useClientBarrelPatch,
 	serverExternalsPatch,
 	consoleCreateTaskPatch,
 	undiciFeatureDetectPatch,
@@ -76,15 +55,9 @@ export const PATCH_MANIFEST: readonly PatchDeclaration[] = [
 	htmlDiffExportFixPatch,
 	optimizeDepsPatch,
 	cjsTransformPatch,
-	cliStubsPatch,
-	navComponentFixPatch,
-	rscExportFixPatch,
 	rscStubsPatch,
 	fileTypeNodeEntryPatch,
 	rscSerializerThrowsPatch,
-	serverActionFixPatch,
-	cjsInteropPatch,
-	cjsInteropDirectivePatch,
 ];
 
 export interface VinextPayloadOptions {
@@ -96,9 +69,6 @@ export interface VinextPayloadOptions {
 
 	/** Additional packages to exclude from optimizeDeps. */
 	excludeFromOptimize?: string[];
-
-	/** Additional CJS packages needing default export interop. */
-	cjsInteropDeps?: string[];
 }
 
 /**
@@ -109,30 +79,16 @@ export interface VinextPayloadOptions {
  * `@cloudflare/vite-plugin`.
  */
 export function vinextPayload(options: VinextPayloadOptions = {}): Plugin[] {
-	const {
-		ssrExternal,
-		excludeFromOptimize = [],
-		cjsInteropDeps: extraCjsInterop = [],
-	} = options;
+	const { ssrExternal, excludeFromOptimize = [] } = options;
 
 	return [
-		payloadUseClientBarrel(),
 		payloadServerExternals({ ssrExternal }),
 		payloadWorkerdCompat(),
 		payloadWorkerdEntry(),
 		payloadHtmlDiffExportFix(),
 		payloadOptimizeDeps(excludeFromOptimize),
 		payloadCjsTransform(),
-		payloadCliStubs(),
-		payloadNavComponentFix(),
-		payloadRscExportFix(),
 		payloadRscRuntime(),
-		payloadServerActionFix(),
-		preservingDirectives(
-			cjsInterop({
-				dependencies: [...payloadCjsInteropDeps, ...extraCjsInterop],
-			}),
-		),
 	];
 }
 
@@ -149,9 +105,6 @@ export interface VinextPayloadWorkerOptions {
 
 	/** Additional packages to exclude from optimizeDeps. */
 	excludeFromOptimize?: string[];
-
-	/** Additional CJS packages needing default export interop. */
-	cjsInteropDeps?: string[];
 }
 
 /**
@@ -162,7 +115,7 @@ export interface VinextPayloadWorkerOptions {
  * parent worker calls into this one via a Cloudflare service binding.
  *
  * Subset of `vinextPayload`: workerd polyfills, server externals,
- * optimizeDeps excludes, CJS transforms, CLI stubs, and CJS interop.
+ * optimizeDeps excludes, and CJS transforms.
  * The admin-UI / RSC fixes are intentionally excluded.
  *
  * The user's worker entry typically looks like:
@@ -186,12 +139,7 @@ export interface VinextPayloadWorkerOptions {
 export function vinextPayloadWorker(
 	options: VinextPayloadWorkerOptions,
 ): Plugin[] {
-	const {
-		env,
-		ssrExternal,
-		excludeFromOptimize = [],
-		cjsInteropDeps: extraCjsInterop = [],
-	} = options;
+	const { env, ssrExternal, excludeFromOptimize = [] } = options;
 
 	const serverEnvs = [env];
 
@@ -211,17 +159,6 @@ export function vinextPayloadWorker(
 		}),
 		payloadRscRuntime({ serverEnvs, rscEnv: false }),
 		payloadCjsTransform({ envs: serverEnvs }),
-		payloadCliStubs({ envs: serverEnvs }),
-		{
-			...preservingDirectives(
-				cjsInterop({
-					dependencies: [...payloadCjsInteropDeps, ...extraCjsInterop],
-				}),
-			),
-			applyToEnvironment(viteEnv) {
-				return serverEnvs.includes(viteEnv.name);
-			},
-		},
 	];
 }
 

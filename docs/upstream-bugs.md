@@ -7,25 +7,6 @@ Next.js does differently and why the gap exists.
 
 ---
 
-## RSC export transform drops exports after sourcemap comments
-
-**Responsibility:** @vitejs/plugin-rsc
-**Repo:** https://github.com/vitejs/vite-plugin-react (packages/plugin-rsc)
-
-**What breaks:** `transformWrapExport` uses `output.move()` to relocate
-`export { name }` statements to the end of the file. When the source ends
-with `//# sourceMappingURL=…` (no trailing newline), the moved export is
-concatenated onto the comment line, making it invisible to Rolldown.
-
-**Why Next.js works:** Next.js uses its own RSC transform implementation
-(in `packages/next/src/build/`), not plugin-rsc. The bug is specific to
-plugin-rsc's `output.move()` path.
-
-**Our workaround:** `payloadRscExportFix` inserts a newline before any
-`export` keyword found after a `//` comment on the same line.
-
----
-
 ## `getHTMLDiffComponents` missing export in RSC build
 
 **Responsibility:** @vitejs/plugin-rsc / Rolldown (triggered by Payload UI module layout)
@@ -71,26 +52,6 @@ production behavior, not a bug suppression.
 `react-server-dom-webpack` to `return undefined`, so rendering never
 aborts. (Note: unlike Next.js, which catches the throw in its integration
 layer, we prevent it at the source — the observable behavior matches.)
-
----
-
-## Barrel exports missing `'use client'` directive
-
-**Responsibility:** Payload CMS
-**Repo:** https://github.com/payloadcms/payload
-
-**What breaks:** Some `@payloadcms/*` packages expose client components
-through barrel files that don't carry `'use client'` themselves. Vite's
-optimizer merges the barrel and component into one chunk, stripping the
-directive. The RSC transform can't detect the client boundary.
-
-**Why Next.js works:** Next.js's bundler (webpack/Turbopack) propagates
-`'use client'` semantics through re-export chains. This is a Next.js
-convenience — the React spec says `'use client'` is per-file.
-
-**Our workaround:** `payloadUseClientBarrel` auto-detects affected
-packages and excludes them from RSC optimizeDeps so files go through
-the transform pipeline individually.
 
 ---
 
@@ -256,38 +217,6 @@ production never pushes and drizzle-kit is 7 MB.
 
 ---
 
-## payload.config's wrangler fallback drags `blake3-wasm` into every bundle
-
-**Responsibility:** Payload cloudflare template pattern / Rolldown resolution
-**Repo:** https://github.com/payloadcms/payload (templates/with-cloudflare-d1), https://github.com/rolldown/rolldown
-
-**What breaks:** Payload's cloudflare templates target OpenNext, which vinext
-supersedes, so a project running under this plugin does not keep their
-`@opennextjs/cloudflare` binding access. The replacement reads bindings via
-`import('cloudflare:workers')` with a `catch` fallback to
-`import('wrangler')` → `getPlatformProxy()`, so the Payload CLI can still
-resolve bindings under plain Node. The fallback only _executes_ under Node,
-but it must _resolve_ in every Vite environment that processes the config.
-Anywhere it gets bundled or optimizer-scanned, wrangler's entire CLI comes
-with it — including `blake3-wasm`, whose `export * from './node.js'` Rolldown
-cannot resolve. That breaks dependency optimization in dev
-(`[UNRESOLVED_IMPORT] Could not resolve './node.js'`) and fails `vinext build`
-on the same chain
-(`payload.config.ts → wrangler/wrangler-dist/cli.js → blake3-wasm`).
-`wrangler` in `SSR_EXTERNAL` / `OPTIMIZE_DEPS_EXCLUDE` does not help: the
-cloudflare worker build reads neither.
-
-**Why Next.js works:** the equivalent template uses `@opennextjs/cloudflare`,
-whose build pipeline never feeds `payload.config.ts` through a bundler
-environment that tries to resolve the wrangler fallback.
-
-**Our workaround:** `payloadCliStubs` stubs `wrangler` with a
-`getPlatformProxy` that throws on _call_, not on import — inside workerd
-`cloudflare:workers` always resolves so the stub is dead code, and a genuine
-Node-side use fails loudly instead of silently.
-
----
-
 ## CJS packages fail in App Router dev
 
 **Responsibility:** vinext
@@ -332,82 +261,6 @@ suite passes including an explicit no-hydration-errors assertion:
 the browser entry calls `setClientParams()` before `hydrateRoot()`,
 so the client store is already correct at hydration time. The plugin
 was removed; no workaround is needed.
-
----
-
-## Browser entry imports shims via relative paths
-
-**Responsibility:** vinext
-**Repo:** https://github.com/cloudflare/vinext
-**Upstream:** not filed (low priority; architectural choice in vinext)
-
-**What breaks:** vinext's browser entry imports the navigation shim via
-`from "../shims/navigation.js"` (relative path) instead of the aliased
-`from "next/navigation"`. Vite serves the raw file alongside the
-pre-bundled version — two module instances, two React copies, split
-state. On cold cache, the optimizer discovers the new module and
-triggers a full page reload.
-
-**Why Next.js works:** Next.js bundles the browser entry as a single
-webpack/Turbopack chunk. All `next/navigation` imports resolve to the
-same module instance. There's no optimizer or alias indirection.
-
-**Our workaround:** `payloadServerActionFix` rewrites the relative
-import to the aliased specifier. `payloadOptimizeDeps` auto-discovers
-all `next/*` alias specifiers and pre-includes them so the optimizer
-doesn't discover them at runtime.
-
----
-
-## ~~Server action handler renders before checking returnValue~~ — RESOLVED in vinext 1.0
-
-**Responsibility:** vinext
-**Repo:** https://github.com/cloudflare/vinext
-**Upstream:** coverage added by https://github.com/cloudflare/vinext/pull/2902
-(merged 2026-08-13); the behaviour itself is in
-`dist/server/app-server-action-execution.js` and
-`dist/server/app-browser-server-action-client.js` (verified on `1.0.0-beta.8`).
-**Status:** RESOLVED upstream; the gate is removed.
-
-**What used to break:** vinext applied the new RSC tree before checking
-`result.returnValue`, so every server action — including data-returning ones
-like `getFormState` — triggered a full re-render. For Payload that reset form
-state: array field rows flashed and disappeared, dropdown edits reverted on
-blur, and each blur fired another `getFormState`. The former gate in
-`payloadServerActionFix` wrapped the visible-commit dispatch in
-`commitSameUrlNavigatePayload` as `if (!returnValue) dispatch(…)`.
-
-**What fixed it:** the server now streams `{ returnValue }` with no page
-root when the action revalidated nothing (`ACTION_DID_NOT_REVALIDATE` branch),
-and the client returns `returnValue.data` without calling
-`commitSameUrlNavigatePayload` when `root` is absent — the Next.js contract
-(`action-handler.ts` skips the render; `server-action-reducer.ts` bails
-without navigating). Our gate was unreachable on that path, and on the
-remaining one — a data-returning action that _did_ revalidate — it suppressed
-a commit Next.js performs, so keeping it would have been a parity bug.
-
-`payloadServerActionFix` now carries only the browser-entry import rewrite
-described in "Browser entry imports shims via relative paths".
-
----
-
-## Components switch element types based on pathname/params
-
-**Responsibility:** vinext (navigation shim) / Payload (conditional rendering)
-
-**What breaks:** Payload components (`DefaultNavClient`, `DocumentTabLink`)
-conditionally render `<Link>` or `<div>` based on `usePathname()` /
-`useParams()`. When vinext's navigation shim returns different values
-during hydration (see "Navigation shim" above), React 19 detects an
-element-type mismatch and discards the entire server-rendered subtree.
-
-**Why Next.js works:** Next.js's navigation hooks return consistent values
-during SSR and hydration (via React context), so the conditional rendering
-always produces the same element type on both sides.
-
-**Our workaround:** `payloadNavComponentFix` uses ast-grep to force
-consistent rendering: ternaries with `"link"` / `"div"` alternatives
-become `"link"`, `pathname === href` becomes `false`, etc.
 
 ---
 

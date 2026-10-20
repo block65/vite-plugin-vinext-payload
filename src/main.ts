@@ -15,10 +15,6 @@
 
 import type { Plugin } from "vite";
 import { cjsTransformPatch, payloadCjsTransform } from "./cjs-transform.ts";
-import {
-	htmlDiffExportFixPatch,
-	payloadHtmlDiffExportFix,
-} from "./html-diff-export-fix.ts";
 import { optimizeDepsPatch, payloadOptimizeDeps } from "./optimize-deps.ts";
 import type { PatchDeclaration } from "./patch-manifest.ts";
 import {
@@ -28,17 +24,12 @@ import {
 	rscStubsPatch,
 } from "./rsc-runtime.ts";
 import {
-	payloadServerExternals,
-	serverExternalsPatch,
-} from "./server-externals.ts";
-import {
 	consoleCreateTaskPatch,
 	importMetaUrlGuardPatch,
 	nodeBuiltinShimsPatch,
 	payloadWorkerdCompat,
 	undiciFeatureDetectPatch,
 } from "./workerd-compat.ts";
-import { payloadWorkerdEntry, workerdEntryPatch } from "./workerd-entry.ts";
 
 /**
  * Every rewrite this plugin makes to third-party code, as data. The README's
@@ -46,13 +37,10 @@ import { payloadWorkerdEntry, workerdEntryPatch } from "./workerd-entry.ts";
  * test fails when the committed table drifts.
  */
 export const PATCH_MANIFEST: readonly PatchDeclaration[] = [
-	serverExternalsPatch,
 	consoleCreateTaskPatch,
 	undiciFeatureDetectPatch,
 	importMetaUrlGuardPatch,
 	nodeBuiltinShimsPatch,
-	workerdEntryPatch,
-	htmlDiffExportFixPatch,
 	optimizeDepsPatch,
 	cjsTransformPatch,
 	rscStubsPatch,
@@ -61,12 +49,6 @@ export const PATCH_MANIFEST: readonly PatchDeclaration[] = [
 ];
 
 export interface VinextPayloadOptions {
-	/**
-	 * Additional packages to externalize from server (SSR + RSC) bundling.
-	 * Merged with the built-in list (esbuild, wrangler, miniflare, sharp).
-	 */
-	ssrExternal?: string[];
-
 	/** Additional packages to exclude from optimizeDeps. */
 	excludeFromOptimize?: string[];
 }
@@ -79,13 +61,10 @@ export interface VinextPayloadOptions {
  * `@cloudflare/vite-plugin`.
  */
 export function vinextPayload(options: VinextPayloadOptions = {}): Plugin[] {
-	const { ssrExternal, excludeFromOptimize = [] } = options;
+	const { excludeFromOptimize = [] } = options;
 
 	return [
-		payloadServerExternals({ ssrExternal }),
 		payloadWorkerdCompat(),
-		payloadWorkerdEntry(),
-		payloadHtmlDiffExportFix(),
 		payloadOptimizeDeps(excludeFromOptimize),
 		payloadCjsTransform(),
 		payloadRscRuntime(),
@@ -100,9 +79,6 @@ export interface VinextPayloadWorkerOptions {
 	 */
 	env: string;
 
-	/** Additional packages to externalize from the worker bundle. */
-	ssrExternal?: string[];
-
 	/** Additional packages to exclude from optimizeDeps. */
 	excludeFromOptimize?: string[];
 }
@@ -114,8 +90,8 @@ export interface VinextPayloadWorkerOptions {
  * (`WorkerEntrypoint`) — no admin UI, no vinext, no RSC pipeline. The
  * parent worker calls into this one via a Cloudflare service binding.
  *
- * Subset of `vinextPayload`: workerd polyfills, server externals,
- * optimizeDeps excludes, and CJS transforms.
+ * Subset of `vinextPayload`: workerd polyfills, optimizeDeps excludes,
+ * the `file-type` and `drizzle-kit/api` stubs, and CJS transforms.
  * The admin-UI / RSC fixes are intentionally excluded.
  *
  * The user's worker entry typically looks like:
@@ -139,12 +115,11 @@ export interface VinextPayloadWorkerOptions {
 export function vinextPayloadWorker(
 	options: VinextPayloadWorkerOptions,
 ): Plugin[] {
-	const { env, ssrExternal, excludeFromOptimize = [] } = options;
+	const { env, excludeFromOptimize = [] } = options;
 
 	const serverEnvs = [env];
 
 	return [
-		payloadServerExternals({ ssrExternal, serverEnvs }),
 		// Enable the createTask polyfill against the worker's own env:
 		// payload.config.ts commonly imports admin components at module
 		// scope, dragging React in even when the worker only ever calls

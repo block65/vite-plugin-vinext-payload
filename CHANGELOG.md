@@ -10,6 +10,7 @@ Consumer-visible changes since the last release. Released versions live in
 - **`vinext` peer dependency is now pinned to exactly `1.2.1`** (was `1.0.0-beta.8`). Upgrade `vinext` at the same time as this plugin.
 - **Cloudflare setup follows vinext 1.2's default**: `@cloudflare/vite-plugin` v2 with a `cloudflare.config.ts`, as `vinext init --platform=cloudflare` writes it. Declare `PAYLOAD_SECRET` there with `bindings.secret()`; see the [Cloudflare D1 guide](docs/cloudflare-d1.md).
 - Validated against Payload `3.91.0` and Vite `8.3.4`.
+- **The `ssrExternal` option is removed** from `vinextPayload()` and `vinextPayloadWorker()`. Built servers and Workers start without the plugin externalizing `esbuild`, `wrangler`, `miniflare`, `sharp` or `cloudflare:workers`. To externalize a package yourself, set `build.rolldownOptions.external` on the server environment in `vite.config.ts`.
 - **The `cjsInteropDeps` option is removed** from `vinextPayload()` and `vinextPayloadWorker()`. Payload no longer needs the extra CommonJS default-export interop on vinext 1.2, so the plugin no longer depends on `vite-plugin-cjs-interop`. Delete the option from `vite.config.ts`.
 
 **Deprecated**

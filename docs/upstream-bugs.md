@@ -7,28 +7,6 @@ Next.js does differently and why the gap exists.
 
 ---
 
-## `getHTMLDiffComponents` missing export in RSC build
-
-**Responsibility:** @vitejs/plugin-rsc / Rolldown (triggered by Payload UI module layout)
-**Repo:** https://github.com/vitejs/vite-plugin-react (packages/plugin-rsc)
-**Upstream:** not filed yet
-
-**What breaks:** RSC build can fail with:
-`"getHTMLDiffComponents" is not exported by @payloadcms/ui/dist/elements/HTMLDiff/index.js`.
-The source module exports it, but the RSC build graph sees it as missing.
-`@payloadcms/ui@3.88.0` still re-exports the symbol from
-`../../elements/HTMLDiff/index.js`, so the patch still has a target.
-
-**Why Next.js works:** Next.js uses its own RSC/bundling pipeline, not
-`@vitejs/plugin-rsc` + Rolldown.
-
-**Our workaround:** `payloadHtmlDiffExportFix` patches
-`@payloadcms/ui/dist/exports/rsc/index.js` on disk at build start to
-replace the re-export with a fallback export for
-`getHTMLDiffComponents`.
-
----
-
 ## Non-serializable RSC values not silently dropped
 
 **Responsibility:** vinext
@@ -160,31 +138,6 @@ covers `vinextPayloadWorker()`, the composition that still needs this guard.
 
 ---
 
-## `ssr.external` only applies to "ssr" environment, not RSC
-
-**Responsibility:** Vite (Environment API)
-
-**What breaks:** Vite's `ssr.external` configuration only applies to the
-environment named `"ssr"`. When the @cloudflare/vite-plugin manages a
-`"rsc"` environment (with `viteEnvironment: { name: "rsc" }`), packages
-listed in `ssr.external` are not externalized from the RSC build. This
-causes unresolvable imports (e.g., blake3-wasm's `./node.js` platform
-file) in the RSC bundle.
-
-`resolve.external` cannot be used either, because the cloudflare plugin
-validates and rejects it on all environments it manages.
-
-**Why Next.js works:** Next.js has a single SSR bundling pass that handles
-both RSC and SSR. Its externals configuration applies uniformly to all
-server-side modules.
-
-**Our workaround:** `payloadServerExternals` uses `configEnvironment` to set
-`build.rolldownOptions.external` on both the `"ssr"` and `"rsc"` environments.
-This bypasses the `ssr.external` naming limitation and the cloudflare
-plugin's `resolve.external` validation.
-
----
-
 ## Transitive deps unavailable in workerd
 
 **Responsibility:** workerd / Payload packaging
@@ -298,46 +251,3 @@ workaround targeted; #2000 and #1878 round out fallback/console handling.
 Verified empirically: the admin e2e auth redirect (`/admin` →
 `create-first-user`) passes with the plugin removed and no leaked
 `NEXT_REDIRECT` / hydration errors.
-
----
-
-## Rolldown inlines Workers entry wrapper into bare function
-
-**Responsibility:** Rolldown / @cloudflare/vite-plugin
-**Repo:** https://github.com/rolldown/rolldown, https://github.com/cloudflare/workers-sdk
-**Upstream:**
-
-- https://github.com/cloudflare/workers-sdk/issues/10213 (original report, closed)
-- https://github.com/cloudflare/workers-sdk/pull/10544 (fix: `preserveEntrySignatures: "strict"`)
-- https://github.com/rolldown/rolldown/issues/3500 (`preserveEntrySignatures` feature request)
-- https://github.com/rolldown/rolldown/issues/6449 (strict mode validation)
-  **Status:** workers-sdk #10213 CLOSED, workers-sdk #10544 MERGED, rolldown #3500 CLOSED, rolldown #6449 CLOSED. None of them cover this case: `preserveEntrySignatures: "strict"` governs _named_ exports (it stops extra exports being hoisted onto the entry — the #10213 case), not the _shape of the default-export value_, and no upstream issue covers default-export-object inlining. vinext ships the `{ fetch }` object entry in `dist/server/app-router-entry.js`, and Rolldown can still collapse that object on large bundles. Where it does not collapse, the rewrite applies but passes the already-correct object through untouched, so the patch is defensive.
-
-**What breaks:** vinext's `app-router-entry.js` exports
-`{ async fetch(request, env, ctx) { return handleRequest(request, env, ctx) } }`
-— the Workers module handler format. When Payload's large dependency
-graph (500KB+ RSC bundle) is bundled with Rolldown on Vite 8, Rolldown
-inlines the wrapper and exports the RSC handler as a bare
-`async function handler(request, ctx)`. Cloudflare Workers expects the
-default export to be an object with a `fetch` method; a bare function
-produces error 10068: "no registered event handlers".
-
-The @cloudflare/vite-plugin sets `preserveEntrySignatures: "strict"`
-(PR #10544, fixing #10213). On Vite 8 this goes into `rolldownOptions`, but
-`strict` only preserves the entry's _named exports_ — it does not pin the
-_shape_ of the default-export value, so the `{ fetch }` wrapper object still
-gets inlined away on large bundles. Small apps aren't affected because
-Rolldown doesn't need to inline their entry modules.
-
-**Why Next.js works:** Next.js doesn't target Cloudflare Workers
-directly. Its server entry runs in Node.js or Edge Runtime, neither of
-which validates the shape of the default export.
-
-**Our workaround:** `payloadWorkerdEntry` adds a `generateBundle`
-hook that inspects the RSC entry chunk. If the default export is a
-function declaration (not already a `{ fetch }` object), it rewrites
-the export to wrap it:
-`{ fetch: (request, env, ctx) => handler(request, ctx) }`.
-
-**Remove when:** Rolldown fully enforces `preserveEntrySignatures: "strict"`
-for entry module inlining, preventing the wrapper from being optimized away.

@@ -9,32 +9,6 @@
  */
 
 // ---------------------------------------------------------------------------
-// SSR EXTERNALS
-//
-// Packages excluded from server-side bundling via ssr.external.
-// In webpack, everything is bundled by default. In Vite, nothing is — so
-// packages that genuinely can't be bundled (native addons, build tools)
-// must be explicitly externalized.
-//
-// NOTE: ssr.external only applies to the "ssr" named environment in
-// Vite's Environment API — NOT to RSC. The payloadServerExternals plugin
-// separately externalizes these from RSC via build.rolldownOptions.external.
-// In workerd, externalized packages can't be resolved at runtime — only
-// packages that are truly never imported at runtime belong here.
-// ---------------------------------------------------------------------------
-
-export const SSR_EXTERNAL = [
-	// Build tools — never imported at runtime, only during build/deploy.
-	"esbuild", // Bundler binary. Remove: never (build tool).
-	"wrangler", // Cloudflare CLI. Remove: never (deploy tool).
-	"miniflare", // Cloudflare local emulator. Remove: never (dev tool).
-
-	// Native addon — C++ bindings that can't be bundled.
-	// Also in Next.js's server-external-packages.jsonc.
-	"sharp", // Remove: never (native addon architecture).
-];
-
-// ---------------------------------------------------------------------------
 // OPTIMIZE DEPS EXCLUDE (all environments)
 //
 // Packages excluded from Vite's pre-bundling (optimizeDeps) in all
@@ -62,7 +36,7 @@ export const OPTIMIZE_DEPS_EXCLUDE = [
 	// (`wrangler/wrangler-dist/cli.js` → `blake3-wasm/esm/index.js`), so the
 	// optimizer only stops tripping over it once wrangler itself is left
 	// unbundled. wrangler is a CLI, never evaluated at request time.
-	// Remove: never (deploy tool) — see SSR_EXTERNAL above.
+	// Remove: never (deploy tool).
 	"wrangler",
 
 	// No root "." export — only subpath exports (./layouts, ./routes).

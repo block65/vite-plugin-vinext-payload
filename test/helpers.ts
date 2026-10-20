@@ -137,10 +137,11 @@ export async function startDevServer(
 }
 
 /**
- * Serve the production build with the `start` script `vinext init` wrote —
- * `vite preview` on Cloudflare, which runs the built Worker in workerd.
+ * Serve the production build with the `start` script `vinext init` wrote:
+ * `vite preview` on Cloudflare, which runs the built Worker in workerd, and
+ * `vinext start` on Node.
  */
-export function startPreviewServer(
+export function startProductionServer(
 	testDir: string,
 	helpers: ReturnType<typeof createProjectHelpers>,
 	readyTimeoutMs = 60_000,
@@ -173,7 +174,7 @@ async function startServer(
 	try {
 		match = await waitForOutput(
 			proc,
-			/Local:\s+https?:\/\/[^:\s]+:(\d+)\/?/,
+			/(?:Local:\s+|Production server running at )https?:\/\/[^:\s]+:(\d+)\/?/,
 			readyTimeoutMs,
 		);
 	} catch (error) {

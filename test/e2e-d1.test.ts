@@ -16,7 +16,7 @@ import {
 	runBuild,
 	scaffoldCloudflareProject,
 	startDevServer,
-	startPreviewServer,
+	startProductionServer,
 	waitForServerReady,
 } from "./helpers.ts";
 
@@ -56,11 +56,11 @@ describe("e2e: cloudflare d1", () => {
 	});
 
 	describe("production build", () => {
-		let preview: Awaited<ReturnType<typeof startPreviewServer>>;
+		let preview: Awaited<ReturnType<typeof startProductionServer>>;
 
 		beforeAll(async () => {
 			await runBuild(helpers);
-			preview = await startPreviewServer(TEST_DIR, helpers);
+			preview = await startProductionServer(TEST_DIR, helpers);
 			await waitForServerReady(preview.proc, preview.port, "/admin");
 		});
 

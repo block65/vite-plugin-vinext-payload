@@ -1,7 +1,8 @@
 /**
  * E2E test: SQLite (non-Cloudflare).
  * Scaffolds a Payload project from the postgres template, swaps to SQLite,
- * migrates to vinext, and verifies Payload works end-to-end.
+ * migrates to vinext, and verifies Payload works end-to-end — under
+ * `vite dev`, and again from the production build served by `vinext start`.
  */
 
 import { writeFile, mkdir } from "node:fs/promises";
@@ -13,6 +14,7 @@ import {
 	installVinextStack,
 	runBuild,
 	startDevServer,
+	startProductionServer,
 	VERSIONS,
 	waitForServerReady,
 } from "./helpers.ts";
@@ -105,7 +107,27 @@ describe("e2e: sqlite", () => {
 		expect([200, 401, 403]).toContain(res.status);
 	});
 
-	it("production build succeeds", async () => {
-		await runBuild(helpers);
+	// The template's payload.config imports sharp, a native addon, at module
+	// scope: every Payload request on the built server loads it
+	describe("production build", () => {
+		let production: Awaited<ReturnType<typeof startProductionServer>>;
+
+		beforeAll(async () => {
+			await runBuild(helpers);
+			production = await startProductionServer(TEST_DIR, helpers);
+			await waitForServerReady(production.proc, production.port);
+		});
+
+		afterAll(async () => {
+			await production?.kill();
+		});
+
+		it("the built server serves the frontend", async () => {
+			await assertStatus(production.port, "/", [200]);
+		});
+
+		it("the built server answers Payload API requests from the database", async () => {
+			await assertStatus(production.port, "/api/users/init", [200]);
+		});
 	});
 });

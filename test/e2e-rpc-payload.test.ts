@@ -1,17 +1,13 @@
 /**
  * E2E runtime test: vinextPayloadWorker with REAL payload + D1 adapter.
  *
- * `e2e-rpc-runtime` proves the workerd runtime shims with a React-only
- * worker; nothing there imports payload. That gap is how a consumer
- * report of a dep-optimization failure (payload 3.86, RPC worker,
- * `cloudflare:workers` + `drizzle-kit`) could neither be confirmed nor
- * refuted from the suite. This test closes it: a worker whose module
- * graph pulls in `payload`, `@payloadcms/db-d1-sqlite` (and through it
- * drizzle + `drizzle-kit/api` via createRequire), `richtext-lexical`,
- * a static `cloudflare:workers` import, and the cloudflare template's
- * `getPlatformProxy` wrangler fallback — with no extra externals.
- * If the optimizer or workerd chokes on any of that graph, the
- * fetch below never reaches the D1 query.
+ * A worker whose module graph pulls in `payload`,
+ * `@payloadcms/db-d1-sqlite` (and through it drizzle + `drizzle-kit/api`
+ * via createRequire), `richtext-lexical`, and a static
+ * `cloudflare:workers` import — with no extra externals.
+ * If the optimizer or workerd chokes on any of that graph — including
+ * React meeting workerd's throwing `console.createTask` at module init —
+ * the fetch below never reaches the D1 query.
  *
  * The DB is deliberately unmigrated: reaching payload's first real
  * query ("Failed query: SELECT ... payload_migrations") proves payload
@@ -24,6 +20,8 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+	CLOUDFLARE_V2_PACKAGES,
+	cloudflareWorkerConfig,
 	createProjectHelpers,
 	disableNamedPlugins,
 	packPlugin,
@@ -49,26 +47,6 @@ const packageJson = JSON.stringify(
 	2,
 );
 
-const wranglerJsonc = JSON.stringify(
-	{
-		name: "rpc-payload-worker",
-		main: "src/index.ts",
-		// 2025-11+: the cloudflare plugin's runner worker needs MessagePort,
-		// absent from workerd under older compatibility dates.
-		compatibility_date: "2025-11-01",
-		compatibility_flags: ["nodejs_compat"],
-		d1_databases: [
-			{
-				binding: "D1",
-				database_name: "rpc-payload-test",
-				database_id: "00000000-0000-0000-0000-000000000000",
-			},
-		],
-	},
-	null,
-	2,
-);
-
 const viteConfig = `import { cloudflare } from "@cloudflare/vite-plugin";
 import { defineConfig } from "vite";
 import { vinextPayloadWorker } from "vite-plugin-vinext-payload";
@@ -81,11 +59,8 @@ export default defineConfig({
 });
 `;
 
-// Mirrors payload's cloudflare templates: bindings via cloudflare:workers
-// inside workerd, wrangler getPlatformProxy under plain Node. The wrangler
-// branch must *resolve* in every Vite environment even though it only
-// *executes* under Node — historically the path that dragged blake3-wasm
-// into the graph.
+// Bindings via cloudflare:workers inside workerd, as the vinext-shaped
+// Cloudflare template reads them; no bindings under Payload's Node CLI.
 const payloadConfig = `import { sqliteD1Adapter } from "@payloadcms/db-d1-sqlite";
 import { lexicalEditor } from "@payloadcms/richtext-lexical";
 import { buildConfig } from "payload";
@@ -95,9 +70,7 @@ async function getCloudflareEnv() {
 		const { env } = await import(/* @vite-ignore */ "cloudflare:workers");
 		return env;
 	} catch {
-		const { getPlatformProxy } = await import("wrangler");
-		const proxy = await getPlatformProxy({});
-		return proxy.env;
+		return {};
 	}
 }
 
@@ -144,7 +117,10 @@ async function scaffold() {
 	await mkdir(TEST_DIR, { recursive: true });
 
 	await helpers.write("package.json", packageJson);
-	await helpers.write("wrangler.jsonc", wranglerJsonc);
+	await helpers.write(
+		"cloudflare.config.ts",
+		cloudflareWorkerConfig("rpc-payload-worker", { D1: "bindings.d1()" }),
+	);
 	await helpers.write("vite.config.ts", viteConfig);
 	await disableNamedPlugins(helpers);
 	await helpers.write("src/payload.config.ts", payloadConfig);
@@ -154,8 +130,7 @@ async function scaffold() {
 		"install",
 		"-D",
 		`vite@${VERSIONS.vite}`,
-		"@cloudflare/vite-plugin@^1.37",
-		"wrangler",
+		...CLOUDFLARE_V2_PACKAGES,
 		`payload@${VERSIONS.payload}`,
 		`@payloadcms/db-d1-sqlite@${VERSIONS.payload}`,
 		`@payloadcms/richtext-lexical@${VERSIONS.payload}`,

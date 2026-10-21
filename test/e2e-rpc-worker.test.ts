@@ -12,13 +12,16 @@
  * targets the plugin/cloudflare-plugin wiring, not Payload itself.
  */
 
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { afterAll, assert, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+	CLOUDFLARE_V2_PACKAGES,
+	cloudflareWorkerConfig,
 	createProjectHelpers,
 	disableNamedPlugins,
 	packPlugin,
+	VERSIONS,
 } from "./helpers.ts";
 
 const PLUGIN_ROOT = join(import.meta.dirname, "..");
@@ -30,6 +33,16 @@ const TEST_DIR = join(import.meta.dirname, ".test-rpc-worker");
 // validateWorkerEnvironmentOptions rejection. Naming the test env "ssr"
 // reproduces that collision.
 const WORKER_ENV = "ssr";
+// Where @cloudflare/vite-plugin v2 writes the entry Worker's build
+const WORKER_BUNDLE = join(
+	".cloudflare",
+	"output",
+	"v0",
+	"workers",
+	"default",
+	"bundle",
+	"index.js",
+);
 const helpers = createProjectHelpers(TEST_DIR);
 
 const packageJson = JSON.stringify(
@@ -38,17 +51,6 @@ const packageJson = JSON.stringify(
 		private: true,
 		type: "module",
 		scripts: { build: "vite build" },
-	},
-	null,
-	2,
-);
-
-const wranglerJsonc = JSON.stringify(
-	{
-		name: "rpc-worker",
-		main: "src/index.ts",
-		compatibility_date: "2025-01-01",
-		compatibility_flags: ["nodejs_compat"],
 	},
 	null,
 	2,
@@ -110,7 +112,10 @@ async function scaffoldRpcWorker() {
 	await mkdir(TEST_DIR, { recursive: true });
 
 	await helpers.write("package.json", packageJson);
-	await helpers.write("wrangler.jsonc", wranglerJsonc);
+	await helpers.write(
+		"cloudflare.config.ts",
+		cloudflareWorkerConfig("rpc-worker"),
+	);
 	await helpers.write("vite.config.ts", viteConfig);
 	await disableNamedPlugins(helpers);
 	await helpers.write("tsconfig.json", tsconfig);
@@ -119,8 +124,8 @@ async function scaffoldRpcWorker() {
 	await helpers.npm([
 		"install",
 		"-D",
-		"vite@^8",
-		"@cloudflare/vite-plugin@^1.37",
+		`vite@${VERSIONS.vite}`,
+		...CLOUDFLARE_V2_PACKAGES,
 		"@cloudflare/workers-types",
 		"file-type@^21",
 		"--ignore-scripts",
@@ -152,10 +157,7 @@ describe("e2e: rpc worker", () => {
 	}, 120_000);
 
 	it("emits a bundle containing the WorkerEntrypoint export", async () => {
-		const files = await readdir(join(TEST_DIR, "dist", WORKER_ENV));
-		const jsEntry = files.find((f: string) => f.endsWith(".js"));
-		assert(jsEntry, "expected a .js entry in the worker bundle");
-		const bundled = await helpers.read(join("dist", WORKER_ENV, jsEntry));
+		const bundled = await helpers.read(WORKER_BUNDLE);
 		expect(bundled).toContain("CmsEntrypoint");
 	});
 
@@ -163,10 +165,7 @@ describe("e2e: rpc worker", () => {
 		// The build succeeding in the first test rules out core.js alone,
 		// which would fail it with MISSING_EXPORT; this rules out a stub that
 		// only satisfies the export
-		const files = await readdir(join(TEST_DIR, "dist", WORKER_ENV));
-		const jsEntry = files.find((f: string) => f.endsWith(".js"));
-		assert(jsEntry, "expected a .js entry in the worker bundle");
-		const bundled = await helpers.read(join("dist", WORKER_ENV, jsEntry));
+		const bundled = await helpers.read(WORKER_BUNDLE);
 
 		expect(bundled).toContain("node_modules/file-type/index.js");
 	});

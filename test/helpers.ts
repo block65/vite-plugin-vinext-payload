@@ -611,6 +611,44 @@ export async function scaffoldMockProject(
 }
 
 /**
+ * Packages a standalone `@cloudflare/vite-plugin` v2 Worker needs, at the
+ * tags `vinext init --platform=cloudflare` installs.
+ */
+export const CLOUDFLARE_V2_PACKAGES = [
+	"@cloudflare/vite-plugin@beta",
+	"cf@latest",
+];
+
+/**
+ * `cloudflare.config.ts` for a standalone Worker at `src/index.ts`, in the
+ * shape `vinext init` writes for `@cloudflare/vite-plugin` v2 — today's
+ * compatibility date included. `env` maps binding names to `bindings.*()`
+ * expressions.
+ */
+export function cloudflareWorkerConfig(
+	name: string,
+	env: Record<string, string> = {},
+) {
+	const today = new Date().toISOString().slice(0, 10);
+	const envLines = Object.entries(env)
+		.map(([binding, expression]) => `\n      ${binding}: ${expression},`)
+		.join("");
+	return `import { bindings, defineConfig, defineWorker } from "cf/config";
+
+export default defineConfig({
+  worker: defineWorker({
+    name: ${JSON.stringify(name)},
+    entrypoint: "./src/index.ts",
+    compatibilityDate: ${JSON.stringify(today)},
+    compatibilityFlags: ["nodejs_compat"],
+    env: {${envLines}
+    },
+  }),
+});
+`;
+}
+
+/**
  * Pack the plugin and return the tarball path, so scaffolds install what a
  * consumer installs.
  *

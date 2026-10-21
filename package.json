@@ -58,7 +58,6 @@
 		"test:e2e-readme-order": "scripts/e2e-container.sh test/e2e-readme-order.test.ts",
 		"test:e2e-rpc": "scripts/e2e-container.sh test/e2e-rpc-worker.test.ts",
 		"test:e2e-rpc-payload": "scripts/e2e-container.sh test/e2e-rpc-payload.test.ts",
-		"test:e2e-rpc-runtime": "scripts/e2e-container.sh test/e2e-rpc-runtime.test.ts",
 		"test:e2e-uploads": "scripts/e2e-container.sh test/e2e-uploads.test.ts",
 		"typecheck": "tsc -b --noEmit"
 	},

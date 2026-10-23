@@ -226,25 +226,30 @@ plugin's `resolve.external` validation.
 
 **Responsibility:** workerd / Payload packaging
 
-**What breaks:** `file-type` (a direct dependency of `payload` itself —
-`dist/uploads/getFileByPath.js` — so every Payload project pulls it in)
-and `drizzle-kit/api` (via `@payloadcms/db-d1-sqlite`) use Node.js
-fs/streams APIs that don't exist in workerd. pnpm's strict isolation also prevents the
-optimizer from finding them during pre-bundling.
+**What breaks:** `file-type` is a direct dependency of `payload` itself, used
+for upload type detection. Its `exports` map serves `index.js` under the `node`
+condition and `core.js` otherwise; server environments resolve `core.js`, which
+lacks the `fileTypeFromFile` that Payload imports. `drizzle-kit/api` (via
+`@payloadcms/db-d1-sqlite`) uses Node.js APIs that don't exist in workerd.
+pnpm's strict isolation also prevents the optimizer from finding it during
+pre-bundling.
 
-**Why Next.js works:** Next.js runs in Node.js where fs/streams exist.
-webpack traverses the filesystem directly, bypassing pnpm's symlink
-layout. And these deps are only used during build/migration, not at
-request time — Next.js's tree-shaking removes them from the runtime
-bundle.
+**Why Next.js works:** webpack resolves `file-type` with the `node`
+condition. It traverses the filesystem directly, bypassing pnpm's symlink
+layout. And `drizzle-kit/api` is only used during migration, not at request
+time — Next.js's tree-shaking removes it from the runtime bundle.
 
-**Our workaround:** `payloadRscRuntime` stubs both packages. `file-type`
-is handled via `resolveId` → static stub file. `drizzle-kit/api` is
-loaded via `createRequire(import.meta.url)` which bypasses all bundler
-resolution hooks, so we use a `transform` hook to replace the
-`require('drizzle-kit/api')` call with inline no-op stubs during
-pre-bundling. They're never invoked during RSC rendering — `file-type`
-is for upload detection, `drizzle-kit/api` is for migrations.
+**Our workaround:** `payloadRscRuntime` resolves `file-type` to `file-type/node`
+from the importing module, so Payload's upload checks run real detection. Its
+Node APIs come from workerd's `nodejs_compat`, which Payload already requires
+for `fs`. `strtok3`, which the Node entry imports, has the same condition split
+and no Node subpath, so in workerd it resolves to `core.js` and
+`fileTypeFromFile` throws. Payload calls that only for temp files and local
+disk storage; buffer detection, the path uploads take, works.
+`drizzle-kit/api` is loaded via `createRequire(import.meta.url)` which bypasses
+all bundler resolution hooks, so a `transform` hook replaces the
+`require('drizzle-kit/api')` call with inline no-op stubs during pre-bundling.
+It is only used for migrations.
 
 ---
 

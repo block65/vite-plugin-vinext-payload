@@ -51,19 +51,14 @@ const wranglerJsonc = JSON.stringify(
 );
 
 const workerEntry = `import { WorkerEntrypoint } from "cloudflare:workers";
-// file-type is a Node-only CJS-condition trap: real-payload setups import it
-// transitively through @payloadcms/db-d1-sqlite, and Vite's default resolver
-// points the bare specifier at file-type/core.js which has no named exports —
-// causing MISSING_EXPORT in production builds unless payloadRscRuntime's
-// resolveId wins ordering. We import it here so this e2e exercises that
-// ordering path against a real published file-type, not just the plugin's
-// internal mocks.
+// Payload imports fileTypeFromFile, which only file-type's Node entry
+// exports; Vite's default resolver picks core.js, so the build fails with
+// MISSING_EXPORT unless payloadRscRuntime's resolveId wins ordering
 import { fileTypeFromFile } from "file-type";
 
 export class CmsEntrypoint extends WorkerEntrypoint {
 	// Class field referencing fileTypeFromFile keeps Rolldown from
-	// tree-shaking it — \`void X\` was getting elided. The stub returns
-	// undefined; the real function would never run inside workerd anyway.
+	// tree-shaking it — \`void X\` was getting elided.
 	fileType = fileTypeFromFile;
 
 	async ping() {
@@ -159,24 +154,15 @@ describe("e2e: rpc worker", () => {
 		expect(bundled).toContain("CmsEntrypoint");
 	});
 
-	it("intercepts `file-type` with the stub before Vite's default resolver", async () => {
-		// Regression: payloadRscRuntime's resolveId hook needs `enforce: "pre"`.
-		// Without it, Vite resolves the bare specifier `file-type` to the real
-		// package's `core.js`, which doesn't export `fileTypeFromFile` — and
-		// Rolldown then fails the build with a MISSING_EXPORT error. The
-		// `vite build` succeeding in the previous test is the primary signal
-		// that the stub won; here we additionally assert the real package's
-		// parser dependency is absent, ruling out the "build passed but real
-		// impl leaked in" case.
+	it("bundles `file-type`'s Node entry, not core.js", async () => {
+		// The build succeeding in the first test rules out core.js alone,
+		// which would fail it with MISSING_EXPORT; this rules out a stub that
+		// only satisfies the export
 		const files = await readdir(join(TEST_DIR, "dist", WORKER_ENV));
 		const jsEntry = files.find((f: string) => f.endsWith(".js"));
 		assert(jsEntry, "expected a .js entry in the worker bundle");
 		const bundled = await helpers.read(join("dist", WORKER_ENV, jsEntry));
-		// `fileTypeFromFile` is only available in our stub — the real
-		// `file-type/core.js` exposes the buffer/stream variants but NOT
-		// `fileTypeFromFile` (Node-condition only).
-		expect(bundled).toContain("fileTypeFromFile");
-		// Real `file-type` parses via `strtok3`. The stub doesn't import it.
-		expect(bundled).not.toContain("strtok3");
+
+		expect(bundled).toContain("node_modules/file-type/index.js");
 	});
 });

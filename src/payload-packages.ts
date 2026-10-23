@@ -44,7 +44,8 @@ export const SSR_EXTERNAL = [
 
 export const OPTIMIZE_DEPS_EXCLUDE = [
 	// Export condition mismatch: { "node": "./index.js", "default": "./core.js" }.
-	// RSC resolves to core.js which lacks fileTypeFromFile.
+	// RSC resolves to core.js which lacks fileTypeFromFile; payloadRscRuntime
+	// redirects it to file-type/node instead.
 	// Webpack resolves to index.js (Node condition) and works.
 	// Remove: when Vite respects per-environment export conditions.
 	"file-type",
@@ -146,6 +147,16 @@ export const RSC_OPTIMIZE_DEPS_INCLUDE = [
 	"payload > path-to-regexp",
 	"payload > @payloadcms/translations",
 
+	// file-type's own graph. payloadRscRuntime resolves it to its Node
+	// entry, outside the optimizer, so its imports are otherwise
+	// discovered one layer per re-optimize.
+	// Remove: with the payload entries above.
+	"payload > file-type > strtok3",
+	"payload > file-type > strtok3/core",
+	"payload > file-type > token-types",
+	"payload > file-type > @tokenizer/inflate",
+	"payload > file-type > uint8array-extras",
+
 	// The default richtext editor's graph, reached from payload.config.
 	// Remove: with the payload entries above, or if the editor becomes
 	// an explicit consumer-installed peer of the rendering path.
@@ -177,14 +188,6 @@ export const RSC_OPTIMIZE_DEPS_INCLUDE = [
 // ---------------------------------------------------------------------------
 
 export const RSC_STUBS: Record<string, "empty"> = {
-	// Uses Node.js fs/streams. Direct dependency of payload itself
-	// (dist/uploads/getFileByPath.js) — not of the D1 adapter — so every
-	// Payload project pulls it in; detection is never called during RSC
-	// rendering.
-	// Also in OPTIMIZE_DEPS_EXCLUDE for the export condition mismatch.
-	// Remove: when workerd supports Node.js fs APIs, or payload drops the dep.
-	"file-type": "empty",
-
 	// Migration utilities from drizzle-kit. Imported by @payloadcms/db-d1-sqlite
 	// via dynamic require() but migrations only run during build/deploy, not
 	// during RSC rendering. pnpm strict isolation also prevents resolution.

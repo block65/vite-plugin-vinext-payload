@@ -35,6 +35,7 @@ import type { PatchDeclaration } from "./patch-manifest.ts";
 import { payloadRscExportFix, rscExportFixPatch } from "./rsc-export-fix.ts";
 import {
 	payloadRscRuntime,
+	fileTypeNodeEntryPatch,
 	rscSerializerThrowsPatch,
 	rscStubsPatch,
 } from "./rsc-runtime.ts";
@@ -79,6 +80,7 @@ export const PATCH_MANIFEST: readonly PatchDeclaration[] = [
 	navComponentFixPatch,
 	rscExportFixPatch,
 	rscStubsPatch,
+	fileTypeNodeEntryPatch,
 	rscSerializerThrowsPatch,
 	serverActionFixPatch,
 	cjsInteropPatch,

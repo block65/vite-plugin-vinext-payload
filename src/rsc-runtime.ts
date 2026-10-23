@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { Lang, parse } from "@ast-grep/napi";
 import type { EnvironmentOptions, Plugin } from "vite";
@@ -8,13 +9,20 @@ export const rscStubsPatch = {
 	id: "rsc-runtime-stubs",
 	kind: "stub",
 	targets: [
-		"file-type → no-op stub (server environments)",
 		"drizzle-kit/api → no-op stub, including inlined createRequire() calls",
 	],
 	reason:
-		"both are transitively imported but never invoked during RSC rendering, and leave bare imports the workerd module runner cannot resolve; per-entry notes live in payload-packages.ts (RSC_STUBS)",
-	removeWhen:
-		"workerd supports the Node APIs they need, or payload lazy-loads them",
+		"drizzle-kit/api is transitively imported but never invoked during RSC rendering, and is loaded with createRequire(), which workerd cannot execute; per-entry notes live in payload-packages.ts (RSC_STUBS)",
+	removeWhen: "workerd supports require(), or payload lazy-loads drizzle-kit",
+} satisfies PatchDeclaration;
+
+export const fileTypeNodeEntryPatch = {
+	id: "file-type-node-entry",
+	kind: "config",
+	targets: ["file-type → file-type/node (server environments)"],
+	reason:
+		"server environments resolve file-type under the `default` export condition, which selects core.js; Payload imports fileTypeFromFile, which only the Node entry exports, and calls the detectors on every upload",
+	removeWhen: "server environments resolve file-type with the `node` condition",
 } satisfies PatchDeclaration;
 
 export const rscSerializerThrowsPatch = {
@@ -29,9 +37,8 @@ export const rscSerializerThrowsPatch = {
 
 // Static stub files — these must export the named exports that consumers
 // expect. Dynamic empty stubs don't work because Rolldown checks for
-// MISSING_EXPORT on named imports like { fileTypeFromFile }.
+// MISSING_EXPORT on named imports like { pushSQLiteSchema }.
 const STUB_FILES: Record<string, string> = {
-	"file-type": fileURLToPath(new URL("./stubs/file-type.js", import.meta.url)),
 	"drizzle-kit/api": fileURLToPath(
 		new URL("./stubs/drizzle-kit-api.js", import.meta.url),
 	),
@@ -60,13 +67,10 @@ const stubPaths: Record<string, string> = Object.fromEntries(
 
 export interface PayloadRscRuntimeOptions {
 	/**
-	 * Names of server environments running on workerd that need
-	 * `file-type` and `drizzle-kit/api` stubbed. `file-type` is a direct
-	 * dependency of `payload` itself (uploads); `drizzle-kit/api` comes in
-	 * via `@payloadcms/db-d1-sqlite`. Neither is invoked in production;
-	 * without stubs the pre-bundled chunk contains a bare
-	 * `import 'file-type'` that the workerd module runner can't resolve.
-	 * Defaults to `["rsc"]`.
+	 * Names of server environments running on workerd. They get
+	 * `drizzle-kit/api` stubbed (it comes in via `@payloadcms/db-d1-sqlite`
+	 * and is never invoked in production) and `file-type` pointed at its
+	 * Node entry, which Payload's upload checks need. Defaults to `["rsc"]`.
 	 */
 	serverEnvs?: string[];
 
@@ -77,6 +81,30 @@ export interface PayloadRscRuntimeOptions {
 	 * Defaults to `"rsc"`.
 	 */
 	rscEnv?: string | false;
+}
+
+const FILE_TYPE_NODE_ENTRY = "file-type/node";
+
+type Resolve = (
+	source: string,
+	importer: string | undefined,
+	options?: { skipSelf?: boolean },
+) => Promise<{ id: string } | null>;
+
+// Resolved from the importer: Payload pins its own file-type version, and
+// under pnpm only Payload can see it
+function resolveFileTypeNodeEntry(
+	resolve: Resolve,
+	importer: string | undefined,
+) {
+	return resolve(FILE_TYPE_NODE_ENTRY, importer, { skipSelf: true });
+}
+
+// The optimizer keeps imports of an excluded package external, which would
+// leave a bare `file-type/node` in the pre-bundled chunk that only Payload can
+// resolve under pnpm; an absolute path is bundled into the chunk instead
+function fileTypeNodeEntryPath(importer: string) {
+	return createRequire(importer).resolve(FILE_TYPE_NODE_ENTRY);
 }
 
 function inlineDrizzleKitApi(code: string): string {
@@ -108,13 +136,14 @@ function dropClientComponentThrows(code: string): string {
 /**
  * Server-side workerd runtime patches.
  *
- * Two concerns:
+ * Three concerns:
  *
- * - **Stubs** for `file-type` and `drizzle-kit/api` in any server env
- *   running on workerd (default `rsc`, extended for headless payload
- *   workers). `file-type` is a direct dependency of `payload` (uploads);
- *   `drizzle-kit/api` is imported via `@payloadcms/db-d1-sqlite`.
- *   Neither is invoked at runtime.
+ * - **Stub** for `drizzle-kit/api` in any server env running on workerd
+ *   (default `rsc`, extended for headless payload workers). It is imported
+ *   via `@payloadcms/db-d1-sqlite` and not invoked at runtime.
+ *
+ * - **`file-type` resolution** to its Node entry in the same envs, so
+ *   Payload's upload checks detect types from file contents.
  *
  * - **RSC serializer patch** that converts the "Client Component" throw
  *   in `react-server-dom-webpack` into `return undefined`. Applies only
@@ -129,16 +158,13 @@ export function payloadRscRuntime(
 
 	return {
 		name: "vite-plugin-payload:rsc-runtime",
-		// `enforce: "pre"` is required for the stub `resolveId` hook below to
-		// win. Without it, Vite's default Node resolver claims bare specifiers like
-		// `file-type` first and points them at the real package's `core.js` —
-		// which doesn't export `fileTypeFromFile`, so Rolldown then errors
-		// with MISSING_EXPORT before our stub redirect ever runs. This only
-		// surfaces under `vinextPayloadWorker` with a real payload import
-		// (which the original e2e didn't exercise).
+		// `enforce: "pre"` is required for the `resolveId` hook below to win.
+		// Without it, Vite's default resolver claims `file-type` first and
+		// points it at the package's `core.js`, which doesn't export
+		// `fileTypeFromFile`, so Rolldown errors with MISSING_EXPORT.
 		enforce: "pre",
 
-		// Redirect stubs during optimizeDeps pre-bundling so they're
+		// Redirect during optimizeDeps pre-bundling so the targets are
 		// inlined rather than left as bare external imports that workerd
 		// can't resolve.
 		configEnvironment(name) {
@@ -154,7 +180,10 @@ export function payloadRscRuntime(
 						plugins: [
 							{
 								name: "payload-rsc-runtime-stubs",
-								resolveId(source) {
+								resolveId(source, importer) {
+									if (source === "file-type" && importer) {
+										return fileTypeNodeEntryPath(importer);
+									}
 									return stubs[source] ?? null;
 								},
 								transform(code) {
@@ -209,10 +238,16 @@ export function payloadRscRuntime(
 
 		// Intercept at runtime for non-pre-bundled imports.
 		resolveId: {
-			handler(source) {
+			handler(source, importer) {
 				const envName = this.environment?.name;
 				if (!envName || !serverEnvSet.has(envName)) {
 					return;
+				}
+				if (source === "file-type") {
+					return resolveFileTypeNodeEntry(
+						(...args) => this.resolve(...args),
+						importer,
+					);
 				}
 				return stubPaths[source] ?? undefined;
 			},

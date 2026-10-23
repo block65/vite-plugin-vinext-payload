@@ -132,7 +132,7 @@ describe the binding shape.
 
 `vinextPayloadWorker()` composes a subset of the same sub-plugins as
 `vinextPayload()`: server externals, workerd compatibility, optimizeDeps
-configuration, the `file-type` and `drizzle-kit/api` stubs, the CJS transform
+configuration, `file-type` resolution, the `drizzle-kit/api` stub, the CJS transform
 and interop, and the CLI stubs. Everything Payload's Local API needs to
 evaluate inside workerd, and none of the admin-UI or RSC fixes.
 

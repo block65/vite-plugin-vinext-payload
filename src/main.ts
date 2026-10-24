@@ -91,7 +91,7 @@ export interface VinextPayloadWorkerOptions {
  * parent worker calls into this one via a Cloudflare service binding.
  *
  * Subset of `vinextPayload`: workerd polyfills, optimizeDeps excludes,
- * the `file-type` and `drizzle-kit/api` stubs, and CJS transforms.
+ * the `drizzle-kit/api` stub, `file-type` resolution, and CJS transforms.
  * The admin-UI / RSC fixes are intentionally excluded.
  *
  * The user's worker entry typically looks like:

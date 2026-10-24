@@ -4,19 +4,20 @@
  * Payload sniffs the bytes with `file-type` and checks the result against
  * the allowlist; without detection every image falls back to the extension
  * lookup, which only knows text types, and is rejected. Runs on workerd under
- * `vite dev`.
+ * `vite dev`, and on Node from the production build, which bundles Payload;
+ * Node `vite dev` loads Payload itself and never reaches the plugin.
  */
 
-import { cp, mkdir, readFile, rm } from "node:fs/promises";
+import { cp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, assert, beforeAll, describe, expect, it } from "vitest";
 import {
 	createProjectHelpers,
-	fixWranglerForLocalDev,
-	installVinextStack,
-	rewritePayloadConfigForVinext,
+	runBuild,
+	scaffoldCloudflareProject,
+	scaffoldSqliteProject,
 	startDevServer,
-	VERSIONS,
+	startProductionServer,
 	waitForServerReady,
 } from "./helpers.ts";
 
@@ -40,25 +41,6 @@ async function restrictMediaMimeTypes(
 		throw new Error(`Media.ts has no upload config to restrict:\n${media}`);
 	}
 	await helpers.write("src/collections/Media.ts", restricted);
-}
-
-async function scaffoldCloudflareProject(
-	testDir: string,
-	helpers: ReturnType<typeof createProjectHelpers>,
-) {
-	await helpers.cleanup();
-	await mkdir(testDir, { recursive: true });
-	await helpers.npx([
-		"--yes",
-		"degit",
-		"--force",
-		`payloadcms/payload/templates/with-cloudflare-d1#v${VERSIONS.payload}`,
-		testDir,
-	]);
-	await helpers.write(".env", `PAYLOAD_SECRET=${crypto.randomUUID()}\n`);
-	await installVinextStack(helpers, PLUGIN_ROOT, "cloudflare");
-	await rewritePayloadConfigForVinext(helpers);
-	await fixWranglerForLocalDev(helpers);
 }
 
 // npm hoists file-type to the project root, where any module can import it;
@@ -123,7 +105,25 @@ async function uploadJpeg(port: number, token: string) {
 	});
 }
 
-function describeMimeTypeUploads(getPort: () => number) {
+function uploadedFileUrl(upload: Upload) {
+	const body: unknown = JSON.parse(upload.body);
+	assert(
+		typeof body === "object" &&
+			body !== null &&
+			"doc" in body &&
+			typeof body.doc === "object" &&
+			body.doc !== null &&
+			"url" in body.doc &&
+			typeof body.doc.url === "string",
+		`upload answered without a doc url: ${upload.body}`,
+	);
+	return body.doc.url;
+}
+
+function describeMimeTypeUploads(
+	getPort: () => number,
+	{ servesStoredFiles }: { servesStoredFiles: boolean },
+) {
 	let token: string;
 
 	beforeAll(async () => {
@@ -150,6 +150,21 @@ function describeMimeTypeUploads(getPort: () => number) {
 
 		expect(upload.status, upload.body).toBe(400);
 	});
+
+	// Local-disk storage serves the file back through Payload, which reads
+	// the Content-Type from the stored bytes with `fileTypeFromFile`
+	it.runIf(servesStoredFiles)(
+		"serves a stored JPEG as image/jpeg",
+		async () => {
+			const upload = await uploadJpeg(getPort(), token);
+			const url = uploadedFileUrl(upload);
+
+			const res = await fetch(new URL(url, `http://localhost:${getPort()}`));
+
+			expect(res.status).toBe(200);
+			expect(res.headers.get("content-type")).toBe("image/jpeg");
+		},
+	);
 }
 
 describe("e2e: uploads on workerd", () => {
@@ -158,15 +173,10 @@ describe("e2e: uploads on workerd", () => {
 	let server: Awaited<ReturnType<typeof startDevServer>>;
 
 	beforeAll(async () => {
-		await scaffoldCloudflareProject(testDir, helpers);
+		await scaffoldCloudflareProject(testDir, helpers, PLUGIN_ROOT);
 		await restrictMediaMimeTypes(helpers);
-		await helpers.npx(["vite-plugin-vinext-payload", "init"]);
-		await helpers.npm(["install"]);
 		await helpers.npx(["payload", "generate:importmap"]);
 		await unhoistFileType(testDir);
-		// The dev server cannot push a schema on this line: drizzle-kit is
-		// stubbed in every mode, so the template's migrations create the tables
-		await helpers.npx(["payload", "migrate"]);
 
 		server = await startDevServer(testDir, helpers);
 		await waitForServerReady(server.proc, server.port, "/admin");
@@ -176,5 +186,35 @@ describe("e2e: uploads on workerd", () => {
 		await server?.kill();
 	});
 
-	describeMimeTypeUploads(() => server.port);
+	// R2 serves the Content-Type it stored at upload; serving detects nothing
+	describeMimeTypeUploads(() => server.port, { servesStoredFiles: false });
+});
+
+describe("e2e: uploads on the Node production build", () => {
+	const testDir = join(import.meta.dirname, ".test-project-uploads-node");
+	const helpers = createProjectHelpers(testDir);
+	let server: Awaited<ReturnType<typeof startProductionServer>>;
+
+	beforeAll(async () => {
+		await scaffoldSqliteProject(testDir, helpers, PLUGIN_ROOT);
+		await restrictMediaMimeTypes(helpers);
+		await helpers.npx(["payload", "generate:importmap"]);
+		await unhoistFileType(testDir);
+		// Production never pushes a schema; a dev boot does, on Payload's
+		// first init, into the database the production server then opens
+		{
+			await using dev = await startDevServer(testDir, helpers);
+			await waitForServerReady(dev.proc, dev.port, "/api/users/init");
+		}
+		await runBuild(helpers);
+
+		server = await startProductionServer(testDir, helpers);
+		await waitForServerReady(server.proc, server.port);
+	});
+
+	afterAll(async () => {
+		await server?.kill();
+	});
+
+	describeMimeTypeUploads(() => server.port, { servesStoredFiles: true });
 });

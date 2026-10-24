@@ -8,9 +8,6 @@
  *
  * Off by default: plugin internals must not add noise to a consumer's build
  * output. Enable with `DEBUG=vinext-payload` (or `DEBUG=*`).
- *
- * This is diagnostics, not the CLI's user-facing output — that lives in
- * `bin/output.ts` and is always shown.
  */
 
 const PREFIX = "[vinext-payload]";

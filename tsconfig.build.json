@@ -10,8 +10,9 @@
 		"esModuleInterop": true,
 		"skipLibCheck": true,
 		"declaration": true,
+		"rootDir": "src",
 		"outDir": "dist",
 		"rewriteRelativeImportExtensions": true
 	},
-	"include": ["src", "bin"]
+	"include": ["src"]
 }

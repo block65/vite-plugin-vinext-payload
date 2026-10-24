@@ -139,11 +139,6 @@ describe the binding shape.
 Payload's Local API needs to evaluate inside workerd, and none of the admin-UI
 or RSC fixes.
 
-## `init` (deprecated)
-
-`npx vite-plugin-vinext-payload init` is deprecated and will be removed in a
-later release. Run `vinext init`, then add `vinextPayload()` as shown above.
-
 ## Options
 
 | Option                | Type       | Description                                                                                                                                                                               |

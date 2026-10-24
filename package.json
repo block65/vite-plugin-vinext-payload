@@ -23,17 +23,14 @@
 		"type": "git",
 		"url": "git+https://github.com/block65/vite-plugin-vinext-payload.git"
 	},
-	"bin": {
-		"vite-plugin-vinext-payload": "./dist/bin/main.js"
-	},
 	"files": [
 		"dist"
 	],
 	"type": "module",
 	"exports": {
 		".": {
-			"types": "./dist/src/main.d.ts",
-			"default": "./dist/src/main.js"
+			"types": "./dist/main.d.ts",
+			"default": "./dist/main.js"
 		}
 	},
 	"publishConfig": {

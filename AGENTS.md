@@ -5,11 +5,11 @@
 
 ## This repo
 
-A Vite plugin that makes Payload CMS run under [vinext](https://github.com/cloudflare/vinext), including on Cloudflare Workers. It works by patching vinext and Payload internals at build time, so it is tightly coupled to exact upstream versions.
+A Vite plugin that makes Payload CMS run under [vinext](https://github.com/cloudflare/vinext), including on Cloudflare Workers. It configures vinext's Vite environments and rewrites third-party code at build time (React's RSC serializer, undici, Payload's dependencies), so it is tightly coupled to exact upstream versions.
 
-**The `vinext` peer dependency is pinned exactly** in `package.json` — no `^`, no `>=`. vinext is pre-1.0 in spirit — patch-level bumps move the internals this plugin patches. Never loosen the range.
+**The `vinext` peer dependency is pinned exactly** in `package.json` — no `^`, no `>=`. vinext releases move the environment and optimizeDeps setup this plugin configures. Never loosen the range.
 
-**Patches are AST-based and version-fragile.** `src/` uses `@ast-grep/napi` against specific function shapes in vinext's dist output. The drift detector in `test/patch-targets.test.ts` runs the transforms against the _actually installed_ vinext and fail loudly when upstream moves. When one fails, the patch pattern needs updating — do not weaken the assertion to make it pass.
+**Patches are version-fragile.** Every rewrite is declared in `PATCH_MANIFEST` (`src/main.ts`). The AST patches (`@ast-grep/napi`) match function shapes in undici and `react-server-dom-webpack`; a pattern that stops matching makes its patch a silent no-op. `test/patch-targets.test.ts` checks targets in the installed vinext's dist that no current patch uses. When a drift assertion fails, update the patch pattern — do not weaken the assertion to make it pass.
 
 ## Commands
 

@@ -73,9 +73,8 @@ export function vinextPayload(options: VinextPayloadOptions = {}): Plugin[] {
 
 export interface VinextPayloadWorkerOptions {
 	/**
-	 * The Vite environment name for the auxiliary worker. Must match the
-	 * `name` of the worker in `@cloudflare/vite-plugin`'s `auxiliaryWorkers`
-	 * (or the top-level `viteEnvironment.name`).
+	 * The Worker's Vite environment name: its `viteEnvironment.name` in
+	 * `@cloudflare/vite-plugin`, or else its `name` with `-` replaced by `_`.
 	 */
 	env: string;
 

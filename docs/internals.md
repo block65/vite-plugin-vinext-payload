@@ -1,31 +1,24 @@
 # Internals — sub-plugins and what they work around
 
-This doc is for people hacking on the plugin (or on vinext / Payload
-compatibility). Using Payload on vinext requires none of it — the
-[README](../README.md) covers that.
-
-`vinextPayload()` composes a set of sub-plugins, each working around a
-specific upstream bug. They are not exported individually — the split exists
-purely for readability and maintenance. See
-[`upstream-bugs.md`](upstream-bugs.md) for the full write-up of each bug,
-including what Next.js does differently.
+For people working on the plugin; using it needs none of this. Each sub-plugin
+works around upstream bugs written up in [`upstream-bugs.md`](upstream-bugs.md).
+They are not exported individually.
 
 ## Sub-plugins
 
-| Plugin                 | Owner bug               | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ---------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `payloadWorkerdCompat` | workerd / Rolldown      | Four module-resolution / bundle-time fixes needed before code can evaluate inside workerd: (1) `resolveId` fallback for `node:*` CJS requires that bypass `@cloudflare/vite-plugin`'s filtered hook, (2) try-catch wrapper for undici's `detectRuntimeFeatureByExportedProperty` which crashes due to Rolldown's CJS→ESM interop returning void, (3) `import.meta.url ?? "file:///"` guards for `fileURLToPath` / `createRequire` patterns that crash in bundled workerd asset chunks, (4) `console.createTask` polyfill — where workerd exposes the method (e.g. when `node:console` is in the module graph) it throws "not implemented", breaking React 19 dev mode's async stack traces. Injected via both Vite transform and optimizeDeps rolldown plugin to cover pre-bundled deps |
-| `payloadOptimizeDeps`  | vinext                  | Per-environment optimizeDeps: excludes problematic packages, force-includes CJS transitive deps for the client. Auto-discovers all `next/*` alias specifiers from the resolved config so the optimizer doesn't discover them at runtime (which causes a full page reload)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `payloadCjsTransform`  | Vite                    | Fixes `this` → `globalThis` in UMD/CJS wrappers and wraps `module.exports` with ESM scaffolding (skips React/ReactDOM which Vite 8 handles natively)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `payloadRscRuntime`    | vinext / workerd / pnpm | RSC environment patches: resolves `file-type` (a direct dep of `payload` itself) to its Node entry in server environments, turns `@payloadcms/drizzle`'s `createRequire` load of `drizzle-kit/api` into a static import in dev (so the dev schema push runs in workerd) and a no-op stub in builds, and patches the RSC serializer to silently drop non-serializable values (functions, RegExps) at the server/client boundary. Next.js prod throws the same serialization error — dropping is a deliberate divergence that keeps Payload's admin form flows working                                                                                                                                                                                                                    |
+| Plugin                 | Owner bug               | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `payloadWorkerdCompat` | workerd / Rolldown      | In workerd environments (`ssr`, `rsc`): resolves `node:*` imports to `unenv/node/*`; wraps undici's `detectRuntimeFeatureByExportedProperty` in a try-catch, because Rolldown's CJS→ESM conversion makes its lazy `require('node:*')` return `undefined`; adds `import.meta.url ?? "file:///"` to `fileURLToPath(import.meta.url)` and `createRequire(import.meta.url)`; and polyfills `console.createTask`, which workerd defines but throws on and React 19 calls in dev. The polyfill goes in through both a transform and an optimizeDeps Rolldown plugin, so pre-bundled React gets it too |
+| `payloadOptimizeDeps`  | vinext                  | Per-environment optimizeDeps: excludes packages that break pre-bundling, force-includes CJS deps of excluded packages in `client`, and pre-declares RSC deps in `rsc` so a cold start does not discover them one re-optimize at a time. Adds every `next/*` alias specifier from the resolved config to `client`, so the optimizer does not discover them at runtime and reload the page                                                                                                                                                                                                        |
+| `payloadCjsTransform`  | Vite                    | For `node_modules` files outside optimizeDeps: replaces module-scope `this` with `globalThis` in UMD wrappers and TypeScript CJS helpers, and in `client` wraps `module.exports` with ESM scaffolding. Skips `react`, `react-dom`, `react-server-dom-webpack` and `scheduler`                                                                                                                                                                                                                                                                                                                   |
+| `payloadRscRuntime`    | vinext / workerd / pnpm | In server environments: resolves `file-type` to its Node entry, which exports `fileTypeFromFile`; turns `@payloadcms/drizzle`'s `createRequire` load of `drizzle-kit/api` into a static import in dev, so the dev schema push runs in workerd, and a no-op stub in builds. In `rsc`: rewrites `react-server-dom-webpack`'s "Client Component" throws to `return undefined`, dropping non-serializable values (functions, RegExps) at the server/client boundary                                                                                                                                 |
 
 ## Build-time patches
 
 Each rewrite this plugin applies to another package's code is declared as data
 (`PATCH_MANIFEST` in [`../src/main.ts`](../src/main.ts)). The table below is
 generated from those declarations, and a unit test fails when it drifts from
-them. Every entry works on Next.js already; the entries exist because vinext
-reimplements Next.js's framework layer on Vite.
+them.
 
 <!-- patch-table:begin — generated from PATCH_MANIFEST by scripts/patch-table.ts; edit the src/ declarations, then `pnpm run docs:patches` -->
 
@@ -45,9 +38,8 @@ reimplements Next.js's framework layer on Vite.
 
 ## Drift detection
 
-The patches above match patterns in vinext's shipped `dist`. When vinext
-restructures, a pattern can stop matching and the patch silently becomes a
-no-op — the build still succeeds and unit tests (which use synthetic
-fixtures) still pass. `test/patch-targets.test.ts` reads the _real_ installed
-vinext and asserts each patch target still exists; a failure there means
-"re-verify this workaround against the new vinext".
+The AST patches match function shapes in undici and `react-server-dom-webpack`.
+When either changes shape, the patch stops matching and does nothing: the build
+succeeds and the unit tests, which use synthetic fixtures, still pass.
+`test/patch-targets.test.ts` reads the installed vinext's `dist`, but checks
+targets that no current patch uses, so it does not catch this.

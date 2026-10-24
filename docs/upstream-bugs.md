@@ -1,253 +1,162 @@
-# Compatibility issues worked around by this plugin
+# Upstream bugs this plugin works around
 
-Every issue listed here works fine on Next.js. They exist because
-vinext reimplements Next.js's framework layer on top of Vite, and
-these reimplementations have gaps. For each issue, we document what
-Next.js does differently and why the gap exists.
+Each entry gives what breaks, the patch (its `PATCH_MANIFEST` id, tabulated in
+[`internals.md`](internals.md)), and when the patch can go.
 
 ---
 
-## Non-serializable RSC values not silently dropped
+## Non-serializable RSC values throw
 
-**Responsibility:** vinext
-**Repo:** https://github.com/cloudflare/vinext
-**Upstream:** https://github.com/cloudflare/vinext/issues/237
-**Status:** OPEN. PR #250 only makes the throw clearer; it does not drop the
-value. `react-server-dom-webpack@19.2.8` still carries the "Client Component"
-throws the patch rewrites.
+**Patch:** `rsc-serializer-throws` (`payloadRscRuntime`)
+**Upstream:** https://github.com/cloudflare/vinext/issues/237 (open). PR #250,
+merged, improves the error message only.
 
-**What breaks:** React's RSC serializer throws when functions, RegExps,
-or class instances cross the server/client boundary. Payload field configs
-contain `access` functions, `hooks`, `onInit`, validation RegExps, etc.
-Every admin page fails.
+**What breaks:** React's RSC serializer throws when functions, RegExps or
+class instances cross the server/client boundary. Payload field configs carry
+`access` functions, `hooks`, `onInit` and validation RegExps, so every admin
+page fails. `react-server-dom-webpack@19.3.1`, the version vinext 1.2.1
+requires, still has the "Client Component" throws.
 
-**Why Next.js works:** Next.js catches these throws in its RSC integration
-layer (`packages/next/src/server/app-render/`) and silently drops the
-values — they become `undefined` on the client. This is intentional
-production behavior, not a bug suppression.
+**Patch:** rewrites those throw statements to `return undefined`, so the
+values arrive on the client as `undefined`.
 
-**Our workaround:** `payloadRscRuntime` patches the throw statements in
-`react-server-dom-webpack` to `return undefined`, so rendering never
-aborts. (Note: unlike Next.js, which catches the throw in its integration
-layer, we prevent it at the source — the observable behavior matches.)
+**Remove when:** vinext's RSC pipeline tolerates non-serializable config
+values.
 
 ---
 
 ## `console.createTask` throws "not implemented"
 
-**Responsibility:** workerd (Cloudflare Workers runtime)
-**Repo:** https://github.com/cloudflare/workerd
+**Patch:** `workerd-console-createtask` (`payloadWorkerdCompat`)
 **Upstream:** https://github.com/cloudflare/workerd/issues/6408,
-https://github.com/cloudflare/workerd/issues/6488
-**Status:** both OPEN.
+https://github.com/cloudflare/workerd/issues/6488 (both open)
 
-**What breaks:** workerd defines `console.createTask` but throws when
-called. React 19 dev mode checks for the method's existence and calls it
-for async stack traces, causing a crash.
+**What breaks:** workerd defines `console.createTask` but throws when it is
+called. React 19 dev mode calls it for async stack traces.
 
-**Why Next.js works:** Next.js runs RSC in Node.js (or Edge Runtime),
-neither of which has a broken `console.createTask`. This is specific to
-workerd's polyfill.
+**Patch:** prepends a polyfill that replaces the throwing method with a no-op,
+through both a `transform` hook and an `optimizeDeps.rolldownOptions` plugin
+(for pre-bundled React), in `rsc` and `ssr`. The two share one Worker isolate,
+so whichever React copy evaluates first meets the throwing method.
 
-**Our workaround:** `payloadWorkerdCompat` prepends a try/catch polyfill
-that replaces the broken implementation with a no-op. Injected via both
-Vite `transform` hook (for non-pre-bundled modules) and
-`optimizeDeps.rolldownOptions.plugins` (for pre-bundled deps like React), in
-both `rsc` and `ssr`: the two share one Worker isolate, and whichever React
-copy evaluates first meets the throwing method.
+**Remove when:** workerd makes `console.createTask` a no-op instead of
+throwing.
 
 ---
 
-## `node:*` CJS requires bypass cloudflare plugin's resolveId filter
+## Node builtins in workerd
 
-**Responsibility:** Rolldown / @cloudflare/vite-plugin
-**Repo:** https://github.com/rolldown/rolldown (Rolldown), https://github.com/cloudflare/workers-sdk (cloudflare plugin)
+**Patch:** `workerd-node-builtin-shims` (`payloadWorkerdCompat`)
 
-**What breaks:** The @cloudflare/vite-plugin resolves `node:*` imports to
-unenv polyfills via a resolveId hook with a Rolldown `filter` option. When
-a CJS module uses `require('node:worker_threads')` (as undici does in
-lazy-loaded feature detectors), Rolldown may not fire the filtered hook
-for the CJS require call. The `node:*` import goes unresolved.
+**What breaks:** workerd does not provide every Node builtin that Payload's
+dependency graph imports.
 
-**Why Next.js works:** Next.js externalizes Node.js builtins during SSR
-bundling. They resolve at runtime against the Node.js standard library.
+**Patch:** a `resolveId` hook without a filter resolves every `node:*`
+specifier in workerd environments to `unenv/node/*`, falling back to Vite's
+own resolution when unenv has no shim.
+`@cloudflare/vite-plugin`'s own `node:*` resolution runs through a filtered
+hook.
 
-**Our workaround:** `payloadWorkerdCompat` provides a filterless
-resolveId fallback that catches any `node:*` specifier missed by the
-cloudflare plugin and routes it to `unenv/node/${bare}`.
+**Remove when:** workerd's Node compatibility covers the builtins Payload
+pulls in.
 
 ---
 
-## undici `detectRuntimeFeatureByExportedProperty` crashes on void
+## undici's runtime feature probe reads a property off `undefined`
 
-**Responsibility:** Rolldown (CJS→ESM interop)
+**Patch:** `workerd-undici-feature-detect` (`payloadWorkerdCompat`)
 
-**What breaks:** undici's `runtime-features.js` uses lazy loaders like
-`() => require('node:worker_threads')` to detect runtime features.
-Rolldown's CJS→ESM interop converts this to `() => init_worker_threads()`
-— an ESM namespace initializer that returns `void`, not the module object.
-`detectRuntimeFeatureByExportedProperty` then tries to access a property
-on `undefined`, throwing a TypeError (`markAsUncloneable is not a function`).
+**What breaks:** undici's `runtime-features.js` probes for features with lazy
+loaders such as `() => require('node:worker_threads')`. Rolldown converts
+these to ESM initializers that return `undefined`, so
+`detectRuntimeFeatureByExportedProperty` throws a `TypeError` reading a
+property of `undefined`.
 
-**Why Next.js works:** Next.js externalizes undici during SSR. The
-`require()` calls execute against real Node.js modules that return proper
-objects.
+**Patch:** wraps the function body in `try … catch { return false }`, so
+undici falls back to its no-op implementations.
 
-**Our workaround:** `payloadWorkerdCompat` wraps
-`detectRuntimeFeatureByExportedProperty` in a try-catch so the detection
-returns `false` and undici falls back to its no-op stubs.
+**Remove when:** Rolldown preserves `require()` semantics for externalized
+Node builtins, or undici guards its probe.
 
 ---
 
-## `import.meta.url` undefined in bundled workerd asset chunks
+## `import.meta.url` undefined in bundled workerd modules
 
-**Responsibility:** workerd (Cloudflare Workers runtime)
-**Repo:** https://github.com/cloudflare/workerd
-**Upstream:** https://github.com/cloudflare/workerd/issues/2963
-**Status:** OPEN in workerd. vinext `1.0.0-beta.7` works around it itself:
-https://github.com/cloudflare/vinext/pull/2942 (`vinext:import-meta-url`,
-`enforce: "post"`) rewrites every `import.meta.url` read in a `node_modules`
-module for non-client environments — to the source `file://` URL in dev and
-to the emitted chunk's identity in builds — naming Payload's
-`fileURLToPath(import.meta.url)` / `createRequire(import.meta.url)` shapes as
-its motivating case. Under `vinextPayload()` our guard therefore runs first
-and is then overwritten by vinext's rewrite (`X ?? "file:///"` where `X` is
-vinext's string), so it is inert there. It stays for
-`vinextPayloadWorker()`, which runs without vinext.
+**Patch:** `workerd-import-meta-url-guard` (`payloadWorkerdCompat`)
+**Upstream:** https://github.com/cloudflare/workerd/issues/2963 (open)
 
-**What breaks:** Bundled asset modules deployed to workerd may have
-`import.meta.url` as `undefined`. Packages like Payload use
-`fileURLToPath(import.meta.url)` or `createRequire(import.meta.url)` at
-module scope to derive `__dirname` or load native addons. These crash
-during Cloudflare's upload validation step (which executes the module to
-verify it has event handlers). `import.meta.dirname` is also `undefined`.
+**What breaks:** bundled modules in workerd can see `import.meta.url` as
+`undefined`. Payload calls `fileURLToPath(import.meta.url)` and
+`createRequire(import.meta.url)` at module scope, which crashes module
+initialisation, including during Cloudflare's upload validation.
 
-**Why Next.js works:** Next.js SSR runs in Node.js where `import.meta.url`
-is always set to the module's `file://` URL. Even during production builds,
-Next.js resolves `__dirname` at build time via webpack's `__dirname` shim.
+**Patch:** rewrites both calls to use `import.meta.url ?? "file:///"`.
 
-**Our workaround:** `payloadWorkerdCompat` transforms both
-`fileURLToPath(import.meta.url)` and `createRequire(import.meta.url)` to
-use `import.meta.url ?? "file:///"`. The dummy URL produces `"/"` — any
-filesystem operation using this path will fail, but those code paths
-aren't reached in Workers.
+vinext ≥ 1.0.0-beta.7 rewrites dependency `import.meta.url` reads itself
+([#2942](https://github.com/cloudflare/vinext/pull/2942)), so under
+`vinextPayload()` the guard is inert. `vinextPayloadWorker()` runs without
+vinext and needs it.
 
 **Remove when:** workerd provides `import.meta.url` for bundled modules, or
-`@cloudflare/vite-plugin` rewrites it the way vinext now does — either
-covers `vinextPayloadWorker()`, the composition that still needs this guard.
+`@cloudflare/vite-plugin` rewrites it the way vinext does.
 
 ---
 
-## Transitive deps unavailable in workerd
+## `file-type` resolves to `core.js`
 
-**Responsibility:** workerd / Payload packaging
+**Patch:** `file-type-node-entry` (`payloadRscRuntime`)
 
-**What breaks:** `file-type` is a direct dependency of `payload` itself, used
-for upload type detection. Its `exports` map serves `index.js` under the `node`
-condition and `core.js` otherwise; server environments resolve `core.js`, which
-lacks the `fileTypeFromFile` that Payload imports. `drizzle-kit/api` is
-loaded by `@payloadcms/drizzle` through `createRequire(import.meta.url)`, a
-runtime `require()` workerd cannot execute, and `@payloadcms/drizzle` does not
-declare it, so under pnpm it only resolves from the adapter packages
-(`@payloadcms/db-d1-sqlite` and siblings).
+**What breaks:** `file-type` is a direct dependency of `payload`. Its
+`exports` map serves `index.js` under the `node` condition and `core.js`
+otherwise. Server environments resolve `core.js`, which lacks the
+`fileTypeFromFile` that Payload imports.
 
-**Why Next.js works:** webpack resolves `file-type` with the `node`
-condition. It traverses the filesystem directly, bypassing pnpm's symlink
-layout. And `drizzle-kit/api` is only used during migration, not at request
-time — Next.js's tree-shaking removes it from the runtime bundle.
+**Patch:** resolves `file-type` to `file-type/node` from the importing module.
+`strtok3`, which the Node entry imports, has the same condition split and no
+Node subpath, so in workerd `fileTypeFromFile` still throws. Payload calls it
+only for temp files and local disk storage; buffer detection, which uploads
+use, works.
 
-**Our workaround:** `payloadRscRuntime` resolves `file-type` to `file-type/node`
-from the importing module, so Payload's upload checks run real detection. Its
-Node APIs come from workerd's `nodejs_compat`, which Payload already requires
-for `fs`. `strtok3`, which the Node entry imports, has the same condition split
-and no Node subpath, so in workerd it resolves to `core.js` and
-`fileTypeFromFile` throws. Payload calls that only for temp files and local
-disk storage; buffer detection, the path uploads take, works. For `drizzle-kit/api`, a `transform` hook rewrites the
-`require('drizzle-kit/api')` call: in dev to a static import (resolved through
-the adapter packages when `@payloadcms/drizzle` cannot see it), so Payload's
-dev schema push runs inside workerd; in builds to inline no-op stubs, because
-production never pushes and drizzle-kit is 7 MB.
+**Remove when:** server environments resolve `file-type` with the `node`
+condition.
 
 ---
 
-## CJS packages fail in App Router dev
+## `drizzle-kit/api` loaded through `createRequire`
 
-**Responsibility:** vinext
-**Repo:** https://github.com/cloudflare/vinext
-**Upstream:** https://github.com/cloudflare/vinext/issues/666
-**Status:** OPEN. PR #665 is also open and covers Pages Router only; App
-Router CJS-through-plugin-rsc is unaddressed.
+**Patch:** `rsc-runtime-stubs` (`payloadRscRuntime`)
 
-**What breaks:** App Router forces `noExternal: true` for RSC/SSR
-environments, so raw CommonJS packages from `node_modules` are pushed
-through Vite/plugin-rsc transforms. CJS patterns like `module.exports`
-and `this`-as-global cause parse errors ("A module cannot have multiple
-default exports") or runtime failures.
+**What breaks:** `@payloadcms/drizzle` loads `drizzle-kit/api` with
+`createRequire(import.meta.url)`, a runtime `require()` workerd cannot run.
+`@payloadcms/drizzle` does not declare `drizzle-kit`, so under pnpm it
+resolves only from the adapter packages (`@payloadcms/db-d1-sqlite` and
+siblings).
 
-**Why Next.js works:** Next.js externalizes most `node_modules` during
-SSR and uses webpack's CJS interop layer for the rest. The bundler
-natively understands `module.exports` and `this`-as-global.
+**Patch:** rewrites the `require('drizzle-kit/api')` call. In dev it becomes
+a static import, resolved through the adapter packages when needed, so
+Payload's dev schema push runs in workerd. In builds it becomes inline no-op
+stubs: production never pushes, and `drizzle-kit/api` is 7 MB.
 
-**Our workaround:** `payloadCjsTransform` rewrites `this` → `globalThis`
-in UMD/CJS wrappers and wraps `module.exports` with ESM scaffolding.
-Skips React/ReactDOM to avoid double-wrapping.
-
-**Remove when:** vinext fixes #666 natively. PR #665 fixes Pages Router
-only; App Router needs separate work.
+**Remove when:** workerd supports `require()`, or Payload lazy-loads
+drizzle-kit.
 
 ---
 
-## ~~Navigation shim returns wrong values during hydration~~ (retracted 2026-07-18)
+## CommonJS in `node_modules` outside pre-bundling
 
-We previously claimed vinext's `next/navigation` shim served fallback
-values (`"/"`, `{}`, empty search) during hydration because its
-`getServerSnapshot` reads a server context that is `null` on the
-client, and shipped `payloadNextNavigationFix` to patch the shim on
-disk.
+**Patch:** `cjs-transform` (`payloadCjsTransform`)
+**Upstream:** https://github.com/cloudflare/vinext/issues/666 (open). PR #665,
+open, covers Pages Router only.
 
-Retracted: the patch had **never applied**. vinext deliberately keeps
-`next/navigation` out of `resolve.alias` (shims marked
-`reactServer: true` resolve through a `resolveId` hook instead), so
-the plugin's alias lookup found nothing and it was a silent no-op —
-on 0.1.3 as well as 1.0.0-beta.2. With the patch inert, the admin e2e
-suite passes including an explicit no-hydration-errors assertion:
-the browser entry calls `setClientParams()` before `hydrateRoot()`,
-so the client store is already correct at hydration time. The plugin
-was removed; no workaround is needed.
+**What breaks:** vinext's App Router sets `noExternal: true` for the RSC and
+SSR environments, so CommonJS from `node_modules` goes through Vite's
+transforms. Module-scope `this` is `undefined` there, which breaks UMD
+wrappers and TypeScript CJS helpers. In the browser, CJS files served through
+`/@fs/` without pre-bundling fail on `module.exports`.
 
----
+**Patch:** replaces module-scope `this` with `globalThis` in every
+environment, and in `client` wraps `module.exports` with ESM scaffolding.
+Skips `react`, `react-dom`, `react-server-dom-webpack` and `scheduler`.
 
-## `NEXT_REDIRECT` errors leak through RSC stream — RESOLVED in vinext 0.1.x
-
-**Responsibility:** vinext
-**Repo:** https://github.com/cloudflare/vinext
-**Upstream:** fixed by https://github.com/cloudflare/vinext/pull/1742,
-https://github.com/cloudflare/vinext/pull/1878 and
-https://github.com/cloudflare/vinext/pull/2000 (all merged June 2026)
-**Status:** RESOLVED upstream; the workaround is removed.
-
-> Earlier revisions of this section cited vinext #654 as the tracking
-> issue. That was wrong: #654 is "RSC parity gap: action redirects use
-> hard navigation instead of soft RSC navigation", a _separate_ concern
-> that is **still open**. It never tracked the `NEXT_REDIRECT` leak
-> described here.
-
-**What used to break:** Payload uses `redirect()` for auth checks. On
-vinext `0.0.x`, a `redirect()` thrown during async rendering inside
-`renderToReadableStream` wasn't intercepted — the error entered the RSC
-stream and surfaced as an uncaught `NEXT_REDIRECT` on the client. The
-former `payloadRedirectFix` injected a client-side script that caught the
-leaked error and performed `location.replace()`.
-
-**What fixed it:** vinext `0.1.x` handles page-level redirects natively.
-`dist/server/app-page-execution.js` (verified in `0.1.3`) converts a
-thrown `redirect()` into a proper response — `new Response(null, { Location,
-status })` (HTTP 302/307) for document requests, a meta-refresh HTML
-fallback, and an RSC-encoded redirect (`buildRscRedirectFlightStream` +
-client `RedirectErrorBoundary`) for flight navigations. Release note #1742
-("hard navigate streamed redirects", `0.1.0`) covers the streaming case the
-workaround targeted; #2000 and #1878 round out fallback/console handling.
-
-Verified empirically: the admin e2e auth redirect (`/admin` →
-`create-first-user`) passes with the plugin removed and no leaked
-`NEXT_REDIRECT` / hydration errors.
+**Remove when:** Vite converts CJS to ESM for files served outside optimizeDeps
+pre-bundling.

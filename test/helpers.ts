@@ -149,6 +149,37 @@ export function startProductionServer(
 	return startServer(testDir, helpers, "start", readyTimeoutMs);
 }
 
+// The server runs under `npm run`, which can exit before the server does;
+// signalling the whole process group stops the server and frees its port
+async function killServer(proc: ChildProcess) {
+	const { pid } = proc;
+	if (pid === undefined) {
+		throw new Error("server process has no pid");
+	}
+	const signalGroup = (signal: NodeJS.Signals) => {
+		try {
+			process.kill(-pid, signal);
+		} catch (error) {
+			// NOTE: ESRCH means the group already exited, which is the goal
+			if (
+				!(error instanceof Error && "code" in error && error.code === "ESRCH")
+			) {
+				throw error;
+			}
+		}
+	};
+
+	signalGroup("SIGTERM");
+	await new Promise<void>((resolve) => {
+		const timeout = setTimeout(resolve, 2000);
+		proc.on("exit", () => {
+			clearTimeout(timeout);
+			resolve();
+		});
+	});
+	signalGroup("SIGKILL");
+}
+
 async function startServer(
 	testDir: string,
 	helpers: ReturnType<typeof createProjectHelpers>,
@@ -161,6 +192,7 @@ async function startServer(
 	const proc = spawn("npm", ["run", script], {
 		cwd: testDir,
 		stdio: "pipe",
+		detached: true,
 		env: {
 			...childEnv,
 			NODE_ENV: role === "dev" ? "development" : "production",
@@ -178,35 +210,13 @@ async function startServer(
 			readyTimeoutMs,
 		);
 	} catch (error) {
-		proc.kill("SIGTERM");
-		await new Promise<void>((resolve) => {
-			const timeout = setTimeout(() => {
-				proc.kill("SIGKILL");
-				resolve();
-			}, 2000);
-			proc.on("exit", () => {
-				clearTimeout(timeout);
-				resolve();
-			});
-		});
+		await killServer(proc);
 		throw error;
 	}
 
 	const port = Number.parseInt(match[1], 10);
 
-	const kill = async () => {
-		proc.kill("SIGTERM");
-		await new Promise<void>((resolve) => {
-			const timeout = setTimeout(() => {
-				proc.kill("SIGKILL");
-				resolve();
-			}, 2000);
-			proc.on("exit", () => {
-				clearTimeout(timeout);
-				resolve();
-			});
-		});
-	};
+	const kill = () => killServer(proc);
 
 	return { port, proc, kill, [Symbol.asyncDispose]: kill };
 }
@@ -861,6 +871,50 @@ export async function scaffoldCloudflareProject(
 			`${anchor}\n      D1: bindings.d1(),\n      R2: bindings.r2(),\n      PAYLOAD_SECRET: bindings.secret(),`,
 		),
 	);
+}
+
+/**
+ * Scaffold a Payload project from the postgres template, swapped to SQLite,
+ * on the Node target.
+ */
+export async function scaffoldSqliteProject(
+	testDir: string,
+	helpers: ReturnType<typeof createProjectHelpers>,
+	pluginRoot: string,
+) {
+	await helpers.cleanup();
+	await mkdir(testDir, { recursive: true });
+	await helpers.npx([
+		"--yes",
+		"degit",
+		"--force",
+		// Pinned to the release tag: `main` carries the next major's templates,
+		// which import exports the pinned packages do not have.
+		`payloadcms/payload/templates/with-postgres#v${VERSIONS.payload}`,
+		testDir,
+	]);
+
+	const pkg = JSON.parse(await helpers.read("package.json"));
+	const payloadVersion = pkg.dependencies.payload || VERSIONS.payload;
+	delete pkg.dependencies["@payloadcms/db-postgres"];
+	pkg.dependencies["@payloadcms/db-sqlite"] = payloadVersion;
+	delete pkg.devDependencies?.["@vitejs/plugin-react"];
+	await helpers.write("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
+
+	const config = (await helpers.read("src/payload.config.ts"))
+		.replace(
+			"import { postgresAdapter } from '@payloadcms/db-postgres'",
+			"import { sqliteAdapter } from '@payloadcms/db-sqlite'",
+		)
+		.replace(
+			/db: postgresAdapter\(\{[\s\S]*?\}\),/,
+			"db: sqliteAdapter({ client: { url: 'file:./data/payload.db' } }),",
+		);
+	await helpers.write("src/payload.config.ts", config);
+	await mkdir(join(testDir, "data"), { recursive: true });
+	await helpers.write(".env", `PAYLOAD_SECRET=${crypto.randomUUID()}\n`);
+
+	await installVinextStack(helpers, pluginRoot);
 }
 
 /**

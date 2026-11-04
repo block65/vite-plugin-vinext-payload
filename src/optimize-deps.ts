@@ -21,7 +21,7 @@ export const optimizeDepsPatch = {
 		"per-entry conditions in payload-packages.ts — the lists shrink entry by entry",
 } satisfies PatchDeclaration;
 
-export interface PayloadOptimizeDepsOptions {
+export type PayloadOptimizeDepsOptions = {
 	/** Additional packages to exclude from optimizeDeps. */
 	extraExcludes?: string[];
 
@@ -29,17 +29,9 @@ export interface PayloadOptimizeDepsOptions {
 	 * Explicit list of environments to patch. When undefined, every env in
 	 * `config.environments` is patched.
 	 *
-	 * This used to patch only environments that already declared
-	 * `optimizeDeps`, inferring "this environment optimizes" from the
-	 * framework's config shape. Both vinext 0.1.3 (`dist/index.js`: rsc 862,
-	 * ssr 879, client 890) and 1.0.0-beta.2 (rsc 1307, ssr 1330, client 1342,
-	 * inside `if (hasAppDir)`) do declare them — but the coupling is fragile:
-	 * the line numbers moved across one minor, the declarations are
-	 * conditional, and an environment created after our `enforce: "pre"`
-	 * `config` hook (as `@cloudflare/vite-plugin` does) is invisible to it.
-	 *
-	 * Excludes are cheap on an environment that never optimizes, so patch
-	 * unconditionally rather than inferring intent from the config shape.
+	 * Patching every env reaches the ones `@cloudflare/vite-plugin` creates
+	 * after our `config` hook. Excludes cost nothing on an env that never
+	 * optimizes.
 	 */
 	envs?: string[];
 
@@ -57,7 +49,7 @@ export interface PayloadOptimizeDepsOptions {
 	 * workers with no RSC pipeline.
 	 */
 	rscEnv?: string | false;
-}
+};
 
 /**
  * Collect all `next/*` alias specifiers from the resolved Vite config.
@@ -65,13 +57,13 @@ export interface PayloadOptimizeDepsOptions {
  * vinext defines aliases like `next/link` → `vinext/dist/shims/link.js`
  * and `next/link.js` → same target. The optimizer treats each specifier
  * independently, so we must include every variant to avoid runtime
- * discovery → full page reload on cold start.
+ * discovery → full page reload on cold start
  */
 function getNextAliasSpecifiers(
 	aliases: ResolvedConfig["resolve"]["alias"],
 ): string[] {
 	// RegExp `find` entries have no single specifier to pre-bundle, so only
-	// string finds contribute.
+	// string finds contribute
 	const candidates = Array.isArray(aliases)
 		? aliases.map((entry) => entry.find)
 		: Object.keys(aliases);
@@ -92,7 +84,7 @@ function getNextAliasSpecifiers(
  * In `configResolved`, all `next/*` alias specifiers are auto-discovered
  * and added to the client optimizeDeps include list. This prevents the
  * optimizer from discovering them at runtime (which causes a full page
- * reload and duplicate React instances).
+ * reload and duplicate React instances)
  */
 export function payloadOptimizeDeps(
 	options: PayloadOptimizeDepsOptions | string[] = {},
@@ -103,7 +95,9 @@ export function payloadOptimizeDeps(
 	const {
 		extraExcludes = [],
 		envs: explicitEnvs,
+		// oxlint-disable-next-line typescript/no-open-string-fallback -- vinext's own env name
 		clientEnv = "client",
+		// oxlint-disable-next-line typescript/no-open-string-fallback -- vinext's own env name
 		rscEnv = "rsc",
 	} = normalized;
 	const excludes = [...OPTIMIZE_DEPS_EXCLUDE, ...extraExcludes];
@@ -113,7 +107,7 @@ export function payloadOptimizeDeps(
 		enforce: "pre",
 		// `configEnvironment` rather than `config`: it fires once per
 		// environment, after every plugin has declared its own, including
-		// environments created later than our `enforce: "pre"` `config` hook runs.
+		// environments created later than our `enforce: "pre"` `config` hook runs
 		configEnvironment(name, envConfig) {
 			if (explicitEnvs && !explicitEnvs.includes(name)) {
 				return;
@@ -145,12 +139,15 @@ export function payloadOptimizeDeps(
 			if (clientEnv === false) {
 				return;
 			}
+
 			const nextAliases = getNextAliasSpecifiers(config.resolve.alias);
+
 			if (nextAliases.length === 0) {
 				return;
 			}
 
 			const resolvedClient = config.environments?.[clientEnv];
+
 			if (!resolvedClient) {
 				return;
 			}

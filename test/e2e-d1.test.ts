@@ -5,11 +5,11 @@
  * migrates to vinext, and verifies Payload works inside workerd — under
  * `vite dev`, and again from the production build served by `vite preview`.
  * Tests the admin UI to exercise React module loading — this is the
- * only test that runs inside workerd where console.createTask throws.
+ * only test that runs inside workerd where console.createTask throws
  */
 
-import { join } from "node:path";
-import { afterAll, beforeAll, describe, it } from "vitest";
+import path from "node:path";
+import { afterAll, beforeAll, describe, test } from "vitest";
 import {
 	assertStatus,
 	createProjectHelpers,
@@ -20,8 +20,8 @@ import {
 	waitForServerReady,
 } from "./helpers.ts";
 
-const PLUGIN_ROOT = join(import.meta.dirname, "..");
-const TEST_DIR = join(import.meta.dirname, ".test-project-d1");
+const PLUGIN_ROOT = path.join(import.meta.dirname, "..");
+const TEST_DIR = path.join(import.meta.dirname, ".test-project-d1");
 const helpers = createProjectHelpers(TEST_DIR);
 
 describe("e2e: cloudflare d1", () => {
@@ -40,18 +40,18 @@ describe("e2e: cloudflare d1", () => {
 	});
 
 	// `assertStatus` throws on anything outside the allow-list, so it carries
-	// the assertion — a further `toBeLessThan(500)` could never fail.
-	it("admin UI loads in workerd without crashing", async () => {
+	// the assertion — a further `toBeLessThan(500)` could never fail
+	test("admin UI loads in workerd without crashing", async () => {
 		await assertStatus(server.port, "/admin", [200, 302, 307]);
 	});
 
-	it("admin API responds in workerd", async () => {
+	test("admin API responds in workerd", async () => {
 		await assertStatus(server.port, "/api/users", [200, 401, 403]);
 	});
 
 	// `/init` queries the users table with no access check, so only a pushed
 	// schema answers 200; `/api/users` refuses anonymous reads before any query
-	it("Payload pushes its dev schema to D1", async () => {
+	test("Payload pushes its dev schema to D1", async () => {
 		await assertStatus(server.port, "/api/users/init", [200]);
 	});
 
@@ -68,11 +68,11 @@ describe("e2e: cloudflare d1", () => {
 			await preview?.kill();
 		});
 
-		it("the built Worker serves the admin UI", async () => {
+		test("the built Worker serves the admin UI", async () => {
 			await assertStatus(preview.port, "/admin", [200, 302, 307]);
 		});
 
-		it("the built Worker serves the admin API", async () => {
+		test("the built Worker serves the admin API", async () => {
 			await assertStatus(preview.port, "/api/users", [200, 401, 403]);
 		});
 	});

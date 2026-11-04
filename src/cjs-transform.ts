@@ -1,7 +1,7 @@
 import type { Plugin } from "vite";
 import type { PatchDeclaration } from "./patch-manifest.ts";
 
-// Pre-compiled regexes — these run on every node_modules file.
+// Pre-compiled regexes — these run on every node_modules file
 const REACT_EXCLUDE_RE =
 	/node_modules\/(react|react-dom|react-server-dom-webpack|scheduler)(\/|$)/;
 const TS_CJS_HELPER_RE = /\(this && this\.(__\w+)\)/g;
@@ -18,7 +18,7 @@ export const cjsTransformPatch = {
 		"Vite converts CJS to ESM for files served outside optimizeDeps pre-bundling",
 } satisfies PatchDeclaration;
 
-export interface PayloadCjsTransformOptions {
+export type PayloadCjsTransformOptions = {
 	/**
 	 * Names of Vite environments this transform applies to. When undefined
 	 * (the default used by `vinextPayload`), the transform runs in every
@@ -28,7 +28,7 @@ export interface PayloadCjsTransformOptions {
 	 * clobber named exports of unrelated CJS deps.
 	 */
 	envs?: string[];
-}
+};
 
 /**
  * Single-pass CJS/UMD compatibility transform for node_modules.
@@ -42,10 +42,10 @@ export interface PayloadCjsTransformOptions {
  *
  * 2. **UMD `this` wrappers** — `})(this, function(...) {` breaks in
  *    Vite's strict ESM module runner where `this` is `undefined` at
- *    module scope. Replaced with `globalThis`.
+ *    module scope. This rewrites it to `globalThis`.
  *
  * 3. **TS CJS helpers** — `(this && this.__importDefault)` also breaks
- *    with `undefined` `this`. Replaced with `globalThis`.
+ *    with `undefined` `this`. This rewrites it to `globalThis`
  */
 export function payloadCjsTransform(
 	options: PayloadCjsTransformOptions = {},
@@ -68,18 +68,18 @@ export function payloadCjsTransform(
 
 				// Never touch React/ReactDOM/react-server-dom-webpack —
 				// Rolldown handles their CJS→ESM natively. Our wrapper would
-				// shadow `module` and break their conditional require() pattern.
+				// shadow `module` and break their conditional require() pattern
 				if (REACT_EXCLUDE_RE.test(id)) {
 					return;
 				}
 
-				// --- this → globalThis replacements (all environments) ---
+				// this → globalThis replacements (all environments)
 
 				const withGlobalThis = code
 					.replaceAll("})(this,", "})(globalThis,")
 					.replace(TS_CJS_HELPER_RE, "(globalThis && globalThis.$1)");
 
-				// --- module.exports wrapping (client only) ---
+				// module.exports wrapping (client only)
 
 				const needsExportWrap =
 					this.environment?.name === "client" &&
@@ -96,7 +96,7 @@ export function payloadCjsTransform(
 					: withGlobalThis;
 
 				if (result !== code) {
-					return { code: result, map: null };
+					return { code: result, map: null }; // oxlint-disable-line unicorn/no-null -- Rollup's no-sourcemap value
 				}
 			},
 		},

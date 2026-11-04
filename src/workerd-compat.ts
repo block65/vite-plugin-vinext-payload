@@ -48,11 +48,11 @@ export const nodeBuiltinShimsPatch = {
 // Workerd's node:console polyfill defines console.createTask but throws
 // "not implemented" when called. React 19 dev mode checks for its
 // existence and calls it for async stack traces.
-// Upstream: workerd should make createTask a no-op, not throw.
+// Upstream: workerd should make createTask a no-op, not throw
 const CONSOLE_CREATE_TASK_POLYFILL =
 	"try{console.createTask('_')}catch(_e){console.createTask=function(){return{run:function(f){return f()}}}};\n";
 
-export interface PayloadWorkerdCompatOptions {
+export type PayloadWorkerdCompatOptions = {
 	/**
 	 * Names of Vite environments running on workerd. These receive
 	 * `node:*` → `unenv` resolution, undici runtime-feature shims, and
@@ -66,7 +66,7 @@ export interface PayloadWorkerdCompatOptions {
 	 * bundle React). Defaults to `serverEnvs`.
 	 */
 	reactEnv?: string | string[] | false;
-}
+};
 
 function prependCreateTaskPolyfill(code: string): string {
 	return CONSOLE_CREATE_TASK_POLYFILL + code;
@@ -81,7 +81,7 @@ function needsCreateTaskPolyfill(code: string, id: string): boolean {
  * loader calls `require('node:X')`, which Rolldown converts to a
  * void-returning ESM initializer — reading a property off the resulting
  * `undefined` throws a TypeError. Caught, detection returns false and undici
- * falls back to its no-op stub.
+ * falls back to its no-op stub
  */
 function guardUndiciFeatureDetection(code: string): string {
 	const root = parse(Lang.JavaScript, code).root();
@@ -90,22 +90,24 @@ function guardUndiciFeatureDetection(code: string): string {
 		"function detectRuntimeFeatureByExportedProperty($A, $B) { $$$ }",
 	);
 	const body = func?.field("body");
+
 	if (!body) {
 		return code;
 	}
 
 	const range = body.range();
 
-	return (
-		code.slice(0, range.start.index) +
-		`{ try ${body.text()} catch { return false } }` +
-		code.slice(range.end.index)
-	);
+	return `${code.slice(
+		0,
+		range.start.index,
+	)}{ try ${body.text()} catch { return false } }${code.slice(
+		range.end.index,
+	)}`;
 }
 
 /**
  * In workerd, bundled asset modules may see `import.meta.url` as undefined.
- * Add a fallback so module init doesn't crash.
+ * Add a fallback so module init doesn't crash
  */
 function guardImportMetaUrl(code: string): string {
 	const root = parse(Lang.JavaScript, code).root();
@@ -127,6 +129,7 @@ export function payloadWorkerdCompat(
 ): Plugin {
 	const { serverEnvs = ["ssr", "rsc"], reactEnv = serverEnvs } = options;
 	const serverEnvSet = new Set(serverEnvs);
+
 	// Every one: rsc and ssr share one workerd isolate, so whichever React
 	// copy evaluates first meets the throwing console.createTask
 	const reactEnvSet = new Set(reactEnv === false ? [] : [reactEnv].flat());
@@ -149,7 +152,7 @@ export function payloadWorkerdCompat(
 									if (needsCreateTaskPolyfill(code, id)) {
 										return {
 											code: prependCreateTaskPolyfill(code),
-											map: null,
+											map: null, // oxlint-disable-line unicorn/no-null -- Rollup's no-sourcemap value
 										};
 									}
 								},
@@ -163,22 +166,27 @@ export function payloadWorkerdCompat(
 		resolveId: {
 			async handler(id, importer) {
 				const envName = this.environment?.name;
+
 				if (!envName || !serverEnvSet.has(envName)) {
-					return null;
+					return;
 				}
+
 				if (!id.startsWith("node:")) {
-					return null;
+					return;
 				}
+
 				const moduleName = id.slice(5);
+
 				try {
 					return await this.resolve(`unenv/node/${moduleName}`, importer, {
 						skipSelf: true,
 					});
 				} catch (err) {
 					// unenv doesn't ship a shim for every node builtin. Fall through
-					// to Vite's own resolution rather than failing the build.
+					// to Vite's own resolution rather than failing the build
 					logger.trace(`no unenv shim for ${id}`, err);
-					return null;
+
+					return;
 				}
 			},
 		},
@@ -186,8 +194,9 @@ export function payloadWorkerdCompat(
 		transform: {
 			handler(code, id) {
 				const envName = this.environment?.name;
+
 				if (!envName || !serverEnvSet.has(envName)) {
-					return null;
+					return;
 				}
 
 				const needsCreateTask =
@@ -201,7 +210,7 @@ export function payloadWorkerdCompat(
 					code.includes("createRequire(import.meta.url)");
 
 				if (!needsCreateTask && !needsUndici && !needsMetaUrl) {
-					return null;
+					return;
 				}
 
 				const withPolyfill = needsCreateTask
@@ -217,9 +226,10 @@ export function payloadWorkerdCompat(
 					: withUndici;
 
 				if (result !== code) {
-					return { code: result, map: null };
+					return { code: result, map: null }; // oxlint-disable-line unicorn/no-null -- Rollup's no-sourcemap value
 				}
-				return null;
+
+				return;
 			},
 		},
 	};

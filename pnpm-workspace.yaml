@@ -12,3 +12,5 @@ minimumReleaseAge: 1440
 overrides:
   "@rolldown/binding-wasm32-wasi": "-"
   "@oxc-parser/binding-wasm32-wasi": "-"
+  oxlint: npm:@block65/oxlint@>=1.88.0
+  oxlint-tsgolint: npm:@block65/oxlint-tsgolint@>=7.0.200400

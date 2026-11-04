@@ -10,11 +10,11 @@
  * The plugin is parameterized by `reactEnv` (which env loads React) and
  * `serverEnvs` (which envs need workerd polyfills). `vinextPayload`
  * defaults `reactEnv` to `"rsc"`; `vinextPayloadWorker` sets it to the
- * worker's own env name. Passing `false` disables it entirely.
+ * worker's own env name. Passing `false` disables it entirely
  */
 
 import type { Plugin } from "vite";
-import { assert, describe, expect, it } from "vitest";
+import { assert, describe, expect, test } from "vitest";
 import { vinextPayloadWorker } from "../src/main.ts";
 import { payloadWorkerdCompat } from "../src/workerd-compat.ts";
 
@@ -28,15 +28,18 @@ var enableOwnerStacks = typeof console.createTask === 'function';
 
 function callTransform(plugin: Plugin, env: string, code: string, id: string) {
 	const hook = plugin.transform;
+
 	if (typeof hook !== "function" && typeof hook?.handler !== "function") {
-		throw new Error("expected plugin.transform to expose a handler");
+		throw new TypeError("expected plugin.transform to expose a handler");
 	}
+
 	const handler = typeof hook === "function" ? hook : hook.handler;
 	const ctx = { environment: { name: env } };
+
 	return handler.call(ctx as never, code, id);
 }
 
-/** Narrows a Vite transform result to its emitted code without casting. */
+// Narrows a Vite transform result to its emitted code without casting.
 function hasCode(value: unknown): value is { code: string } {
 	return (
 		typeof value === "object" &&
@@ -62,17 +65,17 @@ const POLYFILL_PREFIX =
 	"try{console.createTask('_')}catch(_e){console.createTask=function(){return{run:function(f){return f()}}}};";
 
 describe("payloadWorkerdCompat: console.createTask polyfill", () => {
-	it("prepends the polyfill on React files in the configured rscEnv (default)", () => {
+	test("prepends the polyfill on React files in the configured rscEnv (default)", () => {
 		const plugin = payloadWorkerdCompat();
 		const result = callTransform(plugin, "rsc", REACT_FIXTURE, REACT_FILE_ID);
-		expect(result).not.toBeNull();
+		expect(result).not.toBeUndefined();
 		expect(result).not.toBeUndefined();
 		const out = transformedCode(result);
 		expect(out.startsWith(POLYFILL_PREFIX)).toBe(true);
 	});
 
-	it("prepends the polyfill when reactEnv matches a custom server env", () => {
-		// Mirrors vinextPayloadWorker's call: reactEnv === worker env name.
+	test("prepends the polyfill when reactEnv matches a custom server env", () => {
+		// Mirrors vinextPayloadWorker's call: reactEnv === worker env name
 		const plugin = payloadWorkerdCompat({
 			serverEnvs: ["app_cms"],
 			reactEnv: "app_cms",
@@ -87,11 +90,11 @@ describe("payloadWorkerdCompat: console.createTask polyfill", () => {
 		expect(out.startsWith(POLYFILL_PREFIX)).toBe(true);
 	});
 
-	it("skips the polyfill when reactEnv is false (regression guard)", () => {
+	test("skips the polyfill when reactEnv is false (regression guard)", () => {
 		// This is the bug that hit a real payload-cms auxiliary worker:
 		// reactEnv:false meant payload.config.ts's admin-component imports
 		// pulled React in but the polyfill never landed, so module init
-		// hit workerd's broken createTask and threw "not implemented".
+		// hit workerd's broken createTask and threw "not implemented"
 		const plugin = payloadWorkerdCompat({
 			serverEnvs: ["app_cms"],
 			reactEnv: false,
@@ -102,13 +105,14 @@ describe("payloadWorkerdCompat: console.createTask polyfill", () => {
 			REACT_FIXTURE,
 			REACT_FILE_ID,
 		);
+
 		// reactEnv:false must skip entirely. The transform signals "no change"
 		// with null, so that is the assertion — an early return here would let
-		// the test pass without checking anything.
-		expect(result).toBeNull();
+		// the test pass without checking anything
+		expect(result).toBeUndefined();
 	});
 
-	it("skips the polyfill in non-server envs even when code matches", () => {
+	test("skips the polyfill in non-server envs even when code matches", () => {
 		const plugin = payloadWorkerdCompat();
 		const result = callTransform(
 			plugin,
@@ -116,11 +120,12 @@ describe("payloadWorkerdCompat: console.createTask polyfill", () => {
 			REACT_FIXTURE,
 			REACT_FILE_ID,
 		);
-		// transform's outer guard returns null for non-server envs.
-		expect(result).toBeNull();
+
+		// transform's outer guard returns null for non-server envs
+		expect(result).toBeUndefined();
 	});
 
-	it("skips the polyfill for non-React files even in the rscEnv", () => {
+	test("skips the polyfill for non-React files even in the rscEnv", () => {
 		const plugin = payloadWorkerdCompat();
 		const result = callTransform(
 			plugin,
@@ -128,9 +133,10 @@ describe("payloadWorkerdCompat: console.createTask polyfill", () => {
 			REACT_FIXTURE,
 			"/node_modules/some-other-pkg/index.js",
 		);
+
 		// React-id gating is the only thing keeping the polyfill from
-		// being injected into unrelated packages.
-		expect(result).toBeNull();
+		// being injected into unrelated packages
+		expect(result).toBeUndefined();
 	});
 });
 
@@ -140,9 +146,9 @@ describe("payloadWorkerdCompat: console.createTask polyfill", () => {
 // not implemented` thrown at worker module init in a real consumer
 // stack, which `vite build` and the synthetic runtime e2e couldn't
 // reproduce. Validating the wiring directly makes the regression
-// deterministic and fast to catch.
+// deterministic and fast to catch
 describe("vinextPayloadWorker: composition wires createTask polyfill", () => {
-	it("polyfills React in the worker's own env", () => {
+	test("polyfills React in the worker's own env", () => {
 		const env = "app_cms";
 		const plugins = vinextPayloadWorker({ env });
 		const compat = plugins.find(
@@ -151,7 +157,7 @@ describe("vinextPayloadWorker: composition wires createTask polyfill", () => {
 		assert(compat, "expected the workerd-compat plugin to be composed in");
 
 		const result = callTransform(compat, env, REACT_FIXTURE, REACT_FILE_ID);
-		expect(result).not.toBeNull();
+		expect(result).not.toBeUndefined();
 		expect(result).not.toBeUndefined();
 		const out = transformedCode(result);
 		expect(out.startsWith(POLYFILL_PREFIX)).toBe(true);

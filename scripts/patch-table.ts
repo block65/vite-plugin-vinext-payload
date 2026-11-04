@@ -2,11 +2,11 @@
  * Generates docs/internals.md's build-time patch table from
  * `PATCH_MANIFEST`. Run
  * via `pnpm run docs:patches`; `test/patch-manifest.test.ts` fails when the
- * committed table drifts from the manifest.
+ * committed table drifts from the manifest
  */
 
 import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PATCH_MANIFEST } from "../src/main.ts";
 import type { PatchDeclaration } from "../src/patch-manifest.ts";
@@ -15,10 +15,10 @@ export const PATCH_TABLE_BEGIN =
 	"<!-- patch-table:begin — generated from PATCH_MANIFEST by scripts/patch-table.ts; edit the src/ declarations, then `pnpm run docs:patches` -->";
 export const PATCH_TABLE_END = "<!-- patch-table:end -->";
 
-const DOC = join(import.meta.dirname, "..", "docs", "internals.md");
+const DOC = path.join(import.meta.dirname, "..", "docs", "internals.md");
 
 function cell(text: string): string {
-	return text.replaceAll("|", "\\|").replaceAll("\n", " ");
+	return text.replaceAll("|", String.raw`\|`).replaceAll("\n", " ");
 }
 
 export function renderPatchTable(
@@ -46,24 +46,24 @@ export function renderPatchTable(
 }
 
 export async function updatePatchTable(): Promise<string> {
-	const doc = await readFile(DOC, "utf8");
+	const doc = await readFile(DOC, "utf-8");
 
 	const begin = doc.indexOf(PATCH_TABLE_BEGIN);
 	const end = doc.indexOf(PATCH_TABLE_END);
+
 	if (begin === -1 || end === -1 || end < begin) {
 		throw new Error(
 			`docs/internals.md is missing the ${PATCH_TABLE_BEGIN} / ${PATCH_TABLE_END} markers`,
 		);
 	}
 
-	const updated =
-		doc.slice(0, begin + PATCH_TABLE_BEGIN.length) +
-		"\n\n" +
-		renderPatchTable(PATCH_MANIFEST) +
-		"\n\n" +
-		doc.slice(end);
+	const updated = `${doc.slice(
+		0,
+		begin + PATCH_TABLE_BEGIN.length,
+	)}\n\n${renderPatchTable(PATCH_MANIFEST)}\n\n${doc.slice(end)}`;
 
 	await writeFile(DOC, updated);
+
 	return updated;
 }
 

@@ -12,19 +12,20 @@ import {
 	access,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import path from "node:path";
 import { promisify } from "node:util";
+import { Temporal } from "temporal-polyfill";
 
-/** Known-good version pins for testing. */
+/** Known-good version pins for testing */
 export const VERSIONS = {
 	payload: "3.91.0",
 	vinext: "1.2.1",
 	vite: "8.3.4",
 	// react-server-dom-webpack ships in lockstep with React and carries a caret
-	// peer on its exact minor, so these three move together or not at all.
+	// peer on its exact minor, so these three move together or not at all
 	react: "19.3.1",
 	vitePluginReact: "^6.0.1",
-	// The template's own vitest pin (4.0.x) has a vite peer range ending at 7.
+	// The template's own vitest pin (4.0.x) has a Vite peer range ending at 7
 	vitest: "^4.1.11",
 } as const;
 
@@ -38,7 +39,7 @@ const execFile = promisify(execFileCb);
  * short-circuit their CLI when `process.env.VITEST` is set
  * (`process.env.VITEST || main(argv)`), so `npx degit` silently does nothing —
  * scaffolding produces no files. Strip these so spawned tools behave as they
- * would outside the test runner.
+ * would outside the test runner
  */
 export const childEnv: NodeJS.ProcessEnv = Object.fromEntries(
 	Object.entries(process.env).filter(([key]) => !key.startsWith("VITEST")),
@@ -47,12 +48,12 @@ export const childEnv: NodeJS.ProcessEnv = Object.fromEntries(
 /**
  * Ceiling for a single readiness poll. A request that cold optimization holds
  * open can outlive the entire readiness window — abandoning it keeps the gate
- * polling instead of reducing it to one attempt.
+ * polling instead of reducing it to one attempt
  */
 const READY_ATTEMPT_TIMEOUT_MS = 10_000;
 
-/** How much trailing server output a failed readiness gate reports. */
-const SERVER_OUTPUT_TAIL_CHARS = 2_000;
+// How much trailing server output a failed readiness gate reports.
+const SERVER_OUTPUT_TAIL_CHARS = 2000;
 
 export function createProjectHelpers(testDir: string) {
 	async function run(cmd: string, args: string[], cwd = testDir) {
@@ -68,13 +69,13 @@ export function createProjectHelpers(testDir: string) {
 		run,
 		npm: (args: string[]) => run("npm", args),
 		npx: (args: string[]) => run("npx", args),
-		read: (path: string) => readFile(join(testDir, path), "utf8"),
-		write: async (path: string, content: string) => {
-			await mkdir(dirname(join(testDir, path)), { recursive: true });
-			await writeFile(join(testDir, path), content);
+		read: (file: string) => readFile(path.join(testDir, file), "utf-8"),
+		write: async (file: string, content: string) => {
+			await mkdir(path.dirname(path.join(testDir, file)), { recursive: true });
+			await writeFile(path.join(testDir, file), content);
 		},
-		exists: (path: string) =>
-			access(join(testDir, path))
+		exists: (file: string) =>
+			access(path.join(testDir, file))
 				.then(() => true)
 				.catch(() => false),
 		cleanup: () =>
@@ -88,9 +89,11 @@ export async function disableNamedPlugins(
 	helpers: ReturnType<typeof createProjectHelpers>,
 ) {
 	const disabled = process.env.E2E_DISABLE_PLUGINS?.trim();
+
 	if (!disabled) {
 		return;
 	}
+
 	const configPath = (await helpers.exists("vite.config.ts"))
 		? "vite.config.ts"
 		: "vite.config.mts";
@@ -99,16 +102,19 @@ export async function disableNamedPlugins(
 		disabled === "all"
 			? "$1.filter(() => false)"
 			: `$1.filter((p) => !${JSON.stringify(disabled.split(","))}.includes(p.name))`;
+
 	// Lookahead keeps a second call from wrapping an already-filtered config
 	const rewritten = config.replace(
 		/(vinextPayload(?:Worker)?\([^()]*\))(?!\.filter)/,
 		filter,
 	);
+
 	if (rewritten === config && !config.includes(").filter(")) {
 		throw new Error(
 			`E2E_DISABLE_PLUGINS set but ${configPath} has no vinextPayload() or vinextPayloadWorker()`,
 		);
 	}
+
 	await helpers.write(configPath, rewritten);
 }
 
@@ -116,8 +122,10 @@ export async function runBuild(
 	helpers: ReturnType<typeof createProjectHelpers>,
 ) {
 	await disableNamedPlugins(helpers);
-	const pkg = JSON.parse(await helpers.read("package.json"));
+	const pkgJson = await helpers.read("package.json");
+	const pkg = JSON.parse(pkgJson);
 	const script = pkg.scripts["build:vinext"] ? "build:vinext" : "build";
+
 	return helpers.npm(["run", script]);
 }
 
@@ -125,7 +133,7 @@ export async function runBuild(
  * Start a dev server, wait for it to print a port, return port + kill function.
  *
  * 60s is deliberate. A dev server that needs longer than this to become usable
- * is broken, not slow — do not raise the ceiling to make a boot fit under it.
+ * is broken, not slow — do not raise the ceiling to make a boot fit under it
  */
 export async function startDevServer(
 	testDir: string,
@@ -139,7 +147,7 @@ export async function startDevServer(
 /**
  * Serve the production build with the `start` script `vinext init` wrote:
  * `vite preview` on Cloudflare, which runs the built Worker in workerd, and
- * `vinext start` on Node.
+ * `vinext start` on Node
  */
 export function startProductionServer(
 	testDir: string,
@@ -153,18 +161,18 @@ export function startProductionServer(
 // signalling the whole process group stops the server and frees its port
 async function killServer(proc: ChildProcess) {
 	const { pid } = proc;
+
 	if (pid === undefined) {
 		throw new Error("server process has no pid");
 	}
+
 	const signalGroup = (signal: NodeJS.Signals) => {
 		try {
 			process.kill(-pid, signal);
-		} catch (error) {
+		} catch (err) {
 			// NOTE: ESRCH means the group already exited, which is the goal
-			if (
-				!(error instanceof Error && "code" in error && error.code === "ESRCH")
-			) {
-				throw error;
+			if (!(err instanceof Error && "code" in err && err.code === "ESRCH")) {
+				throw err;
 			}
 		}
 	};
@@ -186,7 +194,8 @@ async function startServer(
 	role: "dev" | "start",
 	readyTimeoutMs: number,
 ) {
-	const pkg = JSON.parse(await helpers.read("package.json"));
+	const pkgJson = await helpers.read("package.json");
+	const pkg = JSON.parse(pkgJson);
 	const script = pkg.scripts[`${role}:vinext`] ? `${role}:vinext` : role;
 
 	const proc = spawn("npm", ["run", script], {
@@ -203,37 +212,49 @@ async function startServer(
 	});
 
 	let match: RegExpMatchArray;
+
 	try {
 		match = await waitForOutput(
 			proc,
 			/(?:Local:\s+|Production server running at )https?:\/\/[^:\s]+:(\d+)\/?/,
 			readyTimeoutMs,
 		);
-	} catch (error) {
+	} catch (err) {
 		await killServer(proc);
-		throw error;
+		throw err;
 	}
 
-	const port = Number.parseInt(match[1], 10);
+	const port = Number(match[1]);
 
 	const kill = () => killServer(proc);
 
 	return { port, proc, kill, [Symbol.asyncDispose]: kill };
 }
 
-/** Wait for a spawned process's stdout *or* stderr to match a pattern. */
+/** Wait for a spawned process's stdout *or* stderr to match a pattern */
 export function waitForOutput(
 	proc: ChildProcess,
 	pattern: RegExp,
 	timeoutMs = 60_000,
 ) {
-	proc.stdout?.setEncoding("utf8");
-	proc.stderr?.setEncoding("utf8");
+	proc.stdout?.setEncoding("utf-8");
+	proc.stderr?.setEncoding("utf-8");
 
 	return new Promise<RegExpMatchArray>((resolve, reject) => {
 		let output = "";
+		const controller = new AbortController();
+
+		const onData = (chunk: string) => {
+			output += chunk;
+			const match = output.match(pattern);
+			if (match) {
+				controller.abort();
+				resolve(match);
+			}
+		};
+
 		const timeout = setTimeout(() => {
-			cleanup();
+			controller.abort();
 			reject(
 				new Error(
 					`Timed out waiting for ${pattern}. Output:\n${output.slice(-500)}`,
@@ -241,20 +262,11 @@ export function waitForOutput(
 			);
 		}, timeoutMs);
 
-		const onData = (chunk: string) => {
-			output += chunk;
-			const match = output.match(pattern);
-			if (match) {
-				cleanup();
-				resolve(match);
-			}
-		};
-
-		const cleanup = () => {
+		controller.signal.addEventListener("abort", () => {
 			clearTimeout(timeout);
 			proc.stdout?.off("data", onData);
 			proc.stderr?.off("data", onData);
-		};
+		});
 
 		proc.stdout?.on("data", onData);
 		proc.stderr?.on("data", onData);
@@ -267,16 +279,16 @@ interface ReadyOptions {
 	 * optimization of the full Payload graph measures ~22s; a server still
 	 * unable to answer at 60 is broken, not slow. Raising this to fit a slow
 	 * run converts a diagnosis into two minutes of waiting for the same
-	 * failure.
+	 * failure
 	 */
 	timeoutMs?: number;
-	/** Given a response status, has the server finished starting? */
+	/** Given a response status, has the server finished starting */
 	ready?: (status: number) => boolean;
 }
 
 /**
  * Ready once the route renders. A 5xx during startup is the module runner
- * restarting, not a verdict on the route.
+ * restarting, not a verdict on the route
  */
 export const rendersWithoutError = (status: number) => status < 500;
 
@@ -286,7 +298,7 @@ export const rendersWithoutError = (status: number) => status < 500;
  * For endpoints where an error response is the result under test — a worker
  * that reports its init failure in the body, say — the status carries no
  * readiness information, so the only thing left to wait for is the socket
- * answering at all.
+ * answering at all
  */
 export const respondsAtAll = () => true;
 
@@ -314,7 +326,7 @@ export const respondsAtAll = () => true;
  * `ready` decides what counts. The default suits routes expected to render:
  * a 5xx is startup noise, worth waiting through. It does not suit a test
  * whose subject *is* an error response — pass `respondsAtAll` there, or the
- * gate waits out the timeout on the very result being asserted.
+ * gate waits out the timeout on the very result being asserted
  */
 export async function waitForServerReady(
 	proc: ChildProcess,
@@ -323,16 +335,16 @@ export async function waitForServerReady(
 	{ timeoutMs = 60_000, ready = rendersWithoutError }: ReadyOptions = {},
 ) {
 	// A dead server will never become ready; without this the caller waits out
-	// the full timeout to be told something the process already knew.
+	// the full timeout to be told something the process already knew
 	let exit: string | undefined;
 	proc.once("exit", (code, signal) => {
 		exit = `process exited (code ${code}, signal ${signal})`;
 	});
 
 	// "HTTP 500" alone says nothing about a boot failure; the server's own
-	// output does. Keep the tail for the gate's failure messages.
-	proc.stdout?.setEncoding("utf8");
-	proc.stderr?.setEncoding("utf8");
+	// output does. Keep the tail for the gate's failure messages
+	proc.stdout?.setEncoding("utf-8");
+	proc.stderr?.setEncoding("utf-8");
 	let output = "";
 	const onData = (chunk: string) => {
 		output = (output + chunk).slice(-SERVER_OUTPUT_TAIL_CHARS);
@@ -347,14 +359,14 @@ export async function waitForServerReady(
 				: message,
 		);
 
-	const deadline = Date.now() + timeoutMs;
+	const deadline = performance.now() + timeoutMs;
 	let last = "no response yet";
 
 	try {
 		/* oxlint-disable no-await-in-loop -- each attempt must observe the result of
 		   the one before it; running them concurrently would hammer a starting
 		   server with requests it cannot answer and defeat the point of the gate. */
-		while (Date.now() < deadline) {
+		while (performance.now() < deadline) {
 			if (exit !== undefined) {
 				throw fail(`Server died before becoming ready at ${path}: ${exit}`);
 			}
@@ -364,8 +376,9 @@ export async function waitForServerReady(
 					redirect: "manual",
 					signal: AbortSignal.timeout(READY_ATTEMPT_TIMEOUT_MS),
 				});
+
 				// Drain the body so the socket closes rather than leaking into the
-				// next attempt.
+				// next attempt
 				await res.text();
 
 				if (ready(res.status)) {
@@ -373,11 +386,11 @@ export async function waitForServerReady(
 				}
 
 				last = `HTTP ${res.status}`;
-			} catch (error) {
+			} catch (err) {
 				// Expected while the runner restarts mid-flight: the connection is
 				// reset, or a cold-optimization hang hits the attempt ceiling. Any
 				// other cause shows up in the timeout message below.
-				last = error instanceof Error ? error.message : String(error);
+				last = err instanceof Error ? err.message : String(err);
 			}
 
 			await new Promise((resolve) => setTimeout(resolve, 250));
@@ -398,7 +411,7 @@ export async function waitForServerReady(
  *
  * Single request, no retry: the server is expected to be ready before this is
  * called (see `waitForServerReady`). A wrong status here is a real result, not
- * something to poll past.
+ * something to poll past
  */
 export async function assertStatus(
 	port: number,
@@ -426,10 +439,10 @@ export const FIXTURES = {
 			name: "test-project",
 			dependencies: { payload: `^${VERSIONS.payload}` },
 			// Exact, not `^`: the plugin peer-pins vinext exactly, and
-			// `^1.0.0-beta.2` would float across all of 1.x.
+			// `^1.0.0-beta.2` would float across all of 1.x
 			devDependencies: { vinext: VERSIONS.vinext },
 		},
-		null,
+		undefined,
 		2,
 	),
 
@@ -453,7 +466,7 @@ export default defineConfig({
 
 	// The exact shape `vinext init --platform=cloudflare` writes on 1.0:
 	// vinext() takes an options object and spans multiple lines. The init
-	// matcher missing this shape is how the D1 e2e ran without the plugin.
+	// matcher missing this shape is how the D1 e2e ran without the plugin
 	viteConfigVinextArgs: `import { defineConfig } from "vite";
 import vinext from "vinext";
 import { cloudflare } from "@cloudflare/vite-plugin";
@@ -519,7 +532,7 @@ export default Layout
 
 	// Payload's current template: stylesheet renamed to .css and a viewport
 	// export added (payloadcms/payload#17464 and after). Anything the layout
-	// rewrite hardcodes rather than preserves shows up as a diff against this.
+	// rewrite hardcodes rather than preserves shows up as a diff against this
 	originalLayoutCurrent: `/* THIS FILE WAS GENERATED AUTOMATICALLY BY PAYLOAD. */
 /* DO NOT MODIFY IT BECAUSE IT COULD BE REWRITTEN AT ANY TIME. */
 import config from '@payload-config'
@@ -591,12 +604,12 @@ export default Page
 				paths: { "@payload-config": ["./src/payload.config.ts"] },
 			},
 		},
-		null,
+		undefined,
 		2,
 	),
 } as const;
 
-/** Scaffold a minimal mock Payload project for unit tests. */
+/** Scaffold a minimal mock Payload project for unit tests */
 export async function scaffoldMockProject(
 	testDir: string,
 	viteConfig: string = FIXTURES.viteConfigSingleLine,
@@ -615,6 +628,7 @@ export async function scaffoldMockProject(
 		"src/app/(payload)/admin/[[...segments]]/page.tsx",
 		FIXTURES.originalPage,
 	);
+
 	if (options?.wranglerConfig) {
 		await write("wrangler.jsonc", '{ "name": "test" }');
 	}
@@ -622,7 +636,7 @@ export async function scaffoldMockProject(
 
 /**
  * Packages a standalone `@cloudflare/vite-plugin` v2 Worker needs, at the
- * tags `vinext init --platform=cloudflare` installs.
+ * tags `vinext init --platform=cloudflare` installs
  */
 export const CLOUDFLARE_V2_PACKAGES = [
 	"@cloudflare/vite-plugin@beta",
@@ -633,13 +647,13 @@ export const CLOUDFLARE_V2_PACKAGES = [
  * `cloudflare.config.ts` for a standalone Worker at `src/index.ts`, in the
  * shape `vinext init` writes for `@cloudflare/vite-plugin` v2 — today's
  * compatibility date included. `env` maps binding names to `bindings.*()`
- * expressions.
+ * expressions
  */
 export function cloudflareWorkerConfig(
 	name: string,
 	env: Record<string, string> = {},
 ) {
-	const today = new Date().toISOString().slice(0, 10);
+	const today = Temporal.Now.plainDateISO().toString();
 	const envLines = Object.entries(env)
 		.map(([binding, expression]) => `\n      ${binding}: ${expression},`)
 		.join("");
@@ -670,12 +684,14 @@ export default defineConfig({
  *
  * It also means the suites exercise the published artifact rather than the
  * working tree: a file missing from `files` fails here instead of after
- * release.
+ * release
  */
 export async function packPlugin(pluginRoot: string) {
-	const destination = await mkdtemp(join(tmpdir(), "vinext-payload-pack-"));
+	const destination = await mkdtemp(
+		path.join(tmpdir(), "vinext-payload-pack-"),
+	);
 
-	// npm pack runs `prepare`, so the tarball always carries a current build.
+	// npm pack runs `prepare`, so the tarball always carries a current build
 	const { stdout } = await execFile(
 		"npm",
 		["pack", "--pack-destination", destination, "--silent"],
@@ -683,11 +699,12 @@ export async function packPlugin(pluginRoot: string) {
 	);
 
 	const tarball = stdout.trim().split("\n").at(-1);
+
 	if (!tarball) {
 		throw new Error(`npm pack produced no tarball in ${pluginRoot}`);
 	}
 
-	return join(destination, tarball);
+	return path.join(destination, tarball);
 }
 
 /**
@@ -698,7 +715,7 @@ export async function packPlugin(pluginRoot: string) {
  * pins `payload@3.84.1`; every `payload` / `@payloadcms/*` entry is moved
  * onto `VERSIONS.payload`. The template also targets Next.js, so it pins
  * versions vinext cannot accept: `@vitejs/plugin-react@4` against vinext's
- * `^5.1.4 || ^6.0.0`, `vitest@4.0` whose vite peer stops at 7, and React one
+ * `^5.1.4 || ^6.0.0`, `vitest@4.0` whose Vite peer stops at 7, and React one
  * patch below what `react-server-dom-webpack` requires — vinext installs the
  * RSC runtime, and each of its releases carries a caret peer on the matching
  * React, so `19.2.6` does not satisfy `^19.2.7`.
@@ -706,15 +723,18 @@ export async function packPlugin(pluginRoot: string) {
  * Aligning the pins here is what lets every install in this file run with a
  * strict resolver. The alternative — telling the package manager to ignore
  * peer conflicts — hides real breakage: it would equally happily install a
- * React that genuinely does not work with the RSC runtime under test.
+ * React that genuinely does not work with the RSC runtime under test
  */
+function isPayloadPackage(name: string) {
+	return name === "payload" || name.startsWith("@payloadcms/");
+}
+
 async function alignTemplatePins(
 	helpers: ReturnType<typeof createProjectHelpers>,
 ) {
-	const pkg = JSON.parse(await helpers.read("package.json"));
+	const pkgJson = await helpers.read("package.json");
+	const pkg = JSON.parse(pkgJson);
 
-	const isPayloadPackage = (name: string) =>
-		name === "payload" || name.startsWith("@payloadcms/");
 	pkg.dependencies = {
 		...Object.fromEntries(
 			Object.entries(pkg.dependencies ?? {}).map(([name, version]) => [
@@ -730,18 +750,19 @@ async function alignTemplatePins(
 	if (pkg.devDependencies?.["@vitejs/plugin-react"]) {
 		pkg.devDependencies["@vitejs/plugin-react"] = VERSIONS.vitePluginReact;
 	}
+
 	if (pkg.devDependencies?.vitest) {
 		pkg.devDependencies.vitest = VERSIONS.vitest;
 	}
 
-	await helpers.write("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
+	await helpers.write("package.json", `${JSON.stringify(pkg, undefined, 2)}\n`);
 }
 
 /**
  * Install deps, run vinext init, install the plugin.
  *
  * --ignore-scripts: sharp has no prebuilt binary for Node 24 and
- *   falls back to a source build requiring node-addon-api.
+ *   falls back to a source build requiring node-addon-api
  */
 export async function installVinextStack(
 	helpers: ReturnType<typeof createProjectHelpers>,
@@ -750,23 +771,25 @@ export async function installVinextStack(
 ) {
 	// Before any install: `vinext init` runs its own install internally, which
 	// takes no flags from us. The pins have to be correct in the manifest by
-	// the time it runs.
+	// the time it runs
 	await alignTemplatePins(helpers);
 	await helpers.npm(["install", "--ignore-scripts"]);
 	await helpers.npm(["rebuild", "esbuild"]);
+
 	// Pin vinext to the exact version we peer-pin. Installing it unpinned
 	// resolves to whatever the `latest` dist-tag points at, which may not be
 	// the version this plugin supports — the e2e suite would then be testing
-	// a stack we make no claims about.
+	// a stack we make no claims about
 	await helpers.npm([
 		"install",
 		"-D",
 		`vinext@${VERSIONS.vinext}`,
 		`vite@${VERSIONS.vite}`,
 	]);
+
 	// vinext 1.0 requires an explicit deployment target; it used to infer one.
 	// The cloudflare target additionally demands cache/image choices. These are
-	// the minimal options — the suite exercises Payload, not vinext's CDN cache.
+	// the minimal options — the suite exercises Payload, not vinext's CDN cache
 	await helpers.npx([
 		"vinext",
 		"init",
@@ -779,6 +802,7 @@ export async function installVinextStack(
 				]
 			: []),
 	]);
+
 	// init rewrites both to caret ranges; put the exact pins back
 	await helpers.npm([
 		"install",
@@ -793,7 +817,7 @@ export async function installVinextStack(
 
 /**
  * Add `vinextPayload()` after the `vinext(...)` call `vinext init` wrote —
- * the one line the README asks users to add.
+ * the one line the README asks users to add
  */
 async function addVinextPayload(
 	helpers: ReturnType<typeof createProjectHelpers>,
@@ -801,9 +825,11 @@ async function addVinextPayload(
 	const { parse, Lang } = await import("@ast-grep/napi");
 	const config = await helpers.read("vite.config.ts");
 	const call = parse(Lang.TypeScript, config).root().find("vinext($$$)");
+
 	if (!call) {
 		throw new Error(`vite.config.ts has no vinext() call:\n${config}`);
 	}
+
 	const end = call.range().end.index;
 	const withPlugin = config.startsWith(",", end)
 		? `${config.slice(0, end + 1)}\n    vinextPayload(),${config.slice(end + 1)}`
@@ -822,7 +848,7 @@ async function addVinextPayload(
  * Cloudflare setup: OpenNext removed, `vinext init --platform=cloudflare`,
  * and the template's bindings declared in the `cloudflare.config.ts` it
  * generates. `beforeInit` runs once the template is in place, for files
- * init should see (a `worker/index.ts` entry).
+ * init should see (a `worker/index.ts` entry)
  */
 export async function scaffoldCloudflareProject(
 	testDir: string,
@@ -837,21 +863,24 @@ export async function scaffoldCloudflareProject(
 		"degit",
 		"--force",
 		// Pinned to the release tag: `main` carries the next major's templates,
-		// which import exports the pinned packages do not have.
+		// which import exports the pinned packages do not have
 		`payloadcms/payload/templates/with-cloudflare-d1#v${VERSIONS.payload}`,
 		testDir,
 	]);
 	await helpers.write(".env", `PAYLOAD_SECRET=${crypto.randomUUID()}\n`);
 
 	// vinext's Cloudflare init refuses to replace a Wrangler config
-	const pkg = JSON.parse(await helpers.read("package.json"));
+	const pkgJson = await helpers.read("package.json");
+	const pkg = JSON.parse(pkgJson);
+
 	for (const name of ["@opennextjs/cloudflare", "wrangler"]) {
 		delete pkg.dependencies?.[name];
 		delete pkg.devDependencies?.[name];
 	}
-	await helpers.write("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
-	await rm(join(testDir, "wrangler.jsonc"));
-	await rm(join(testDir, "open-next.config.ts"));
+
+	await helpers.write("package.json", `${JSON.stringify(pkg, undefined, 2)}\n`);
+	await rm(path.join(testDir, "wrangler.jsonc"));
+	await rm(path.join(testDir, "open-next.config.ts"));
 	await rewritePayloadConfigForVinext(helpers);
 	await beforeInit?.();
 
@@ -859,11 +888,13 @@ export async function scaffoldCloudflareProject(
 
 	const cloudflareConfig = await helpers.read("cloudflare.config.ts");
 	const anchor = "ASSETS: bindings.assets(),";
+
 	if (!cloudflareConfig.includes(anchor)) {
 		throw new Error(
 			`cloudflare.config.ts has no ${anchor}:\n${cloudflareConfig}`,
 		);
 	}
+
 	await helpers.write(
 		"cloudflare.config.ts",
 		cloudflareConfig.replace(
@@ -875,7 +906,7 @@ export async function scaffoldCloudflareProject(
 
 /**
  * Scaffold a Payload project from the postgres template, swapped to SQLite,
- * on the Node target.
+ * on the Node target
  */
 export async function scaffoldSqliteProject(
 	testDir: string,
@@ -889,19 +920,21 @@ export async function scaffoldSqliteProject(
 		"degit",
 		"--force",
 		// Pinned to the release tag: `main` carries the next major's templates,
-		// which import exports the pinned packages do not have.
+		// which import exports the pinned packages do not have
 		`payloadcms/payload/templates/with-postgres#v${VERSIONS.payload}`,
 		testDir,
 	]);
 
-	const pkg = JSON.parse(await helpers.read("package.json"));
+	const pkgJson = await helpers.read("package.json");
+	const pkg = JSON.parse(pkgJson);
 	const payloadVersion = pkg.dependencies.payload || VERSIONS.payload;
 	delete pkg.dependencies["@payloadcms/db-postgres"];
 	pkg.dependencies["@payloadcms/db-sqlite"] = payloadVersion;
 	delete pkg.devDependencies?.["@vitejs/plugin-react"];
-	await helpers.write("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
+	await helpers.write("package.json", `${JSON.stringify(pkg, undefined, 2)}\n`);
 
-	const config = (await helpers.read("src/payload.config.ts"))
+	const templateConfig = await helpers.read("src/payload.config.ts");
+	const config = templateConfig
 		.replace(
 			"import { postgresAdapter } from '@payloadcms/db-postgres'",
 			"import { sqliteAdapter } from '@payloadcms/db-sqlite'",
@@ -911,7 +944,7 @@ export async function scaffoldSqliteProject(
 			"db: sqliteAdapter({ client: { url: 'file:./data/payload.db' } }),",
 		);
 	await helpers.write("src/payload.config.ts", config);
-	await mkdir(join(testDir, "data"), { recursive: true });
+	await mkdir(path.join(testDir, "data"), { recursive: true });
 	await helpers.write(".env", `PAYLOAD_SECRET=${crypto.randomUUID()}\n`);
 
 	await installVinextStack(helpers, pluginRoot);
@@ -919,7 +952,7 @@ export async function scaffoldSqliteProject(
 
 /**
  * Rewrite payload.config.ts to replace OpenNext cloudflare context
- * with getCloudflareEnv. Uses ast-grep for structural matching.
+ * with getCloudflareEnv. Uses ast-grep for structural matching
  */
 export async function rewritePayloadConfigForVinext(
 	helpers: ReturnType<typeof createProjectHelpers>,
@@ -938,6 +971,7 @@ export async function rewritePayloadConfigForVinext(
 		if (!node) {
 			return;
 		}
+
 		const r = node.range();
 		const end = includeTrailingNewline
 			? code.indexOf("\n", r.end.index) + 1 || r.end.index
@@ -962,6 +996,7 @@ export async function rewritePayloadConfigForVinext(
 			has: { pattern: "'wrangler'", stopBy: "end" },
 		},
 	});
+
 	if (wranglerImport?.text().includes("GetPlatformProxyOptions")) {
 		removeNode(wranglerImport);
 	}
@@ -975,6 +1010,7 @@ export async function rewritePayloadConfigForVinext(
 
 	// 5. Replace cloudflare context assignment
 	const cfAssign = root.find("const cloudflare = $INIT");
+
 	if (cfAssign) {
 		const r = cfAssign.range();
 		const end = code.indexOf("\n", r.end.index) + 1 || r.end.index;
@@ -984,6 +1020,7 @@ export async function rewritePayloadConfigForVinext(
 	// 6. Replace cloudflare.env.X → cfEnv.X
 	for (const ref of root.findAll("cloudflare.env.$PROP")) {
 		const prop = ref.getMatch("PROP")?.text();
+
 		if (prop) {
 			const r = ref.range();
 			edits.push({
@@ -996,8 +1033,10 @@ export async function rewritePayloadConfigForVinext(
 
 	// 7. Replace isCLI || !isProduction → !isProduction
 	const cfRange = cfAssign?.range();
+
 	for (const check of root.findAll("isCLI || !isProduction")) {
 		const r = check.range();
+
 		if (
 			cfRange &&
 			r.start.index >= cfRange.start.index &&
@@ -1005,6 +1044,7 @@ export async function rewritePayloadConfigForVinext(
 		) {
 			continue;
 		}
+
 		edits.push({
 			start: r.start.index,
 			end: r.end.index,
@@ -1019,23 +1059,28 @@ export async function rewritePayloadConfigForVinext(
 			has: { pattern: "getCloudflareContextFromWrangler", stopBy: "end" },
 		},
 	});
+
 	if (wranglerFn) {
 		let start = wranglerFn.range().start.index;
+
 		while (start > 0) {
 			const lineStart = code.lastIndexOf("\n", start - 2) + 1;
 			const line = code.slice(lineStart, start).trim();
+
 			if (line.startsWith("//")) {
 				start = lineStart;
 			} else {
 				break;
 			}
 		}
+
 		edits.push({ start, end: code.length, replacement: "" });
 	}
 
 	// Apply edits bottom-up
 	edits.sort((a, b) => b.start - a.start);
 	let result = code;
+
 	for (const edit of edits) {
 		result =
 			result.slice(0, edit.start) + edit.replacement + result.slice(edit.end);
@@ -1051,10 +1096,10 @@ export async function rewritePayloadConfigForVinext(
     return {} as CloudflareEnv
   }
 }\n\nconst cfEnv = await getCloudflareEnv()\n`;
-		result = result.replace(/(\nexport default)/, fn + "$1");
+		result = result.replace(/(\nexport default)/, `${fn}$1`);
 	}
 
-	result = result.replace(/\n{3,}/g, "\n\n");
+	result = result.replaceAll(/\n{3,}/g, "\n\n");
 
 	await helpers.write(configPath, result);
 }

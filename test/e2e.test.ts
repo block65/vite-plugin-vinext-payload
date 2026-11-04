@@ -2,11 +2,11 @@
  * E2E test: SQLite (non-Cloudflare).
  * Scaffolds a Payload project from the postgres template, swaps to SQLite,
  * migrates to vinext, and verifies Payload works end-to-end — under
- * `vite dev`, and again from the production build served by `vinext start`.
+ * `vite dev`, and again from the production build served by `vinext start`
  */
 
-import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
 	assertStatus,
 	createProjectHelpers,
@@ -17,8 +17,8 @@ import {
 	waitForServerReady,
 } from "./helpers.ts";
 
-const PLUGIN_ROOT = join(import.meta.dirname, "..");
-const TEST_DIR = join(import.meta.dirname, ".test-project");
+const PLUGIN_ROOT = path.join(import.meta.dirname, "..");
+const TEST_DIR = path.join(import.meta.dirname, ".test-project");
 const helpers = createProjectHelpers(TEST_DIR);
 
 describe("e2e: sqlite", () => {
@@ -36,18 +36,17 @@ describe("e2e: sqlite", () => {
 		await server?.kill();
 	});
 
-	it("frontend responds with 200", async () => {
+	test("frontend responds with 200", async () => {
 		await assertStatus(server.port, "/", [200]);
 	});
 
-	it("admin redirects to create-first-user", async () => {
+	test("admin redirects to create-first-user", async () => {
 		// A redirect thrown after the shell flushed streams as a 200 whose
 		// Flight payload carries the NEXT_REDIRECT digest the client follows,
 		// as on Next.js 16; before the flush it is a 307
 		const res = await assertStatus(server.port, "/admin", [200, 302, 307]);
-		const digestTarget = (await res.text()).match(
-			/NEXT_REDIRECT;[^;]*;([^;\\"]+)/,
-		)?.[1];
+		const body = await res.text();
+		const digestTarget = body.match(/NEXT_REDIRECT;[^;]*;([^;\\"]+)/)?.[1];
 		const target =
 			res.status === 200
 				? digestTarget && decodeURIComponent(digestTarget)
@@ -55,10 +54,11 @@ describe("e2e: sqlite", () => {
 		expect(target).toMatch(/create-first-user|login/);
 	});
 
-	it("admin API responds", async () => {
+	test("admin API responds", async () => {
 		const res = await fetch(`http://localhost:${server.port}/api/users`, {
 			redirect: "manual",
 		});
+
 		// 200 (empty list), 401/403 (auth required) — any means Payload is running
 		expect([200, 401, 403]).toContain(res.status);
 	});
@@ -78,11 +78,11 @@ describe("e2e: sqlite", () => {
 			await production?.kill();
 		});
 
-		it("the built server serves the frontend", async () => {
+		test("the built server serves the frontend", async () => {
 			await assertStatus(production.port, "/", [200]);
 		});
 
-		it("the built server answers Payload API requests from the database", async () => {
+		test("the built server answers Payload API requests from the database", async () => {
 			await assertStatus(production.port, "/api/users/init", [200]);
 		});
 	});

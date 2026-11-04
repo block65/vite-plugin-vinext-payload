@@ -8,21 +8,22 @@
  *
  * The failure modes under test are the ones a cold start actually produces: a
  * connection reset while the module runner restarts, and a 500 served during
- * dependency optimization. Neither means the server is up.
+ * dependency optimization. Neither means the server is up
  */
 
 import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { createServer, type Server } from "node:http";
 import type { Socket } from "node:net";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, test } from "vitest";
 import { respondsAtAll, waitForServerReady } from "./helpers.ts";
 
 /**
  * A process the test can drive. `waitForServerReady` only subscribes to
- * `exit`; the streams exist because `startDevServer` shares the type.
+ * `exit`; the streams exist because `startDevServer` shares the type
  */
 function fakeProc() {
+	// oxlint-disable-next-line unicorn/prefer-event-target -- stands in for a ChildProcess, which is an EventEmitter
 	const proc = new EventEmitter() as unknown as ChildProcess;
 	return proc;
 }
@@ -38,7 +39,7 @@ afterEach(async () => {
 	openServers.clear();
 });
 
-/** Listen on an ephemeral port, handling each connection with `handler`. */
+// Listen on an ephemeral port, handling each connection with `handler`.
 async function listen(handler: (socket: Socket) => void): Promise<number> {
 	const server = createServer();
 	openServers.add(server);
@@ -57,15 +58,15 @@ async function listen(handler: (socket: Socket) => void): Promise<number> {
 	});
 }
 
-/** Reply with `status`, then close. */
+// Reply with `status`, then close.
 function respond(socket: Socket, status: number) {
 	socket.end(
 		`HTTP/1.1 ${status} X\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok`,
 	);
 }
 
-it("keeps waiting while the server answers with a 500", async () => {
-	// Optimization is still running: the route exists but cannot render yet.
+test("keeps waiting while the server answers with a 500", async () => {
+	// Optimization is still running: the route exists but cannot render yet
 	let attempts = 0;
 	const port = await listen((socket) => {
 		socket.on("data", () => {
@@ -80,7 +81,7 @@ it("keeps waiting while the server answers with a 500", async () => {
 	expect(attempts).toBe(3);
 });
 
-it("keeps waiting while the connection is reset mid-restart", async () => {
+test("keeps waiting while the connection is reset mid-restart", async () => {
 	let attempts = 0;
 	const port = await listen((socket) => {
 		attempts += 1;
@@ -97,37 +98,38 @@ it("keeps waiting while the connection is reset mid-restart", async () => {
 });
 
 // The RPC payload suite asserts on an error body, so a persistent 500 there is
-// the result under test rather than a server that never started.
-it("reports ready on a persistent 500 when told any response counts", async () => {
+// the result under test rather than a server that never started
+test("reports ready on a persistent 500 when told any response counts", async () => {
 	const port = await listen((socket) => {
 		socket.on("data", () => respond(socket, 500));
 	});
 
 	const status = await waitForServerReady(fakeProc(), port, "/", {
-		timeoutMs: 2_000,
+		timeoutMs: 2000,
 		ready: respondsAtAll,
 	});
 
 	expect(status).toBe(500);
 });
 
-it("reports the last status seen when the route never recovers", async () => {
+test("reports the last status seen when the route never recovers", async () => {
 	const port = await listen((socket) => {
 		socket.on("data", () => respond(socket, 503));
 	});
 
 	await expect(
-		waitForServerReady(fakeProc(), port, "/admin", { timeoutMs: 1_000 }),
+		waitForServerReady(fakeProc(), port, "/admin", { timeoutMs: 1000 }),
 	).rejects.toThrow(/never became ready at \/admin.*HTTP 503/s);
 });
 
-it("fails immediately when the server process dies", async () => {
+test("fails immediately when the server process dies", async () => {
 	const port = await listen((socket) => socket.destroy());
 	const proc = fakeProc();
 
 	const ready = waitForServerReady(proc, port, "/", { timeoutMs: 60_000 });
+	// oxlint-disable-next-line unicorn/no-null -- ChildProcess reports no signal as null
 	proc.emit("exit", 1, null);
 
-	// The 60s timeout would still be running; this resolves on the exit signal.
+	// The 60s timeout would still be running; this resolves on the exit signal
 	await expect(ready).rejects.toThrow(/died before becoming ready/);
 });

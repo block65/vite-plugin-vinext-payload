@@ -7,11 +7,11 @@
  * real Payload project has richText somewhere, and that pulls the lexical client
  * graph into the worker entry's module graph — where
  * `@lexical/react/LexicalComposerContext` calls `createContext` at module scope
- * with no `'use client'` directive of its own.
+ * with no `'use client'` directive of its own
  */
 
-import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
 	assertStatus,
 	createProjectHelpers,
@@ -22,8 +22,8 @@ import {
 	waitForServerReady,
 } from "./helpers.ts";
 
-const PLUGIN_ROOT = join(import.meta.dirname, "..");
-const TEST_DIR = join(import.meta.dirname, ".test-project-lexical");
+const PLUGIN_ROOT = path.join(import.meta.dirname, "..");
+const TEST_DIR = path.join(import.meta.dirname, ".test-project-lexical");
 const helpers = createProjectHelpers(TEST_DIR);
 
 const ARTICLES_COLLECTION = `import type { CollectionConfig } from "payload";
@@ -70,7 +70,7 @@ describe("e2e: lexical richText collection", () => {
 		await server?.kill();
 	});
 
-	it("generated an importMap that reaches the lexical client entry", async () => {
+	test("generated an importMap that reaches the lexical client entry", async () => {
 		const importMap = await helpers.read(
 			"src/app/(payload)/admin/importMap.js",
 		);
@@ -78,7 +78,7 @@ describe("e2e: lexical richText collection", () => {
 		expect(importMap).toContain("@payloadcms/richtext-lexical/client");
 	});
 
-	it("serves the collection's edit view", async () => {
+	test("serves the collection's edit view", async () => {
 		await assertStatus(
 			server.port,
 			"/admin/collections/articles/create",
@@ -101,7 +101,7 @@ describe("e2e: lexical richText collection", () => {
 			await preview?.kill();
 		});
 
-		it("builds an importMap that reaches the lexical diff component", async () => {
+		test("builds an importMap that reaches the lexical diff component", async () => {
 			const importMap = await helpers.read(
 				"src/app/(payload)/admin/importMap.js",
 			);
@@ -111,7 +111,7 @@ describe("e2e: lexical richText collection", () => {
 			);
 		});
 
-		it("the built Worker serves the collection's edit view", async () => {
+		test("the built Worker serves the collection's edit view", async () => {
 			await assertStatus(
 				preview.port,
 				"/admin/collections/articles/create",

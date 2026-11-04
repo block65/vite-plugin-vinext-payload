@@ -2,12 +2,12 @@
  * Every rewrite this plugin makes to third-party code is disclosed as data:
  * each plugin module declares what it patches and why, `PATCH_MANIFEST` in
  * main.ts collects the declarations, and the README's patch table is
- * generated from them (`pnpm run docs:patches`).
+ * generated from them (`pnpm run docs:patches`)
  */
 
 type PatchKind = "transform" | "config" | "stub" | "file-write";
 
-export interface PatchDeclaration {
+export type PatchDeclaration = {
 	/** Stable identifier, kebab-case, unique across the manifest. */
 	id: string;
 
@@ -34,4 +34,4 @@ export interface PatchDeclaration {
 	 * expected to rewrite nothing.
 	 */
 	defensive?: boolean;
-}
+};

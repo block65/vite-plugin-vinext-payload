@@ -14,7 +14,7 @@
  *
  * The standard assumes the `@playwright/test` runner. This suite runs under
  * vitest (the runner owns the scaffold + dev-server lifecycle), so two of its
- * APIs are unavailable and are replaced with the closest equivalent:
+ * APIs are unavailable, and the suite uses the closest equivalent:
  *
  *   - `test.step()`      → the local `step()` helper below. Same purpose:
  *                          name the arrange/act/assert phases so a failure
@@ -23,11 +23,11 @@
  *                          These are Playwright's own auto-waiting, retrying
  *                          primitives — vitest's `expect` has no web-first
  *                          locator assertions, and a non-retrying
- *                          `expect(await x.isVisible())` is banned.
+ *                          `expect(await x.isVisible())` is banned
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import path from "node:path";
 import {
 	chromium,
 	type Browser,
@@ -35,7 +35,7 @@ import {
 	type Locator,
 	type Page,
 } from "playwright";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
 	createProjectHelpers,
 	installVinextStack,
@@ -44,8 +44,8 @@ import {
 	VERSIONS,
 } from "./helpers.ts";
 
-const PLUGIN_ROOT = join(import.meta.dirname, "..");
-const TEST_DIR = join(import.meta.dirname, ".test-project-admin");
+const PLUGIN_ROOT = path.join(import.meta.dirname, "..");
+const TEST_DIR = path.join(import.meta.dirname, ".test-project-admin");
 const helpers = createProjectHelpers(TEST_DIR);
 
 type Credentials = { email: string; password: string };
@@ -54,22 +54,22 @@ type Credentials = { email: string; password: string };
  * Name a phase of a test so a failure reports which phase broke.
  *
  * Stand-in for `test.step()`, which only exists in the `@playwright/test`
- * runner. See the deviations note at the top of this file.
+ * runner. See the deviations note at the top of this file
  */
 async function step<T>(name: string, body: () => Promise<T>): Promise<T> {
 	try {
 		return await body();
-	} catch (error) {
-		throw new Error(`step "${name}" failed`, { cause: error });
+	} catch (err) {
+		throw new Error(`step "${name}" failed`, { cause: err });
 	}
 }
 
-/** Web-first: retries until the element is visible, fails the test otherwise. */
+// Web-first: retries until the element is visible, fails the test otherwise.
 function visible(locator: Locator) {
 	return locator.waitFor({ state: "visible" });
 }
 
-/** Web-first: retries until the element is absent or hidden. */
+// Web-first: retries until the element is absent or hidden.
 function gone(locator: Locator) {
 	return locator.waitFor({ state: "hidden" });
 }
@@ -78,7 +78,7 @@ function gone(locator: Locator) {
  * Fail the journey if the browser reported a hydration mismatch or an
  * uncaught NEXT_REDIRECT — the two failure modes this plugin exists to
  * prevent. The offending messages go in the assertion message so a failure
- * is reproducible without re-running.
+ * is reproducible without re-running
  */
 function assertNoRuntimeErrors(runtimeErrors: readonly string[]) {
 	const hydration = runtimeErrors.filter((message) =>
@@ -105,22 +105,24 @@ async function scaffoldAdminProject() {
 		"degit",
 		"--force",
 		// Pinned to the release tag: `main` carries the next major's templates,
-		// which import exports the pinned packages do not have.
+		// which import exports the pinned packages do not have
 		`payloadcms/payload/templates/with-postgres#v${VERSIONS.payload}`,
 		TEST_DIR,
 	]);
 
-	const pkg = JSON.parse(await helpers.read("package.json"));
+	const pkgJson = await helpers.read("package.json");
+	const pkg = JSON.parse(pkgJson);
 	const payloadVersion = pkg.dependencies.payload || VERSIONS.payload;
 	delete pkg.dependencies["@payloadcms/db-postgres"];
 	pkg.dependencies["@payloadcms/db-sqlite"] = payloadVersion;
 	delete pkg.devDependencies?.["@vitejs/plugin-react"];
 	await writeFile(
-		join(TEST_DIR, "package.json"),
-		JSON.stringify(pkg, null, 2) + "\n",
+		path.join(TEST_DIR, "package.json"),
+		`${JSON.stringify(pkg, undefined, 2)}\n`,
 	);
 
-	const config = (await helpers.read("src/payload.config.ts"))
+	const templateConfig = await helpers.read("src/payload.config.ts");
+	const config = templateConfig
 		.replace(
 			"import { postgresAdapter } from '@payloadcms/db-postgres'",
 			"import { sqliteAdapter } from '@payloadcms/db-sqlite'",
@@ -129,36 +131,77 @@ async function scaffoldAdminProject() {
 			/db: postgresAdapter\(\{[\s\S]*?\}\),/,
 			"db: sqliteAdapter({ client: { url: 'file:./data/payload.db' } }),",
 		);
-	await writeFile(join(TEST_DIR, "src/payload.config.ts"), config);
-	await mkdir(join(TEST_DIR, "data"), { recursive: true });
+	await writeFile(path.join(TEST_DIR, "src/payload.config.ts"), config);
+	await mkdir(path.join(TEST_DIR, "data"), { recursive: true });
 
 	await writeFile(
-		join(TEST_DIR, ".env"),
+		path.join(TEST_DIR, ".env"),
 		`PAYLOAD_SECRET=${crypto.randomUUID()}\n`,
 	);
 
 	await installVinextStack(helpers, PLUGIN_ROOT);
 }
 
+/**
+ * Enter the app the way an administrator does: open the site, click
+ * through to the admin panel. The template's link is `target="_blank"`,
+ * so the panel genuinely opens in a new tab — that tab is what we drive
+ */
+async function openAdminPanel(context: BrowserContext): Promise<Page> {
+	const home = await context.newPage();
+	await home.goto("/");
+
+	const adminTab = context.waitForEvent("page");
+	await home.getByRole("link", { name: "Go to admin panel" }).click();
+
+	return adminTab;
+}
+
+/**
+ * Open the collections nav, the way an admin on a laptop does.
+ *
+ * Payload pins the nav open only above its large breakpoint; below it the
+ * nav renders in the layout but the main content paints over it, so its
+ * links are present and visible yet nothing can reach them. Every nav link
+ * has to go through here. The button reports its own state in its label —
+ * "Open Menu" only exists while the nav is closed — so this is a no-op on a
+ * viewport wide enough to pin it
+ */
+async function openNav(page: Page) {
+	// Wait for the toggler rather than probing for it: sign-in returns
+	// before the authenticated layout renders, so a presence check here
+	// finds nothing and silently concludes the nav is already open
+	const toggle = page.getByRole("button", { name: /(open|close) menu/i });
+	await toggle.waitFor();
+
+	const label = await toggle.getAttribute("aria-label");
+
+	if (label !== null && /open menu/i.test(label)) {
+		await toggle.click();
+
+		// The button renames itself once the nav is open, which is the
+		// state change to wait on — clicking a link mid-animation is still
+		// a click into the content that covers it
+		await visible(page.getByRole("button", { name: /close menu/i }));
+	}
+}
+
 describe("e2e: admin ui", () => {
 	let server: Awaited<ReturnType<typeof startDevServer>>;
 	let browser: Browser;
 
-	/**
-	 * The initial admin, created lazily on first use.
-	 *
-	 * Payload's "create first user" screen is a property of an empty database,
-	 * not of a test: it can be exercised exactly once per scaffold. Memoising
-	 * it here means whichever test runs first performs the real registration
-	 * journey and the rest sign in — so every test below is runnable on its
-	 * own, in any subset, without depending on another test having run.
-	 */
+	// The initial admin, created lazily on first use.
+	// Payload's "create first user" screen is a property of an empty database,
+	// not of a test: it can be exercised exactly once per scaffold. Memoising
+	// it here means whichever test runs first performs the real registration
+	// journey and the rest sign in — so every test below is runnable on its
+	// own, in any subset, without depending on another test having run.
 	let initialAdmin: Promise<Credentials> | undefined;
 
 	/**
 	 * A fresh browser context per journey: its own cookies, its own storage,
 	 * its own collected runtime errors. Nothing is shared between tests but
-	 * the (immutable) dev server and browser binary.
+	 * the (immutable) dev server and browser binary
 	 */
 	async function newSession() {
 		const context = await browser.newContext({
@@ -176,51 +219,11 @@ describe("e2e: admin ui", () => {
 				runtimeErrors.push(error.message);
 			});
 		});
+
 		return { context, runtimeErrors };
 	}
 
-	/**
-	 * Enter the app the way an administrator does: open the site, click
-	 * through to the admin panel. The template's link is `target="_blank"`,
-	 * so the panel genuinely opens in a new tab — that tab is what we drive.
-	 */
-	async function openAdminPanel(context: BrowserContext): Promise<Page> {
-		const home = await context.newPage();
-		await home.goto("/");
-
-		const adminTab = context.waitForEvent("page");
-		await home.getByRole("link", { name: "Go to admin panel" }).click();
-		return adminTab;
-	}
-
-	/**
-	 * Open the collections nav, the way an admin on a laptop does.
-	 *
-	 * Payload pins the nav open only above its large breakpoint; below it the
-	 * nav renders in the layout but the main content paints over it, so its
-	 * links are present and visible yet nothing can reach them. Every nav link
-	 * has to go through here. The button reports its own state in its label —
-	 * "Open Menu" only exists while the nav is closed — so this is a no-op on a
-	 * viewport wide enough to pin it.
-	 */
-	async function openNav(page: Page) {
-		// Wait for the toggler rather than probing for it: sign-in returns
-		// before the authenticated layout renders, so a presence check here
-		// finds nothing and silently concludes the nav is already open.
-		const toggle = page.getByRole("button", { name: /(open|close) menu/i });
-		await toggle.waitFor();
-
-		const label = (await toggle.getAttribute("aria-label")) ?? "";
-		if (/open menu/i.test(label)) {
-			await toggle.click();
-			// The button renames itself once the nav is open, which is the
-			// state change to wait on — clicking a link mid-animation is still
-			// a click into the content that covers it.
-			await visible(page.getByRole("button", { name: /close menu/i }));
-		}
-	}
-
-	/** Sign in through the login form, the way an admin does. */
+	/** Sign in through the login form, the way an admin does */
 	async function signIn(page: Page, credentials: Credentials) {
 		await page.getByLabel("Email").fill(credentials.email);
 		await page.getByLabel("Password").fill(credentials.password);
@@ -232,7 +235,7 @@ describe("e2e: admin ui", () => {
 	 *
 	 * Deliberately a full journey with its own assertions rather than a silent
 	 * fixture: it is the body of the first test, factored out only so the
-	 * later tests can trigger it when they are run in isolation.
+	 * later tests can trigger it when they are run in isolation
 	 */
 	async function createInitialAdmin(): Promise<Credentials> {
 		const credentials: Credentials = {
@@ -245,7 +248,7 @@ describe("e2e: admin ui", () => {
 
 		// The first request to /admin compiles the whole admin route on
 		// demand (~20s). It stays inside Playwright's default budget; if it
-		// stops doing so that is a regression, not a timeout to raise.
+		// stops doing so that is a regression, not a timeout to raise
 		await admin.getByLabel("Email").fill(credentials.email);
 		await admin.getByLabel("New Password").fill(credentials.password);
 		await admin.getByLabel("Confirm Password").fill(credentials.password);
@@ -253,14 +256,16 @@ describe("e2e: admin ui", () => {
 
 		// Terminal: the sign-out control only exists for an authenticated
 		// admin, so its presence is the dashboard rendering *and* the
-		// registration succeeding.
+		// registration succeeding
 		await visible(admin.getByRole("link", { name: /log ?out/i }));
+
 		// `vite-error-overlay` is Vite's own dev-tooling custom element, not
-		// product markup — there is no role or testid to reach it by.
+		// product markup — there is no role or testid to reach it by
 		await gone(admin.locator("vite-error-overlay"));
 		assertNoRuntimeErrors(runtimeErrors);
 
 		await context.close();
+
 		return credentials;
 	}
 
@@ -279,7 +284,7 @@ describe("e2e: admin ui", () => {
 		// only suite that skipped this, so its first Playwright call absorbed
 		// the whole cold build of the heaviest route in the repo inside a 30s
 		// per-action budget — passing or failing on which side of 30s the
-		// build happened to land.
+		// build happened to land
 		await waitForServerReady(server.proc, server.port, "/admin");
 
 		browser = await chromium.launch({ headless: true });
@@ -290,7 +295,8 @@ describe("e2e: admin ui", () => {
 		await server?.kill();
 	});
 
-	it("a first-time visitor registers the initial admin and reaches the dashboard", async () => {
+	// oxlint-disable-next-line vitest/expect-expect -- createInitialAdmin asserts each step through visible() and gone()
+	test("a first-time visitor registers the initial admin and reaches the dashboard", async () => {
 		await step(
 			"register the first admin from the site's admin link",
 			async () => {
@@ -299,7 +305,7 @@ describe("e2e: admin ui", () => {
 		);
 	});
 
-	it("an admin can sign in and find their account in the users collection", async () => {
+	test("an admin can sign in and find their account in the users collection", async () => {
 		const credentials = await step("ensure an admin account exists", () =>
 			initialAdminCredentials(),
 		);
@@ -311,11 +317,11 @@ describe("e2e: admin ui", () => {
 			await signIn(admin, credentials);
 
 			// No page-identity assertion — the nav link click below cannot
-			// resolve unless the dashboard rendered for a signed-in admin.
+			// resolve unless the dashboard rendered for a signed-in admin
 			await openNav(admin);
 			await admin.getByRole("link", { name: "Users", exact: true }).click();
 
-			// Terminal: the admin came to see their own account listed.
+			// Terminal: the admin came to see their own account listed
 			await visible(
 				admin.getByRole("row").filter({ hasText: credentials.email }),
 			);
@@ -328,7 +334,7 @@ describe("e2e: admin ui", () => {
 		});
 	});
 
-	it("an admin who signs out can sign back in", async () => {
+	test("an admin who signs out can sign back in", async () => {
 		const credentials = await step("ensure an admin account exists", () =>
 			initialAdminCredentials(),
 		);
@@ -343,11 +349,11 @@ describe("e2e: admin ui", () => {
 			await admin.getByRole("link", { name: /log ?out/i }).click();
 
 			// No assertion that we left — filling the login form below cannot
-			// happen unless sign-out landed the admin back on the login page.
+			// happen unless sign-out landed the admin back on the login page
 			await signIn(admin, credentials);
 
 			// Terminal: the sign-out control is back, so the second sign-in
-			// produced an authenticated dashboard.
+			// produced an authenticated dashboard
 			await visible(admin.getByRole("link", { name: /log ?out/i }));
 			await gone(admin.locator("vite-error-overlay"));
 		});

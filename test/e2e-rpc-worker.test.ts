@@ -9,12 +9,12 @@
  * `validateWorkerEnvironmentOptions`.
  *
  * The worker entry is a stub `WorkerEntrypoint` (no Payload) — the test
- * targets the plugin/cloudflare-plugin wiring, not Payload itself.
+ * targets the plugin/cloudflare-plugin wiring, not Payload itself
  */
 
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
 	CLOUDFLARE_V2_PACKAGES,
 	cloudflareWorkerConfig,
@@ -24,17 +24,18 @@ import {
 	VERSIONS,
 } from "./helpers.ts";
 
-const PLUGIN_ROOT = join(import.meta.dirname, "..");
-const TEST_DIR = join(import.meta.dirname, ".test-rpc-worker");
+const PLUGIN_ROOT = path.join(import.meta.dirname, "..");
+const TEST_DIR = path.join(import.meta.dirname, ".test-rpc-worker");
 
 // Match the user-reported scenario: the parent worker is cloudflare-managed
 // under the name "ssr". Our plugin's old top-level `ssr.external` block
 // landed on this exact env, triggering @cloudflare/vite-plugin's
 // validateWorkerEnvironmentOptions rejection. Naming the test env "ssr"
-// reproduces that collision.
+// reproduces that collision
 const WORKER_ENV = "ssr";
+
 // Where @cloudflare/vite-plugin v2 writes the entry Worker's build
-const WORKER_BUNDLE = join(
+const WORKER_BUNDLE = path.join(
 	".cloudflare",
 	"output",
 	"v0",
@@ -52,7 +53,7 @@ const packageJson = JSON.stringify(
 		type: "module",
 		scripts: { build: "vite build" },
 	},
-	null,
+	undefined,
 	2,
 );
 
@@ -103,7 +104,7 @@ const tsconfig = JSON.stringify(
 		},
 		include: ["src", "vite.config.ts"],
 	},
-	null,
+	undefined,
 	2,
 );
 
@@ -147,21 +148,21 @@ describe("e2e: rpc worker", () => {
 		await helpers.cleanup();
 	});
 
-	it("vite build resolves config without resolve.external rejection", async () => {
+	test("vite build resolves config without resolve.external rejection", async () => {
 		// If the plugin sets `resolve.external` on a cloudflare-managed env,
 		// configResolved throws `validateWorkerEnvironmentOptions` and the
-		// build aborts before any bundling happens.
+		// build aborts before any bundling happens
 		const output = await helpers.npm(["run", "build"]);
 		expect(output).not.toMatch(/resolve\.external/);
 		expect(output).not.toMatch(/incompatible with the Cloudflare Vite plugin/);
 	}, 120_000);
 
-	it("emits a bundle containing the WorkerEntrypoint export", async () => {
+	test("emits a bundle containing the WorkerEntrypoint export", async () => {
 		const bundled = await helpers.read(WORKER_BUNDLE);
 		expect(bundled).toContain("CmsEntrypoint");
 	});
 
-	it("bundles `file-type`'s Node entry, not core.js", async () => {
+	test("bundles `file-type`'s Node entry, not core.js", async () => {
 		// The build succeeding in the first test rules out core.js alone,
 		// which would fail it with MISSING_EXPORT; this rules out a stub that
 		// only satisfies the export

@@ -9,11 +9,11 @@
  *
  * Dev hides this because client deps go through esbuild's optimizeDeps
  * pre-bundle, which emits real ESM before our transform ever sees them.
- * Only the prod client build, which serves raw node_modules, hit the bug.
+ * Only the prod client build, which serves raw node_modules, hit the bug
  */
 
 import type { Plugin } from "vite";
-import { describe, expect, it } from "vitest";
+import { describe, expect, test } from "vitest";
 import { payloadCjsTransform } from "../src/cjs-transform.ts";
 import { vinextPayload, vinextPayloadWorker } from "../src/main.ts";
 
@@ -22,18 +22,18 @@ const WORKER_ENV = "app_cms";
 function callApplyToEnvironment(plugin: Plugin, envName: string) {
 	const fn = plugin.applyToEnvironment;
 	if (typeof fn !== "function") {
-		return null;
+		return;
 	}
 	return fn.call(undefined as never, { name: envName } as never);
 }
 
 describe("payloadCjsTransform: envs scoping", () => {
-	it("has no applyToEnvironment when envs is undefined (default)", () => {
+	test("has no applyToEnvironment when envs is undefined (default)", () => {
 		const plugin = payloadCjsTransform();
 		expect(plugin.applyToEnvironment).toBeUndefined();
 	});
 
-	it("applies only to listed envs when envs is set", () => {
+	test("applies only to listed envs when envs is set", () => {
 		const plugin = payloadCjsTransform({ envs: [WORKER_ENV] });
 		expect(callApplyToEnvironment(plugin, WORKER_ENV)).toBe(true);
 		expect(callApplyToEnvironment(plugin, "client")).toBe(false);
@@ -48,13 +48,13 @@ describe("vinextPayloadWorker: client env is never touched", () => {
 	const targets = ["vite-plugin-payload:cjs-transform"];
 
 	for (const name of targets) {
-		it(`${name} rejects the client env via applyToEnvironment`, () => {
+		test(`${name} rejects the client env via applyToEnvironment`, () => {
 			const plugin = plugins.find((p) => p.name === name);
 			expect(plugin, `expected sub-plugin ${name}`).toBeDefined();
 			expect(callApplyToEnvironment(plugin as Plugin, "client")).toBe(false);
 		});
 
-		it(`${name} accepts the worker env via applyToEnvironment`, () => {
+		test(`${name} accepts the worker env via applyToEnvironment`, () => {
 			const plugin = plugins.find((p) => p.name === name);
 			expect(plugin, `expected sub-plugin ${name}`).toBeDefined();
 			expect(callApplyToEnvironment(plugin as Plugin, WORKER_ENV)).toBe(true);
@@ -65,7 +65,7 @@ describe("vinextPayloadWorker: client env is never touched", () => {
 describe("vinextPayload: keeps unscoped sub-plugins (Payload admin UI needs client)", () => {
 	const plugins = vinextPayload();
 
-	it("cjs-transform stays unscoped so the admin UI client build still benefits", () => {
+	test("cjs-transform stays unscoped so the admin UI client build still benefits", () => {
 		const plugin = plugins.find(
 			(p) => p.name === "vite-plugin-payload:cjs-transform",
 		);

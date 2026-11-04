@@ -7,11 +7,11 @@
  * instrumentation, or an auth gate in front of `/api/*` — is an ordinary thing to
  * do, and it changes what boots: `@cloudflare/vite-plugin` evaluates the whole
  * worker entry graph to read its export names, so everything the entry imports at
- * module scope now runs under the react-server condition before the server listens.
+ * module scope now runs under the react-server condition before the server listens
  */
 
-import { join } from "node:path";
-import { afterAll, beforeAll, describe, it } from "vitest";
+import path from "node:path";
+import { afterAll, beforeAll, describe, test } from "vitest";
 import {
 	assertStatus,
 	createProjectHelpers,
@@ -20,12 +20,12 @@ import {
 	waitForServerReady,
 } from "./helpers.ts";
 
-const PLUGIN_ROOT = join(import.meta.dirname, "..");
-const TEST_DIR = join(import.meta.dirname, ".test-project-custom-entry");
+const PLUGIN_ROOT = path.join(import.meta.dirname, "..");
+const TEST_DIR = path.join(import.meta.dirname, ".test-project-custom-entry");
 const helpers = createProjectHelpers(TEST_DIR);
 
 // Mirrors the shape a consumer reported: the vinext handler re-exported behind a
-// project entry, with the Payload config imported at module scope.
+// project entry, with the Payload config imported at module scope
 const WORKER_ENTRY = `import handler from "vinext/server/fetch-handler";
 import config from "../src/payload.config.ts";
 
@@ -67,7 +67,7 @@ describe("e2e: project-owned worker entry", () => {
 		await server?.kill();
 	});
 
-	it("serves the admin UI when the worker entry imports the Payload config", async () => {
+	test("serves the admin UI when the worker entry imports the Payload config", async () => {
 		await assertStatus(server.port, "/admin", [200, 302, 307]);
 	});
 });

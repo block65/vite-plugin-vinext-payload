@@ -12,13 +12,13 @@
  * The DB is deliberately unmigrated: reaching payload's first real
  * query ("Failed query: SELECT ... payload_migrations") proves payload
  * fully initialized through the adapter inside workerd, without
- * needing migration fixtures.
+ * needing migration fixtures
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
 	CLOUDFLARE_V2_PACKAGES,
 	cloudflareWorkerConfig,
@@ -31,8 +31,8 @@ import {
 	waitForServerReady,
 } from "./helpers.ts";
 
-const PLUGIN_ROOT = join(import.meta.dirname, "..");
-const TEST_DIR = join(import.meta.dirname, ".test-rpc-payload");
+const PLUGIN_ROOT = path.join(import.meta.dirname, "..");
+const TEST_DIR = path.join(import.meta.dirname, ".test-rpc-payload");
 const WORKER_ENV = "ssr";
 const helpers = createProjectHelpers(TEST_DIR);
 
@@ -43,7 +43,7 @@ const packageJson = JSON.stringify(
 		type: "module",
 		scripts: { dev: "vite dev --port 0 --strictPort=false" },
 	},
-	null,
+	undefined,
 	2,
 );
 
@@ -60,7 +60,7 @@ export default defineConfig({
 `;
 
 // Bindings via cloudflare:workers inside workerd, as the vinext-shaped
-// Cloudflare template reads them; no bindings under Payload's Node CLI.
+// Cloudflare template reads them; no bindings under Payload's Node CLI
 const payloadConfig = `import { sqliteD1Adapter } from "@payloadcms/db-d1-sqlite";
 import { lexicalEditor } from "@payloadcms/richtext-lexical";
 import { buildConfig } from "payload";
@@ -190,6 +190,7 @@ async function startDev(): Promise<DevServer> {
 	};
 
 	let match: RegExpMatchArray;
+
 	try {
 		match = await waitForOutput(
 			proc,
@@ -198,11 +199,12 @@ async function startDev(): Promise<DevServer> {
 		);
 	} catch (err) {
 		await kill();
+
 		throw err;
 	}
 
 	return {
-		port: Number.parseInt(match[1], 10),
+		port: Number(match[1]),
 		proc,
 		output: () => collected,
 		kill,
@@ -222,13 +224,13 @@ describe("e2e: payload + D1 adapter in RPC worker", () => {
 		await helpers.cleanup();
 	});
 
-	it("payload initializes through the D1 adapter and reaches a real query", async () => {
+	test("payload initializes through the D1 adapter and reaches a real query", async () => {
 		// The first request triggers on-demand optimization of the whole payload
 		// graph, so the socket answering is not the same as the worker being
 		// able to run. A 500 is a passing outcome here: the assertion below accepts
 		// "payload-error:...Failed query" as proof payload initialized and D1
 		// issued a real query. Gating on a non-error status would wait out the
-		// timeout on the exact response under test.
+		// timeout on the exact response under test
 		await waitForServerReady(server.proc, server.port, "/", {
 			ready: respondsAtAll,
 		});
@@ -240,11 +242,11 @@ describe("e2e: payload + D1 adapter in RPC worker", () => {
 		// "payload-error:...Failed query" — payload fully initialized inside
 		// workerd and the D1 adapter issued a real query against the empty
 		// DB. Anything else (optimizer death, unresolved import, module-init
-		// throw) fails here.
+		// throw) fails here
 		expect(body).toMatch(/^ok:|^payload-error:.*Failed query/s);
 	});
 
-	it("dependency optimization completed without unresolved imports", () => {
+	test("dependency optimization completed without unresolved imports", () => {
 		const log = server.output();
 		expect(log).not.toMatch(/UNRESOLVED_IMPORT|Could not resolve/);
 		expect(log).not.toMatch(/Error during dependency optimization/);

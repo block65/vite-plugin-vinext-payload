@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Lang, parse } from "@ast-grep/napi";
 import type { EnvironmentOptions, Plugin } from "vite";
@@ -38,17 +38,17 @@ export const rscSerializerThrowsPatch = {
 
 // Static stub files — these must export the named exports that consumers
 // expect. Dynamic empty stubs don't work because Rolldown checks for
-// MISSING_EXPORT on named imports like { pushSQLiteSchema }.
-const STUB_FILES: Record<string, string> = {
+// MISSING_EXPORT on named imports like { pushSQLiteSchema }
+const STUB_FILES: Readonly<Record<string, string>> = {
 	"drizzle-kit/api": fileURLToPath(
-		new URL("./stubs/drizzle-kit-api.js", import.meta.url),
+		new URL("stubs/drizzle-kit-api.js", import.meta.url),
 	),
 };
 
 // Inline stub for createRequire-based requires of drizzle-kit/api.
 // resolveId hooks can't intercept createRequire() calls — they produce
 // a runtime Node.js require that bypasses all bundler resolution.
-// We transform the source during pre-bundling to inline no-op stubs.
+// We transform the source during pre-bundling to inline no-op stubs
 const DRIZZLE_KIT_API_INLINE_STUB = [
 	"({",
 	"  generateSQLiteDrizzleJson: () => ({}),",
@@ -66,7 +66,7 @@ const stubPaths: Record<string, string> = Object.fromEntries(
 		.map((pkg) => [pkg, STUB_FILES[pkg]]),
 );
 
-export interface PayloadRscRuntimeOptions {
+export type PayloadRscRuntimeOptions = {
 	/**
 	 * Names of server environments running on workerd. They get
 	 * `drizzle-kit/api` stubbed (it comes in via `@payloadcms/db-d1-sqlite`
@@ -82,7 +82,7 @@ export interface PayloadRscRuntimeOptions {
 	 * Defaults to `"rsc"`.
 	 */
 	rscEnv?: string | false;
-}
+};
 
 const DRIZZLE_KIT_API_REQUIRE = /require\s*\(\s*['"]drizzle-kit\/api['"]\s*\)/g;
 
@@ -141,19 +141,22 @@ async function resolveDrizzleKitApi(
 	root: string,
 ) {
 	const direct = await resolve("drizzle-kit/api", importer, { skipSelf: true });
+
 	if (direct) {
 		return direct;
 	}
-	const fromRoot = join(root, "package.json");
+
+	const fromRoot = path.join(root, "package.json");
 	const viaOwners = await Promise.all(
 		DRIZZLE_KIT_OWNERS.map(async (owner) => {
 			const ownerEntry = await resolve(owner, fromRoot, { skipSelf: true });
 			return ownerEntry
 				? resolve("drizzle-kit/api", ownerEntry.id, { skipSelf: true })
-				: null;
+				: undefined;
 		}),
 	);
-	return viaOwners.find((resolved) => resolved !== null) ?? null;
+
+	return viaOwners.find(Boolean);
 }
 
 /**
@@ -162,7 +165,7 @@ async function resolveDrizzleKitApi(
  * every throw form is covered including comma expressions.
  *
  * Next.js silently drops these in production; vinext doesn't, so every Payload
- * page with field configs (access functions, hooks, RegExps) would fail.
+ * page with field configs (access functions, hooks, RegExps) would fail
  */
 function dropClientComponentThrows(code: string): string {
 	const root = parse(Lang.JavaScript, code).root();
@@ -190,11 +193,12 @@ function dropClientComponentThrows(code: string): string {
  * - **RSC serializer patch** that converts the "Client Component" throw
  *   in `react-server-dom-webpack` into `return undefined`. Applies only
  *   to the configured RSC env (default `rsc`), skipped entirely when
- *   `rscEnv` is `false`.
+ *   `rscEnv` is `false`
  */
 export function payloadRscRuntime(
 	options: PayloadRscRuntimeOptions = {},
 ): Plugin {
+	// oxlint-disable-next-line typescript/no-open-string-fallback -- vinext's own env name
 	const { serverEnvs = ["rsc"], rscEnv = "rsc" } = options;
 	const serverEnvSet = new Set(serverEnvs);
 	let root = process.cwd();
@@ -205,7 +209,7 @@ export function payloadRscRuntime(
 		// `enforce: "pre"` is required for the `resolveId` hook below to win.
 		// Without it, Vite's default resolver claims `file-type` first and
 		// points it at the package's `core.js`, which doesn't export
-		// `fileTypeFromFile`, so Rolldown errors with MISSING_EXPORT.
+		// `fileTypeFromFile`, so Rolldown errors with MISSING_EXPORT
 		enforce: "pre",
 
 		configResolved(config) {
@@ -215,7 +219,7 @@ export function payloadRscRuntime(
 
 		// Redirect during optimizeDeps pre-bundling so the targets are
 		// inlined rather than left as bare external imports that workerd
-		// can't resolve.
+		// can't resolve
 		configEnvironment(name) {
 			if (!serverEnvSet.has(name)) {
 				return;
@@ -238,19 +242,22 @@ export function payloadRscRuntime(
 											root,
 										);
 									}
-									return null;
+									return;
 								},
 								// Pre-bundling only runs in dev, where the schema push needs
 								// the real drizzle-kit
 								transform(code) {
 									if (!code.includes("drizzle-kit/api")) {
-										return null;
+										return;
 									}
+
 									const replaced = importDrizzleKitApi(code);
+
 									if (replaced === code) {
-										return null;
+										return;
 									}
-									return { code: replaced, map: null };
+
+									return { code: replaced, map: null }; // oxlint-disable-line unicorn/no-null -- Rollup's no-sourcemap value
 								},
 							},
 						],
@@ -262,22 +269,24 @@ export function payloadRscRuntime(
 		transform: {
 			handler(code, id) {
 				const envName = this.environment?.name;
+
 				if (!envName) {
 					return;
 				}
+
 				const isServerEnv = serverEnvSet.has(envName);
 				const isRscEnv = rscEnv !== false && envName === rscEnv;
+
 				if (!isServerEnv && !isRscEnv) {
 					return;
 				}
 
 				// createRequire-based requires bypass resolveId — catch at
-				// transform time for non-pre-bundled modules.
+				// transform time for non-pre-bundled modules
+				const stubDrizzle = isBuild ? inlineDrizzleKitApi : importDrizzleKitApi;
 				const withStubbedDrizzle =
 					isServerEnv && code.includes("drizzle-kit/api")
-						? isBuild
-							? inlineDrizzleKitApi(code)
-							: importDrizzleKitApi(code)
+						? stubDrizzle(code)
 						: code;
 
 				const result =
@@ -290,23 +299,27 @@ export function payloadRscRuntime(
 				if (result === code) {
 					return;
 				}
-				return { code: result, map: null };
+
+				return { code: result, map: null }; // oxlint-disable-line unicorn/no-null -- Rollup's no-sourcemap value
 			},
 		},
 
-		// Intercept at runtime for non-pre-bundled imports.
+		// Intercept at runtime for non-pre-bundled imports
 		resolveId: {
 			handler(source, importer) {
 				const envName = this.environment?.name;
+
 				if (!envName || !serverEnvSet.has(envName)) {
 					return;
 				}
+
 				if (source === "file-type") {
 					return resolveFileTypeNodeEntry(
 						(...args) => this.resolve(...args),
 						importer,
 					);
 				}
+
 				if (source === "drizzle-kit/api" && !isBuild) {
 					return resolveDrizzleKitApi(
 						(...args) => this.resolve(...args),
@@ -314,6 +327,7 @@ export function payloadRscRuntime(
 						root,
 					);
 				}
+
 				return stubPaths[source] ?? undefined;
 			},
 		},

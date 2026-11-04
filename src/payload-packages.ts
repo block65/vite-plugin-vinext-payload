@@ -5,29 +5,27 @@
  * webpack. Next.js maintains a similar curated list of ~90 packages:
  * https://github.com/vercel/next.js/blob/canary/packages/next/src/lib/server-external-packages.jsonc
  *
- * Each entry documents what breaks, why, and when it can be removed.
+ * Each entry documents what breaks, why, and when it can be removed
  */
 
-// ---------------------------------------------------------------------------
 // OPTIMIZE DEPS EXCLUDE (all environments)
 //
 // Packages excluded from Vite's pre-bundling (optimizeDeps) in all
 // environments. These break during esbuild/Rolldown bundling for
 // structural reasons that webpack handles natively.
-// ---------------------------------------------------------------------------
 
 export const OPTIMIZE_DEPS_EXCLUDE = [
 	// Export condition mismatch: { "node": "./index.js", "default": "./core.js" }.
 	// RSC resolves to core.js which lacks fileTypeFromFile; payloadRscRuntime
 	// redirects it to file-type/node instead.
 	// Webpack resolves to index.js (Node condition) and works.
-	// Remove: when Vite respects per-environment export conditions.
+	// Remove: when Vite respects per-environment export conditions
 	"file-type",
 
 	// References ./node.js expecting directory resolution (→ ./node/index.js).
 	// esbuild/Rolldown treats it as a file path → resolution fails.
 	// Webpack resolves ./node.js as a directory correctly.
-	// Remove: when Rolldown supports Node.js directory resolution fallback.
+	// Remove: when Rolldown supports Node.js directory resolution fallback
 	"blake3-wasm",
 
 	// Reached from payload.config via wrangler's `getPlatformProxy` on the
@@ -36,26 +34,23 @@ export const OPTIMIZE_DEPS_EXCLUDE = [
 	// (`wrangler/wrangler-dist/cli.js` → `blake3-wasm/esm/index.js`), so the
 	// optimizer only stops tripping over it once wrangler itself is left
 	// unbundled. wrangler is a CLI, never evaluated at request time.
-	// Remove: never (deploy tool).
+	// Remove: never (deploy tool)
 	"wrangler",
 
 	// No root "." export — only subpath exports (./layouts, ./routes).
 	// Vite's dedup wrapper generates `export * from "@payloadcms/next"` which
 	// fails because there's no root export to re-export.
 	// Webpack doesn't generate dedup wrappers.
-	// Remove: when Vite handles packages without root exports gracefully.
+	// Remove: when Vite handles packages without root exports gracefully
 	"@payloadcms/next",
 ];
 
-// ---------------------------------------------------------------------------
 // CLIENT OPTIMIZE DEPS EXCLUDE
 //
 // Packages excluded from client-side optimizeDeps only.
-// ---------------------------------------------------------------------------
 
 export const CLIENT_OPTIMIZE_DEPS_EXCLUDE: string[] = [];
 
-// ---------------------------------------------------------------------------
 // CLIENT OPTIMIZE DEPS INCLUDE
 //
 // CJS transitive deps force-included in client optimizeDeps.
@@ -64,36 +59,34 @@ export const CLIENT_OPTIMIZE_DEPS_EXCLUDE: string[] = [];
 // so the browser gets pre-bundled ESM instead of raw CJS via /@fs/.
 //
 // Webpack bundles CJS natively — no explicit includes needed.
-// ---------------------------------------------------------------------------
 
 export const CLIENT_OPTIMIZE_DEPS_INCLUDE = [
 	// CJS with require() calls, used by payload/fields/validations.
-	// Remove: when payload ships ESM or Vite auto-discovers excluded deps.
+	// Remove: when payload ships ESM or Vite auto-discovers excluded deps
 	"payload > ajv",
 
 	// CJS module.exports, used by payload/utilities/isValidID.
-	// Remove: when payload ships ESM or Vite auto-discovers excluded deps.
+	// Remove: when payload ships ESM or Vite auto-discovers excluded deps
 	"payload > bson-objectid",
 
 	// CJS with require(), used by payload/uploads/getFileTypeIdentity, which
 	// payload/shared re-exports to the client from 3.91.
-	// Remove: when payload ships ESM or Vite auto-discovers excluded deps.
+	// Remove: when payload ships ESM or Vite auto-discovers excluded deps
 	"payload > sanitize-filename",
 
 	// CJS stub with require(), used by @payloadcms/ui components compiled
 	// with React Compiler. Without pre-bundling, the browser gets the raw
 	// CJS file via /@fs/ and can't import named exports.
-	// Remove: when React ships ESM for compiler-runtime.
+	// Remove: when React ships ESM for compiler-runtime
 	"react/compiler-runtime",
 
 	// vinext shims next/* via resolve.alias. Additional next/* aliases
 	// are auto-discovered and included by payloadOptimizeDeps from the
 	// resolved alias config — no need to hardcode them here.
-	// Remove: when vinext adds these to its own optimizeDeps.include.
+	// Remove: when vinext adds these to its own optimizeDeps.include
 	"@payloadcms/ui",
 ];
 
-// ---------------------------------------------------------------------------
 // RSC OPTIMIZE DEPS INCLUDE
 //
 // Deps pre-declared in the rsc environment's optimizeDeps so a cold start
@@ -105,11 +98,10 @@ export const CLIENT_OPTIMIZE_DEPS_INCLUDE = [
 // `parent > dep` entries resolve through the importing package, so they
 // stay resolvable under pnpm's strict layout where a transitive dep is
 // not visible from the project root.
-// ---------------------------------------------------------------------------
 
 export const RSC_OPTIMIZE_DEPS_INCLUDE = [
 	// Direct project deps and subpath exports, resolvable from the root.
-	// Remove: when vinext pre-declares its own RSC runtime deps.
+	// Remove: when vinext pre-declares its own RSC runtime deps
 	"react-server-dom-webpack/static.edge",
 	"react-dom/server",
 	"payload/shared",
@@ -117,7 +109,7 @@ export const RSC_OPTIMIZE_DEPS_INCLUDE = [
 
 	// payload's transitive deps reached during server rendering.
 	// Remove: when Vite seeds the optimizer from the full import graph
-	// instead of discovering lazily at request time.
+	// instead of discovering lazily at request time
 	"payload > bson-objectid",
 	"payload > uuid",
 	"payload > qs-esm",
@@ -127,7 +119,7 @@ export const RSC_OPTIMIZE_DEPS_INCLUDE = [
 	// file-type's own graph. payloadRscRuntime resolves it to its Node
 	// entry, outside the optimizer, so its imports are otherwise
 	// discovered one layer per re-optimize.
-	// Remove: with the payload entries above.
+	// Remove: with the payload entries above
 	"payload > file-type > strtok3",
 	"payload > file-type > strtok3/core",
 	"payload > file-type > token-types",
@@ -136,7 +128,7 @@ export const RSC_OPTIMIZE_DEPS_INCLUDE = [
 
 	// The default richtext editor's graph, reached from payload.config.
 	// Remove: with the payload entries above, or if the editor becomes
-	// an explicit consumer-installed peer of the rendering path.
+	// an explicit consumer-installed peer of the rendering path
 	"@payloadcms/richtext-lexical > lexical",
 	"@payloadcms/richtext-lexical > @lexical/headless",
 	"@payloadcms/richtext-lexical > @lexical/html",
@@ -149,11 +141,10 @@ export const RSC_OPTIMIZE_DEPS_INCLUDE = [
 	"@payloadcms/richtext-lexical > dequal/lite",
 
 	// Admin UI server exports.
-	// Remove: with the payload entries above.
+	// Remove: with the payload entries above
 	"@payloadcms/ui > date-fns",
 ];
 
-// ---------------------------------------------------------------------------
 // RSC STUBS
 //
 // Packages stubbed in the RSC environment because they use Node.js APIs
@@ -162,12 +153,11 @@ export const RSC_OPTIMIZE_DEPS_INCLUDE = [
 //
 // Next.js doesn't need stubs — it runs in Node.js where all APIs exist.
 // These are workerd-specific workarounds.
-// ---------------------------------------------------------------------------
 
-export const RSC_STUBS: Record<string, "empty"> = {
+export const RSC_STUBS = {
 	// Migration utilities from drizzle-kit, loaded by @payloadcms/drizzle via
 	// createRequire(). Stubbed in builds only: the dev schema push needs the
 	// real package, and production never pushes.
 	// Remove: when payload lazy-loads migration deps, or workerd supports require().
 	"drizzle-kit/api": "empty",
-};
+} satisfies Record<string, "empty">;

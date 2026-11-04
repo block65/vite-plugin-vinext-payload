@@ -34,7 +34,7 @@ import {
 /**
  * Every rewrite this plugin makes to third-party code, as data. The README's
  * patch table is generated from this (`pnpm run docs:patches`) and a unit
- * test fails when the committed table drifts.
+ * test fails when the committed table drifts
  */
 export const PATCH_MANIFEST: readonly PatchDeclaration[] = [
 	consoleCreateTaskPatch,
@@ -48,17 +48,17 @@ export const PATCH_MANIFEST: readonly PatchDeclaration[] = [
 	rscSerializerThrowsPatch,
 ];
 
-export interface VinextPayloadOptions {
+export type VinextPayloadOptions = {
 	/** Additional packages to exclude from optimizeDeps. */
 	excludeFromOptimize?: string[];
-}
+};
 
 /**
  * Payload CMS compatibility for Vite + vinext.
  *
  * Returns the full set of sub-plugins that make Payload run on Vite's
  * Environment API, plugin-rsc, and (optionally) workerd via
- * `@cloudflare/vite-plugin`.
+ * `@cloudflare/vite-plugin`
  */
 export function vinextPayload(options: VinextPayloadOptions = {}): Plugin[] {
 	const { excludeFromOptimize = [] } = options;
@@ -71,7 +71,7 @@ export function vinextPayload(options: VinextPayloadOptions = {}): Plugin[] {
 	];
 }
 
-export interface VinextPayloadWorkerOptions {
+export type VinextPayloadWorkerOptions = {
 	/**
 	 * The Worker's Vite environment name: its `viteEnvironment.name` in
 	 * `@cloudflare/vite-plugin`, or else its `name` with `-` replaced by `_`.
@@ -80,7 +80,7 @@ export interface VinextPayloadWorkerOptions {
 
 	/** Additional packages to exclude from optimizeDeps. */
 	excludeFromOptimize?: string[];
-}
+};
 
 /**
  * Payload CMS compatibility for a headless Cloudflare auxiliary worker.
@@ -123,7 +123,7 @@ export function vinextPayloadWorker(
 		// payload.config.ts commonly imports admin components at module
 		// scope, dragging React in even when the worker only ever calls
 		// the local API. Without the polyfill, workerd's console.createTask
-		// throws on module init.
+		// throws on module init
 		payloadWorkerdCompat({ serverEnvs, reactEnv: env }),
 		payloadOptimizeDeps({
 			extraExcludes: excludeFromOptimize,
@@ -138,14 +138,14 @@ export function vinextPayloadWorker(
 
 export default vinextPayload;
 
-/** @deprecated Renamed to `vinextPayload`. */
+/** @deprecated Renamed to `vinextPayload` */
 export const payloadPlugin = vinextPayload;
 
-/** @deprecated Renamed to `vinextPayloadWorker`. */
+/** @deprecated Renamed to `vinextPayloadWorker` */
 export const payloadWorkerPlugin = vinextPayloadWorker;
 
-/** @deprecated Renamed to `VinextPayloadOptions`. */
+/** @deprecated Renamed to `VinextPayloadOptions` */
 export type PayloadPluginOptions = VinextPayloadOptions;
 
-/** @deprecated Renamed to `VinextPayloadWorkerOptions`. */
+/** @deprecated Renamed to `VinextPayloadWorkerOptions` */
 export type PayloadWorkerPluginOptions = VinextPayloadWorkerOptions;

@@ -7,17 +7,17 @@
  * logs here rather than vanishing into a bare `catch`.
  *
  * Off by default: plugin internals must not add noise to a consumer's build
- * output. Enable with `DEBUG=vinext-payload` (or `DEBUG=*`).
+ * output. Enable with `DEBUG=vinext-payload` (or `DEBUG=*`)
  */
 
 const PREFIX = "[vinext-payload]";
 
-const DEBUG_PATTERN = process.env["DEBUG"] ?? "";
+const { DEBUG } = process.env;
 
 const enabled =
-	DEBUG_PATTERN === "*" || DEBUG_PATTERN.includes("vinext-payload");
+	DEBUG !== undefined && (DEBUG === "*" || DEBUG.includes("vinext-payload"));
 
-/** `trace` and `debug` are gated; `warn` and `error` always surface. */
+/** `trace` and `debug` are gated; `warn` and `error` always surface */
 export const logger = {
 	trace(message: string, ...detail: unknown[]): void {
 		if (enabled) {

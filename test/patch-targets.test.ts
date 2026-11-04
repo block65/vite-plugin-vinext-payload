@@ -14,13 +14,13 @@
  *
  * NB: vinext's `dist/index.js` is classified as binary by grep (`file`
  * reports `data`), so shell greps over it silently return nothing. Read it
- * from Node, as these tests do.
+ * from Node, as these tests do
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, test } from "vitest";
 
 /**
  * Locate the installed vinext by walking node_modules upward.
@@ -31,16 +31,16 @@ import { describe, expect, it } from "vitest";
  *
  * Throws rather than skips when vinext is absent: it is auto-installed as a
  * peer via the lockfile in this repo, so absence means a broken install, and
- * a silent skip here would disable the entire point of this file.
+ * a silent skip here would disable the entire point of this file
  */
 function findVinextDist(): string {
-	let dir = dirname(fileURLToPath(import.meta.url));
+	let dir = path.dirname(fileURLToPath(import.meta.url));
 	for (;;) {
-		const candidate = join(dir, "node_modules", "vinext", "dist");
+		const candidate = path.join(dir, "node_modules", "vinext", "dist");
 		if (existsSync(candidate)) {
 			return candidate;
 		}
-		const parent = dirname(dir);
+		const parent = path.dirname(dir);
 		if (parent === dir) {
 			throw new Error(
 				"vinext is not installed — drift detectors need the real package. Run `pnpm install`.",
@@ -52,26 +52,29 @@ function findVinextDist(): string {
 
 const dist = findVinextDist();
 
-describe("vinext patch targets", () => {
-	const read = (relative: string): string =>
-		readFileSync(join(dist, relative), "utf-8");
+function read(relative: string) {
+	return readFileSync(path.join(dist, relative), "utf-8");
+}
 
-	it("browser entry imports the navigation shim by relative path", () => {
+describe("vinext patch targets", () => {
+	test("browser entry imports the navigation shim by relative path", () => {
 		const code = read("server/app-browser-entry.js");
+
 		// Anchored: 1.0 added sibling modules (navigation-context-state.js,
-		// navigation-errors.js) that an unanchored match would hit first.
+		// navigation-errors.js) that an unanchored match would hit first
 		expect(code).toMatch(/["'][^"']*shims\/navigation\.js["']/);
 	});
 
-	it("server-action commit function and dispatch both still exist", () => {
+	test("server-action commit function and dispatch both still exist", () => {
 		const code = read("server/app-browser-navigation-controller.js");
 		expect(code).toContain("commitSameUrlNavigatePayload");
 		expect(code).toContain("dispatchSynchronousVisibleCommit");
 	});
 
-	it("RSC entry still default-exports an object with fetch", () => {
+	test("RSC entry still default-exports an object with fetch", () => {
 		const code = read("server/app-router-entry.js");
-		// 1.2 puts `__ensureInstrumentation` ahead of `fetch` in the object.
+
+		// 1.2 puts `__ensureInstrumentation` ahead of `fetch` in the object
 		expect(code).toMatch(/=\s*\{[^}]*?\basync fetch\s*\(/);
 	});
 });

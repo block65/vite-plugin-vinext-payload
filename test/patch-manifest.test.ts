@@ -1,12 +1,12 @@
 /**
  * The patch manifest is the plugin's public disclosure of what it rewrites.
  * These tests hold the two properties that make it trustworthy: the data is
- * well-formed, and the docs/internals.md table cannot drift from it.
+ * well-formed, and the docs/internals.md table cannot drift from it
  */
 
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import path from "node:path";
+import { describe, expect, test } from "vitest";
 import {
 	PATCH_TABLE_BEGIN,
 	PATCH_TABLE_END,
@@ -14,10 +14,19 @@ import {
 } from "../scripts/patch-table.ts";
 import { PATCH_MANIFEST } from "../src/main.ts";
 
-const DOC = join(import.meta.dirname, "..", "docs", "internals.md");
+const DOC = path.join(import.meta.dirname, "..", "docs", "internals.md");
+
+// oxfmt pads markdown table columns, so compare parsed cells rather than
+// bytes — content drift fails, formatting drift does not
+function cells(table: string) {
+	return table
+		.split("\n")
+		.filter((line) => !/^\|[\s|:-]+\|$/.test(line))
+		.map((line) => line.split("|").map((cell) => cell.trim()));
+}
 
 describe("patch manifest", () => {
-	it("declares every patch exactly once, with the fields the table needs", () => {
+	test("declares every patch exactly once, with the fields the table needs", () => {
 		const ids = PATCH_MANIFEST.map((declaration) => declaration.id);
 
 		expect(new Set(ids).size).toBe(ids.length);
@@ -30,16 +39,8 @@ describe("patch manifest", () => {
 		}
 	});
 
-	it("the committed docs table matches the manifest", async () => {
-		// oxfmt pads markdown table columns, so compare parsed cells rather
-		// than bytes — content drift fails, formatting drift does not.
-		const cells = (table: string) =>
-			table
-				.split("\n")
-				.filter((line) => !/^\|[\s|:-]+\|$/.test(line))
-				.map((line) => line.split("|").map((cell) => cell.trim()));
-
-		const doc = await readFile(DOC, "utf8");
+	test("the committed docs table matches the manifest", async () => {
+		const doc = await readFile(DOC, "utf-8");
 
 		const begin = doc.indexOf(PATCH_TABLE_BEGIN);
 		const end = doc.indexOf(PATCH_TABLE_END);

@@ -9,7 +9,7 @@ A Vite plugin that makes Payload CMS run under [vinext](https://github.com/cloud
 
 **The `vinext` peer dependency is pinned exactly** in `package.json` — no `^`, no `>=`. vinext releases move the environment and optimizeDeps setup this plugin configures. Never loosen the range.
 
-**Patches are version-fragile.** Every rewrite is declared in `PATCH_MANIFEST` (`src/main.ts`). The AST patches (`@ast-grep/napi`) match function shapes in undici and `react-server-dom-webpack`; a pattern that stops matching makes its patch a silent no-op. `test/patch-targets.test.ts` checks targets in the installed vinext's dist that no current patch uses. When a drift assertion fails, update the patch pattern — do not weaken the assertion to make it pass.
+**Patches are version-fragile.** Every rewrite is declared in `PATCH_MANIFEST` (`src/main.ts`). The AST patches (`@ast-grep/napi`) match function shapes in undici and `react-server-dom-webpack`; a pattern that stops matching makes its patch a silent no-op. The unit tests use synthetic fixtures and cannot see this; only the e2e suites run the real packages.
 
 ## Commands
 

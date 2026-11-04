@@ -5,6 +5,9 @@ allowBuilds:
 # is set explicitly: it silently becomes 0 on pnpm 10, and an inherited default
 # is invisible to anyone reading this file.
 minimumReleaseAge: 1440
+minimumReleaseAgeExcludePrune: true
+minimumReleaseAgeExclude:
+  - "vinext@1.4.3"
 
 # Drop the wasm32-wasi fallback bindings (and the @emnapi runtime they pull
 # in). Every environment we run in — dev, CI, Workers builds — uses the native

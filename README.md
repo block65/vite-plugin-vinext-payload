@@ -128,7 +128,7 @@ configuration.
 - Node.js `>=24`
 - Vite `^8.0.0`
 - Payload CMS `^3.82.0`
-- vinext `1.2.1`, exact. Every vinext release can move the internals this
+- vinext `1.4.3`, exact. Every vinext release can move the internals this
   plugin patches. Required by `vinextPayload()` only; `vinextPayloadWorker()`
   runs without it.
 
@@ -136,7 +136,7 @@ configuration.
 
 Both vinext and this plugin are experimental.
 
-Validated against Payload `3.91.0`, vinext `1.2.1`, Vite `8.3.4` (Rolldown),
+Validated against Payload `3.92.1`, vinext `1.4.3`, Vite `8.3.5` (Rolldown),
 `@cloudflare/vite-plugin` v2 and Node `>=24`, the versions the e2e suites pin in
 `test/helpers.ts`. Known upstream bugs are listed in
 [`docs/upstream-bugs.md`](docs/upstream-bugs.md).

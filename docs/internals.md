@@ -40,6 +40,5 @@ them.
 
 The AST patches match function shapes in undici and `react-server-dom-webpack`.
 When either changes shape, the patch stops matching and does nothing: the build
-succeeds and the unit tests, which use synthetic fixtures, still pass.
-`test/patch-targets.test.ts` reads the installed vinext's `dist`, but checks
-targets that no current patch uses, so it does not catch this.
+succeeds and the unit tests, which use synthetic fixtures, still pass. Only the
+e2e suites, which run the real packages, catch it.

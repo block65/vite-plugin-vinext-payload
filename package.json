@@ -70,12 +70,12 @@
 		"playwright": "^1.64.1",
 		"temporal-polyfill": "^1.0.6",
 		"typescript": "^7.0.2",
-		"vite": "^8.3.4",
+		"vite": "^8.3.5",
 		"vitest": "^5.0.5"
 	},
 	"peerDependencies": {
 		"payload": "^3.82.0",
-		"vinext": "1.2.1",
+		"vinext": "1.4.3",
 		"vite": "^8.0.0"
 	},
 	"peerDependenciesMeta": {

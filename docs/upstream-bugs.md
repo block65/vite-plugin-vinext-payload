@@ -14,7 +14,7 @@ merged, improves the error message only.
 **What breaks:** React's RSC serializer throws when functions, RegExps or
 class instances cross the server/client boundary. Payload field configs carry
 `access` functions, `hooks`, `onInit` and validation RegExps, so every admin
-page fails. `react-server-dom-webpack@19.3.1`, the version vinext 1.2.1
+page fails. `react-server-dom-webpack@19.3.1`, the version vinext 1.4.3
 requires, still has the "Client Component" throws.
 
 **Patch:** rewrites those throw statements to `return undefined`, so the

@@ -18,9 +18,9 @@ import { Temporal } from "temporal-polyfill";
 
 /** Known-good version pins for testing */
 export const VERSIONS = {
-	payload: "3.91.0",
-	vinext: "1.2.1",
-	vite: "8.3.4",
+	payload: "3.92.1",
+	vinext: "1.4.3",
+	vite: "8.3.5",
 	// react-server-dom-webpack ships in lockstep with React and carries a caret
 	// peer on its exact minor, so these three move together or not at all
 	react: "19.3.1",

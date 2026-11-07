@@ -98,10 +98,13 @@ export async function disableNamedPlugins(
 		? "vite.config.ts"
 		: "vite.config.mts";
 	const config = await helpers.read(configPath);
-	const filter =
-		disabled === "all"
-			? "$1.filter(() => false)"
-			: `$1.filter((p) => !${JSON.stringify(disabled.split(","))}.includes(p.name))`;
+
+	// Generated code reads E2E_DISABLE_PLUGINS when the config loads, and keeps
+	// environment values out of its source
+	const filter = `$1.filter((p) => {
+		const off = (process.env.E2E_DISABLE_PLUGINS ?? "").trim().split(",");
+		return !off.includes("all") && !off.includes(p.name);
+	})`;
 
 	// Lookahead keeps a second call from wrapping an already-filtered config
 	const rewritten = config.replace(
